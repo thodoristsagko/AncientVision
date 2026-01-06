@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1044272557076",
+    "project_id": "ancientvision-7ef8a",
+    "storage_bucket": "ancientvision-7ef8a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1044272557076:android:8c3a69c462bed793708b01",
+        "android_client_info": {
+          "package_name": "com.example.ancient_vision"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCBd3FejQawa9VpoWL5TK-ZdPNUPEfmXIA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

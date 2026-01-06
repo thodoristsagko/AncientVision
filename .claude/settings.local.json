@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/src/flutter/bin/flutter.bat doctor:*)",
+      "Bash(/c/src/flutter/bin/flutter.bat run:*)",
+      "Bash(cat:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(/c/src/flutter/bin/flutter.bat devices:*)",
+      "Bash(/c/src/flutter/bin/flutter.bat emulators:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(timeout /t 15 /nobreak)",
+      "Bash(/c/src/flutter/bin/flutter.bat build:*)"
+    ]
+  }
+}
