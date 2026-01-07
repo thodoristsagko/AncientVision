@@ -1932,15 +1932,28 @@ class _FindingsViewState extends State<_FindingsView> {
   }
 
   Future<void> _loadFindings() async {
+    debugPrint('=== _loadFindings called ===');
     try {
-      final snapshot = await FirebaseFirestore.instance
+      // First try with ordering, then fallback without if no results
+      var snapshot = await FirebaseFirestore.instance
           .collection('findings')
           .orderBy('createdAt', descending: true)
-          .limit(20) // Increased limit for better search
+          .limit(20)
           .get();
+
+      // If no results with ordering, try without (for docs missing createdAt)
+      if (snapshot.docs.isEmpty) {
+        debugPrint('No documents with createdAt, trying without ordering...');
+        snapshot = await FirebaseFirestore.instance
+            .collection('findings')
+            .limit(20)
+            .get();
+      }
+      debugPrint('Firestore returned ${snapshot.docs.length} documents');
 
       final findings = snapshot.docs.map((doc) {
         final data = doc.data();
+        debugPrint('Loading finding ${doc.id}');
         // Parse photoGallery from Firestore
         List<String> gallery = [];
         if (data['photoGallery'] != null) {
@@ -1970,9 +1983,29 @@ class _FindingsViewState extends State<_FindingsView> {
         }
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
+      debugPrint('Error loading findings: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Failed to load findings: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red.shade700,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _loadFindings,
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -2230,7 +2263,7 @@ class _FindingsViewState extends State<_FindingsView> {
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                     child: Container(
-                      padding: const EdgeInsets.all(40),
+                      padding: const EdgeInsets.all(32),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(24),
@@ -2241,29 +2274,91 @@ class _FindingsViewState extends State<_FindingsView> {
                       ),
                       child: Column(
                         children: [
-                          Icon(
-                            Icons.inventory_2_outlined,
-                            color: Colors.white.withOpacity(0.5),
-                            size: 48,
+                          // Animated icon container
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFC107).withOpacity(0.15),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFFFFC107).withOpacity(0.3),
+                                width: 2,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.explore_outlined,
+                              color: Color(0xFFFFC107),
+                              size: 40,
+                            ),
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No findings yet',
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Start Your Discovery',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Add your first finding using the Manual Entry button above',
+                            'No archaeological findings recorded yet.\nDocument your first discovery!',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.5),
+                              color: Colors.white.withOpacity(0.6),
                               fontSize: 13,
+                              height: 1.4,
                             ),
                           ),
+                          const SizedBox(height: 20),
+                          if (AuthService.currentUser != null)
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const ManualEntryFormScreen(),
+                                  ),
+                                ).then((_) => _loadFindings());
+                              },
+                              icon: const Icon(Icons.add_rounded),
+                              label: const Text('Add First Finding'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFFFC107),
+                                foregroundColor: const Color(0xFF3E2723),
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.lock_outline,
+                                    color: Colors.white.withOpacity(0.5),
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Sign in to add findings',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.5),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                         ],
                       ),
                     ),
