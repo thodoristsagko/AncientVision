@@ -12,8 +12,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 import 'utils/validators.dart';
+
+// ============================================================
+// IMGBB API KEY - Get your free key at https://api.imgbb.com/
+// ============================================================
+const String imgbbApiKey = '63efd0891caba4842791a2f892301d07';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1284,7 +1290,7 @@ class _LastFindingsCard extends StatelessWidget {
                   ),
                 )
               else
-                ...findings.map((f) => Padding(
+                ...findings.take(3).map((f) => Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: _FindingRow(
                     time: _formatTime(f['createdAt']),
@@ -1622,6 +1628,7 @@ class _Finding {
   final String description;
   final double latitude;
   final double longitude;
+  final String? imageUrl;
 
   const _Finding({
     required this.id,
@@ -1632,6 +1639,7 @@ class _Finding {
     required this.description,
     required this.latitude,
     required this.longitude,
+    this.imageUrl,
   });
 }
 
@@ -1658,10 +1666,12 @@ class _FindingsViewState extends State<_FindingsView> {
       final snapshot = await FirebaseFirestore.instance
           .collection('findings')
           .orderBy('createdAt', descending: true)
+          .limit(3)
           .get();
 
       final findings = snapshot.docs.map((doc) {
         final data = doc.data();
+        debugPrint('Loading finding ${doc.id}, imageUrl: ${data['imageUrl']}');
         return _Finding(
           id: doc.id,
           name: data['name'] ?? '',
@@ -1671,6 +1681,7 @@ class _FindingsViewState extends State<_FindingsView> {
           description: data['description'] ?? '',
           latitude: (data['latitude'] ?? 37.9715).toDouble(),
           longitude: (data['longitude'] ?? 23.7267).toDouble(),
+          imageUrl: data['imageUrl'],
         );
       }).toList();
 
@@ -1757,6 +1768,44 @@ class _FindingsViewState extends State<_FindingsView> {
                       ),
                     ),
                   ),
+                  // AI Recognition button
+                  if (AuthService.currentUser != null)
+                    GestureDetector(
+                      onTap: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('AI Recognition coming soon'),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7C4DFF),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.auto_awesome_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'AI',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   // Manual Entry button
                   if (AuthService.currentUser != null)
                     GestureDetector(
@@ -2005,6 +2054,31 @@ class _FindingDetailCard extends StatelessWidget {
 
   const _FindingDetailCard({super.key, required this.finding});
 
+  Widget _buildFindingImage(String imageUrl) {
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      width: 80,
+      height: 80,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return const Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFFFFC107),
+            strokeWidth: 2,
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        return const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white70,
+          size: 36,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
@@ -2025,7 +2099,7 @@ class _FindingDetailCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // placeholder image
+              // Finding image
               Container(
                 width: 80,
                 height: 80,
@@ -2037,10 +2111,15 @@ class _FindingDetailCard extends StatelessWidget {
                     width: 1,
                   ),
                 ),
-                child: const Icon(
-                  Icons.image_outlined,
-                  color: Colors.white70,
-                  size: 36,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(17),
+                  child: finding.imageUrl != null
+                      ? _buildFindingImage(finding.imageUrl!)
+                      : const Icon(
+                          Icons.image_outlined,
+                          color: Colors.white70,
+                          size: 36,
+                        ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -2160,9 +2239,8 @@ class _FindingsMapState extends State<_FindingsMap> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate center position (average of all findings)
-    final centerLat = widget.findings.map((f) => f.latitude).reduce((a, b) => a + b) / widget.findings.length;
-    final centerLng = widget.findings.map((f) => f.longitude).reduce((a, b) => a + b) / widget.findings.length;
+    // Center on the most recent finding (first in the list)
+    final firstFinding = widget.findings.first;
 
     return Stack(
       children: [
@@ -2170,7 +2248,7 @@ class _FindingsMapState extends State<_FindingsMap> {
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
-            initialCenter: LatLng(centerLat, centerLng),
+            initialCenter: LatLng(firstFinding.latitude, firstFinding.longitude),
             initialZoom: 17.5,
             minZoom: 10,
             maxZoom: 19,
@@ -3034,6 +3112,37 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
       final lat = double.tryParse(_latController.text) ?? 37.9715;
       final lng = double.tryParse(_lngController.text) ?? 23.7267;
 
+      // Upload image to ImgBB and get URL
+      String? imageUrl;
+      if (_selectedImage != null) {
+        try {
+          final bytes = await File(_selectedImage!.path).readAsBytes();
+          final base64Image = base64Encode(bytes);
+
+          final response = await http.post(
+            Uri.parse('https://api.imgbb.com/1/upload'),
+            body: {
+              'key': imgbbApiKey,
+              'image': base64Image,
+              'name': _nextId,
+            },
+          ).timeout(const Duration(seconds: 30));
+
+          debugPrint('ImgBB response: ${response.statusCode}');
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            if (data['success'] == true) {
+              imageUrl = data['data']['url'];
+              debugPrint('Image uploaded: $imageUrl');
+            }
+          } else {
+            debugPrint('ImgBB error: ${response.body}');
+          }
+        } catch (e) {
+          debugPrint('Image upload failed: $e');
+        }
+      }
+
       await FirebaseFirestore.instance.collection('findings').doc(_nextId).set({
         'name': _nameController.text,
         'type': _typeController.text,
@@ -3042,7 +3151,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         'description': '',
         'latitude': lat,
         'longitude': lng,
-        'imageUrl': null,
+        'imageUrl': imageUrl,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -3059,8 +3168,9 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error saving finding: $e'),
+            content: Text('Error: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
