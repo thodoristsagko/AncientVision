@@ -1629,6 +1629,8 @@ class _Finding {
   final double latitude;
   final double longitude;
   final String? imageUrl;
+  final List<String> photoGallery; // Multiple photos for photogrammetry
+  final String? model3dUrl; // Link to 3D model (Sketchfab, etc.)
 
   const _Finding({
     required this.id,
@@ -1640,7 +1642,28 @@ class _Finding {
     required this.latitude,
     required this.longitude,
     this.imageUrl,
+    this.photoGallery = const [],
+    this.model3dUrl,
   });
+
+  // Get color based on finding type for map markers
+  static Color getTypeColor(String type) {
+    final typeLower = type.toLowerCase();
+    if (typeLower.contains('pottery') || typeLower.contains('ceramic')) {
+      return const Color(0xFFE57373); // Red
+    } else if (typeLower.contains('coin') || typeLower.contains('metal')) {
+      return const Color(0xFFFFD54F); // Gold
+    } else if (typeLower.contains('statue') || typeLower.contains('sculpture')) {
+      return const Color(0xFF81C784); // Green
+    } else if (typeLower.contains('tool') || typeLower.contains('weapon')) {
+      return const Color(0xFF64B5F6); // Blue
+    } else if (typeLower.contains('bone') || typeLower.contains('fossil')) {
+      return const Color(0xFFFFFFFF); // White
+    } else if (typeLower.contains('jewelry') || typeLower.contains('ornament')) {
+      return const Color(0xFFBA68C8); // Purple
+    }
+    return const Color(0xFFFFC107); // Default amber
+  }
 }
 
 class _FindingsView extends StatefulWidget {
@@ -1652,8 +1675,11 @@ class _FindingsView extends StatefulWidget {
 
 class _FindingsViewState extends State<_FindingsView> {
   List<_Finding> _findings = [];
+  List<_Finding> _filteredFindings = [];
   bool _isLoading = true;
   int _selectedIndex = 0;
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -1661,17 +1687,289 @@ class _FindingsViewState extends State<_FindingsView> {
     _loadFindings();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterFindings(String query) {
+    setState(() {
+      _searchQuery = query;
+      if (query.isEmpty) {
+        _filteredFindings = _findings;
+      } else {
+        _filteredFindings = _findings.where((f) {
+          final searchLower = query.toLowerCase();
+          return f.name.toLowerCase().contains(searchLower) ||
+              f.type.toLowerCase().contains(searchLower) ||
+              f.site.toLowerCase().contains(searchLower) ||
+              f.id.toLowerCase().contains(searchLower);
+        }).toList();
+      }
+      if (_filteredFindings.isNotEmpty && _selectedIndex >= _filteredFindings.length) {
+        _selectedIndex = 0;
+      }
+    });
+  }
+
+  Future<void> _deleteFinding(String id) async {
+    try {
+      await FirebaseFirestore.instance.collection('findings').doc(id).delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Finding $id deleted'),
+            backgroundColor: const Color(0xFF4CAF50),
+          ),
+        );
+        _loadFindings();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportReport() async {
+    if (_findings.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No findings to export'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Generate HTML report
+      final reportDate = DateTime.now();
+      final dateStr = '${reportDate.year}-${reportDate.month.toString().padLeft(2, '0')}-${reportDate.day.toString().padLeft(2, '0')}';
+
+      final StringBuffer html = StringBuffer();
+      html.writeln('<!DOCTYPE html>');
+      html.writeln('<html><head>');
+      html.writeln('<meta charset="UTF-8">');
+      html.writeln('<meta name="viewport" content="width=device-width, initial-scale=1.0">');
+      html.writeln('<title>AncientVision Field Report - $dateStr</title>');
+      html.writeln('<style>');
+      html.writeln('body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f5f5; }');
+      html.writeln('.header { background: linear-gradient(135deg, #0D3A39, #1C2523); color: white; padding: 30px; border-radius: 16px; margin-bottom: 24px; }');
+      html.writeln('.header h1 { margin: 0 0 8px 0; font-size: 28px; }');
+      html.writeln('.header p { margin: 0; opacity: 0.8; }');
+      html.writeln('.stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }');
+      html.writeln('.stat { background: white; padding: 20px; border-radius: 12px; flex: 1; min-width: 150px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }');
+      html.writeln('.stat-value { font-size: 32px; font-weight: bold; color: #0D3A39; }');
+      html.writeln('.stat-label { color: #666; font-size: 14px; }');
+      html.writeln('.finding { background: white; border-radius: 16px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }');
+      html.writeln('.finding-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }');
+      html.writeln('.finding-name { font-size: 20px; font-weight: 600; color: #333; margin: 0; }');
+      html.writeln('.finding-id { background: #FFC107; color: #3E2723; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }');
+      html.writeln('.finding-type { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; }');
+      html.writeln('.finding-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }');
+      html.writeln('.finding-field { padding: 12px; background: #f8f9fa; border-radius: 8px; }');
+      html.writeln('.field-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 4px; }');
+      html.writeln('.field-value { font-size: 14px; color: #333; }');
+      html.writeln('.finding-image { width: 100%; max-height: 300px; object-fit: cover; border-radius: 12px; margin-top: 12px; }');
+      html.writeln('.footer { text-align: center; color: #666; font-size: 12px; margin-top: 40px; padding: 20px; }');
+      html.writeln('@media print { body { background: white; } .finding { break-inside: avoid; } }');
+      html.writeln('</style>');
+      html.writeln('</head><body>');
+
+      // Header
+      html.writeln('<div class="header">');
+      html.writeln('<h1>🏛️ AncientVision Field Report</h1>');
+      html.writeln('<p>Archaeological findings documentation • Generated on $dateStr</p>');
+      html.writeln('</div>');
+
+      // Stats
+      final typeCount = <String, int>{};
+      final siteCount = <String, int>{};
+      for (final f in _findings) {
+        typeCount[f.type] = (typeCount[f.type] ?? 0) + 1;
+        siteCount[f.site] = (siteCount[f.site] ?? 0) + 1;
+      }
+
+      html.writeln('<div class="stats">');
+      html.writeln('<div class="stat"><div class="stat-value">${_findings.length}</div><div class="stat-label">Total Findings</div></div>');
+      html.writeln('<div class="stat"><div class="stat-value">${typeCount.length}</div><div class="stat-label">Artifact Types</div></div>');
+      html.writeln('<div class="stat"><div class="stat-value">${siteCount.length}</div><div class="stat-label">Excavation Sites</div></div>');
+      html.writeln('</div>');
+
+      // Findings
+      for (final finding in _findings) {
+        final typeColor = _Finding.getTypeColor(finding.type);
+        final colorHex = '#${typeColor.value.toRadixString(16).substring(2)}';
+
+        html.writeln('<div class="finding">');
+        html.writeln('<div class="finding-header">');
+        html.writeln('<h2 class="finding-name">${_escapeHtml(finding.name)}</h2>');
+        html.writeln('<span class="finding-id">${finding.id}</span>');
+        html.writeln('</div>');
+        html.writeln('<span class="finding-type" style="background: ${colorHex}20; color: $colorHex;">${_escapeHtml(finding.type)}</span>');
+
+        html.writeln('<div class="finding-grid">');
+        html.writeln('<div class="finding-field"><div class="field-label">Site</div><div class="field-value">${_escapeHtml(finding.site)}</div></div>');
+        html.writeln('<div class="finding-field"><div class="field-label">Date Found</div><div class="field-value">${_escapeHtml(finding.date)}</div></div>');
+        html.writeln('<div class="finding-field"><div class="field-label">Coordinates</div><div class="field-value">${finding.latitude.toStringAsFixed(6)}, ${finding.longitude.toStringAsFixed(6)}</div></div>');
+        if (finding.model3dUrl != null && finding.model3dUrl!.isNotEmpty) {
+          html.writeln('<div class="finding-field"><div class="field-label">3D Model</div><div class="field-value"><a href="${_escapeHtml(finding.model3dUrl!)}" target="_blank">View Model</a></div></div>');
+        }
+        html.writeln('</div>');
+
+        if (finding.description.isNotEmpty) {
+          html.writeln('<div class="finding-field" style="margin-top: 12px;"><div class="field-label">Description</div><div class="field-value">${_escapeHtml(finding.description)}</div></div>');
+        }
+
+        if (finding.imageUrl != null && finding.imageUrl!.isNotEmpty) {
+          html.writeln('<img class="finding-image" src="${finding.imageUrl}" alt="${_escapeHtml(finding.name)}">');
+        }
+
+        if (finding.photoGallery.isNotEmpty) {
+          html.writeln('<div style="margin-top: 12px;"><div class="field-label">Photo Gallery (${finding.photoGallery.length} photos)</div>');
+          html.writeln('<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">');
+          for (int i = 0; i < finding.photoGallery.length && i < 4; i++) {
+            html.writeln('<img src="${finding.photoGallery[i]}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px;" alt="Gallery photo ${i + 1}">');
+          }
+          if (finding.photoGallery.length > 4) {
+            html.writeln('<div style="width: 100px; height: 100px; background: #e0e0e0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666;">+${finding.photoGallery.length - 4} more</div>');
+          }
+          html.writeln('</div></div>');
+        }
+
+        html.writeln('</div>');
+      }
+
+      // Footer
+      html.writeln('<div class="footer">');
+      html.writeln('<p>Generated by AncientVision • FLL Archaeological Field Management App</p>');
+      html.writeln('<p>© ${reportDate.year} AncientVision Project</p>');
+      html.writeln('</div>');
+
+      html.writeln('</body></html>');
+
+      // Save to file
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/AncientVision_Report_$dateStr.html');
+      await file.writeAsString(html.toString());
+
+      // Show success dialog with options
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1C2523),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 28),
+                SizedBox(width: 12),
+                Text('Report Generated!', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your archaeological findings report has been saved.',
+                  style: TextStyle(color: Colors.white.withOpacity(0.8)),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.folder, color: Color(0xFFFFC107), size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          file.path,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.6),
+                            fontSize: 11,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Close', style: TextStyle(color: Colors.white.withOpacity(0.6))),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final uri = Uri.file(file.path);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri);
+                  }
+                },
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('Open Report'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFC107),
+                  foregroundColor: const Color(0xFF3E2723),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating report: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  String _escapeHtml(String text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+  }
+
   Future<void> _loadFindings() async {
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('findings')
           .orderBy('createdAt', descending: true)
-          .limit(3)
+          .limit(20) // Increased limit for better search
           .get();
 
       final findings = snapshot.docs.map((doc) {
         final data = doc.data();
         debugPrint('Loading finding ${doc.id}, imageUrl: ${data['imageUrl']}');
+        // Parse photoGallery from Firestore
+        List<String> gallery = [];
+        if (data['photoGallery'] != null) {
+          gallery = List<String>.from(data['photoGallery']);
+        }
         return _Finding(
           id: doc.id,
           name: data['name'] ?? '',
@@ -1682,11 +1980,14 @@ class _FindingsViewState extends State<_FindingsView> {
           latitude: (data['latitude'] ?? 37.9715).toDouble(),
           longitude: (data['longitude'] ?? 23.7267).toDouble(),
           imageUrl: data['imageUrl'],
+          photoGallery: gallery,
+          model3dUrl: data['model3dUrl'],
         );
       }).toList();
 
       setState(() {
         _findings = findings;
+        _filteredFindings = findings;
         _isLoading = false;
         if (_findings.isNotEmpty && _selectedIndex >= _findings.length) {
           _selectedIndex = 0;
@@ -1701,7 +2002,7 @@ class _FindingsViewState extends State<_FindingsView> {
 
   @override
   Widget build(BuildContext context) {
-    final selected = _findings.isNotEmpty ? _findings[_selectedIndex] : null;
+    final selected = _filteredFindings.isNotEmpty ? _filteredFindings[_selectedIndex] : null;
 
     return Container(
       decoration: const BoxDecoration(
@@ -1715,59 +2016,134 @@ class _FindingsViewState extends State<_FindingsView> {
         ),
       ),
       child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Findings',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
+        child: RefreshIndicator(
+          onRefresh: _loadFindings,
+          color: const Color(0xFFFFC107),
+          backgroundColor: const Color(0xFF0D3A39),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Findings',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Tap on a finding in the table to see details.',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.75),
-                        fontSize: 13,
-                      ),
+                const SizedBox(height: 12),
+
+                // SEARCH BAR
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                      width: 1,
                     ),
                   ),
-                  // Reload button
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _isLoading = true;
-                      });
-                      _loadFindings();
-                    },
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
-                          width: 1,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _filterFindings,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search by name, type, site, or ID...',
+                      hintStyle: TextStyle(
+                        color: Colors.white.withOpacity(0.4),
+                        fontSize: 14,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        color: Colors.white.withOpacity(0.5),
+                        size: 20,
+                      ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? GestureDetector(
+                              onTap: () {
+                                _searchController.clear();
+                                _filterFindings('');
+                              },
+                              child: Icon(
+                                Icons.clear_rounded,
+                                color: Colors.white.withOpacity(0.5),
+                                size: 20,
+                              ),
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _filteredFindings.isEmpty && _searchController.text.isNotEmpty
+                            ? 'No results found'
+                            : 'Pull down to refresh • Swipe left to delete',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.75),
+                          fontSize: 12,
                         ),
                       ),
-                      child: const Icon(
-                        Icons.refresh_rounded,
-                        color: Colors.white,
-                        size: 18,
+                    ),
+                    // Reload button
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _isLoading = true;
+                        });
+                        _loadFindings();
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.refresh_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                       ),
                     ),
-                  ),
+                    // Export Report button
+                    GestureDetector(
+                      onTap: _exportReport,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(0xFF4CAF50).withOpacity(0.5),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.file_download_outlined,
+                          color: Color(0xFF4CAF50),
+                          size: 18,
+                        ),
+                      ),
+                    ),
                   // AI Recognition button
                   if (AuthService.currentUser != null)
                     GestureDetector(
@@ -1945,7 +2321,7 @@ class _FindingsViewState extends State<_FindingsView> {
                   ),
                 )
               else ...[
-                // RECENT FINDINGS TABLE
+                // RECENT FINDINGS TABLE WITH SWIPE TO DELETE
                 ClipRRect(
                   borderRadius: BorderRadius.circular(24),
                   child: BackdropFilter(
@@ -1960,55 +2336,151 @@ class _FindingsViewState extends State<_FindingsView> {
                           width: 1,
                         ),
                       ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-                          showCheckboxColumn: false,
-                          headingTextStyle: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                          dataTextStyle: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                          columnSpacing: 12,
-                          columns: const [
-                            DataColumn(label: Text('ID')),
-                            DataColumn(label: Text('Name')),
-                            DataColumn(label: Text('Type')),
-                            DataColumn(label: Text('Site')),
-                            DataColumn(label: Text('Date')),
-                          ],
-                          rows: List.generate(_findings.length, (index) {
-                            final f = _findings[index];
+                      child: Column(
+                        children: [
+                          // Findings list with swipe to delete
+                          ..._filteredFindings.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final f = entry.value;
                             final isSelected = index == _selectedIndex;
-                            return DataRow(
-                              selected: isSelected,
-                              color: WidgetStateProperty.resolveWith<Color?>(
-                                (Set<WidgetState> states) {
-                                  if (states.contains(WidgetState.selected)) {
-                                    return const Color(0xFFFFC107).withOpacity(0.3);
-                                  }
-                                  return null;
-                                },
+                            final typeColor = _Finding.getTypeColor(f.type);
+
+                            return Dismissible(
+                              key: Key(f.id),
+                              direction: AuthService.currentUser != null
+                                  ? DismissDirection.endToStart
+                                  : DismissDirection.none,
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 20),
+                                margin: const EdgeInsets.symmetric(vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.8),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.delete_outline, color: Colors.white),
                               ),
-                              onSelectChanged: (_) {
-                                setState(() {
-                                  _selectedIndex = index;
-                                });
+                              confirmDismiss: (direction) async {
+                                return await showDialog(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    backgroundColor: const Color(0xFF1C2523),
+                                    title: const Text('Delete Finding', style: TextStyle(color: Colors.white)),
+                                    content: Text('Delete ${f.name}?', style: const TextStyle(color: Colors.white70)),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(ctx).pop(false),
+                                        child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.of(ctx).pop(true),
+                                        child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                  ),
+                                );
                               },
-                              cells: [
-                                DataCell(Text(f.id)),
-                                DataCell(Text(f.name)),
-                                DataCell(Text(f.type)),
-                                DataCell(Text(f.site)),
-                                DataCell(Text(f.date)),
-                              ],
+                              onDismissed: (_) => _deleteFinding(f.id),
+                              child: GestureDetector(
+                                onTap: () => setState(() => _selectedIndex = index),
+                                child: Container(
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? const Color(0xFFFFC107).withOpacity(0.2)
+                                        : Colors.white.withOpacity(0.05),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? const Color(0xFFFFC107).withOpacity(0.5)
+                                          : Colors.transparent,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      // Type color indicator
+                                      Container(
+                                        width: 4,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          color: typeColor,
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      // Finding info
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  f.id,
+                                                  style: TextStyle(
+                                                    color: Colors.white.withOpacity(0.5),
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    f.name,
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              '${f.type} • ${f.site} • ${f.date}',
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(0.6),
+                                                fontSize: 11,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // 3D model indicator
+                                      if (f.model3dUrl != null)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF7C4DFF).withOpacity(0.3),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Text(
+                                            '3D',
+                                            style: TextStyle(
+                                              color: Color(0xFF7C4DFF),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      const SizedBox(width: 8),
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: Colors.white.withOpacity(0.3),
+                                        size: 20,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             );
-                          }),
-                        ),
+                          }).toList(),
+                        ],
                       ),
                     ),
                   ),
@@ -2031,7 +2503,7 @@ class _FindingsViewState extends State<_FindingsView> {
                           width: 1,
                         ),
                       ),
-                      child: _FindingsMap(findings: _findings, selectedIndex: _selectedIndex),
+                      child: _FindingsMap(findings: _filteredFindings, selectedIndex: _selectedIndex),
                     ),
                   ),
                 ),
@@ -2042,6 +2514,7 @@ class _FindingsViewState extends State<_FindingsView> {
                 if (selected != null) _FindingDetailCard(finding: selected),
               ],
             ],
+          ),
           ),
         ),
       ),
@@ -2079,8 +2552,19 @@ class _FindingDetailCard extends StatelessWidget {
     );
   }
 
+  Future<void> _open3DModel(BuildContext context) async {
+    if (finding.model3dUrl != null) {
+      final url = Uri.parse(finding.model3dUrl!);
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final typeColor = _Finding.getTypeColor(finding.type);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
@@ -2096,65 +2580,157 @@ class _FindingDetailCard extends StatelessWidget {
               width: 1,
             ),
           ),
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Finding image
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.35),
-                    width: 1,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Finding image with type color border
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: typeColor.withOpacity(0.6),
+                        width: 2,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: finding.imageUrl != null
+                          ? _buildFindingImage(finding.imageUrl!)
+                          : Icon(
+                              Icons.image_outlined,
+                              color: typeColor.withOpacity(0.5),
+                              size: 36,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            // Type color indicator
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: typeColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                finding.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${finding.type} • ${finding.site} • ${finding.date}',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (finding.description.isNotEmpty)
+                          Text(
+                            finding.description,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              // Action buttons row
+              if (finding.model3dUrl != null || finding.photoGallery.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Row(
+                    children: [
+                      // 3D Model button
+                      if (finding.model3dUrl != null)
+                        GestureDetector(
+                          onTap: () => _open3DModel(context),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFF7C4DFF).withOpacity(0.5),
+                                width: 1,
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.view_in_ar_rounded, color: Color(0xFF7C4DFF), size: 16),
+                                SizedBox(width: 6),
+                                Text(
+                                  'View 3D Model',
+                                  style: TextStyle(
+                                    color: Color(0xFF7C4DFF),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                      if (finding.model3dUrl != null && finding.photoGallery.isNotEmpty)
+                        const SizedBox(width: 8),
+
+                      // Photo gallery indicator
+                      if (finding.photoGallery.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.photo_library_outlined, color: Colors.white.withOpacity(0.7), size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${finding.photoGallery.length} photos',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(17),
-                  child: finding.imageUrl != null
-                      ? _buildFindingImage(finding.imageUrl!)
-                      : const Icon(
-                          Icons.image_outlined,
-                          color: Colors.white70,
-                          size: 36,
-                        ),
-                ),
-              ),
-              const SizedBox(width: 16),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      finding.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${finding.type} • ${finding.site} • ${finding.date}',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      finding.description,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
@@ -2214,21 +2790,51 @@ class _FindingsMapState extends State<_FindingsMap> {
       final index = entry.key;
       final finding = entry.value;
       final isSelected = index == widget.selectedIndex;
+      final typeColor = _Finding.getTypeColor(finding.type);
 
       return Marker(
         point: LatLng(finding.latitude, finding.longitude),
-        width: isSelected ? 40 : 32,
-        height: isSelected ? 40 : 32,
+        width: isSelected ? 48 : 36,
+        height: isSelected ? 48 : 36,
         child: GestureDetector(
           onTap: () => _openInGoogleMaps(),
-          child: Icon(
-            Icons.location_pin,
-            size: isSelected ? 40 : 32,
-            color: isSelected ? const Color(0xFFFFC107) : Colors.red,
-            shadows: [
-              Shadow(
-                color: Colors.black.withOpacity(0.5),
-                blurRadius: 4,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Outer glow for selected marker
+              if (isSelected)
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: typeColor.withOpacity(0.3),
+                  ),
+                ),
+              // Main marker icon
+              Icon(
+                Icons.location_pin,
+                size: isSelected ? 40 : 32,
+                color: isSelected ? typeColor : typeColor.withOpacity(0.85),
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withOpacity(0.5),
+                    blurRadius: 4,
+                  ),
+                ],
+              ),
+              // Type indicator dot
+              Positioned(
+                top: isSelected ? 8 : 4,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: typeColor, width: 2),
+                  ),
+                ),
               ),
             ],
           ),
@@ -2472,10 +3078,9 @@ class _AddView extends StatelessWidget {
                         title: 'Photogrammetry',
                         description: 'Create a 3D model of the finding using multiple photos.',
                         onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Photogrammetry coming soon'),
-                            ),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
                           );
                         },
                       ),
@@ -2670,13 +3275,16 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   final _dateController = TextEditingController();
   final _latController = TextEditingController();
   final _lngController = TextEditingController();
+  final _model3dUrlController = TextEditingController();
   bool _hasImage = false;
   XFile? _selectedImage;
+  final List<XFile> _photoGallery = []; // For photogrammetry - multiple photos
   final ImagePicker _imagePicker = ImagePicker();
   String _nextId = 'A-001';
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isGettingLocation = false;
+  bool _isPhotogrammetryMode = false;
 
   // Random example hints
   late String _nameHint;
@@ -3143,6 +3751,40 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         }
       }
 
+      // Upload photo gallery images for photogrammetry
+      List<String> galleryUrls = [];
+      if (_photoGallery.isNotEmpty) {
+        for (int i = 0; i < _photoGallery.length; i++) {
+          try {
+            final bytes = await File(_photoGallery[i].path).readAsBytes();
+            final base64Image = base64Encode(bytes);
+            final response = await http.post(
+              Uri.parse('https://api.imgbb.com/1/upload'),
+              body: {
+                'key': imgbbApiKey,
+                'image': base64Image,
+                'name': '${_nextId}_photo_$i',
+              },
+            ).timeout(const Duration(seconds: 30));
+
+            if (response.statusCode == 200) {
+              final data = jsonDecode(response.body);
+              if (data['success'] == true) {
+                galleryUrls.add(data['data']['url']);
+              }
+            }
+          } catch (e) {
+            debugPrint('Gallery photo $i upload failed: $e');
+          }
+        }
+      }
+
+      // Get 3D model URL if provided
+      String? model3dUrl;
+      if (_model3dUrlController.text.trim().isNotEmpty) {
+        model3dUrl = _model3dUrlController.text.trim();
+      }
+
       await FirebaseFirestore.instance.collection('findings').doc(_nextId).set({
         'name': _nameController.text,
         'type': _typeController.text,
@@ -3152,6 +3794,8 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         'latitude': lat,
         'longitude': lng,
         'imageUrl': imageUrl,
+        'photoGallery': galleryUrls,
+        'model3dUrl': model3dUrl,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -3189,7 +3833,52 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     _dateController.dispose();
     _latController.dispose();
     _lngController.dispose();
+    _model3dUrlController.dispose();
     super.dispose();
+  }
+
+  // Add multiple photos for photogrammetry
+  Future<void> _addPhotogrammetryPhoto() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        setState(() {
+          _photoGallery.add(image);
+          _isPhotogrammetryMode = true;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Photo ${_photoGallery.length} added! Take more for better 3D reconstruction.'),
+              backgroundColor: const Color(0xFF4CAF50),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removeGalleryPhoto(int index) {
+    setState(() {
+      _photoGallery.removeAt(index);
+      if (_photoGallery.isEmpty) {
+        _isPhotogrammetryMode = false;
+      }
+    });
   }
 
   @override
@@ -3788,6 +4477,307 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                     ),
                                   ),
                                 ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // PHOTOGRAMMETRY SECTION - Multiple photos for 3D reconstruction
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: const Color(0xFF7C4DFF).withOpacity(0.35),
+                            width: 1,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.view_in_ar_rounded,
+                                      color: Color(0xFF7C4DFF),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Text(
+                                              'Photogrammetry',
+                                              style: TextStyle(
+                                                color: Color(0xFF7C4DFF),
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: const Text(
+                                                '3D',
+                                                style: TextStyle(
+                                                  color: Color(0xFF7C4DFF),
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _photoGallery.isEmpty
+                                              ? 'Take multiple photos for 3D model'
+                                              : '${_photoGallery.length} photos captured',
+                                          style: TextStyle(
+                                            color: Colors.white.withOpacity(0.6),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Photo gallery preview
+                              if (_photoGallery.isNotEmpty) ...[
+                                SizedBox(
+                                  height: 70,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _photoGallery.length,
+                                    itemBuilder: (context, index) {
+                                      return Stack(
+                                        children: [
+                                          Container(
+                                            width: 70,
+                                            height: 70,
+                                            margin: const EdgeInsets.only(right: 8),
+                                            decoration: BoxDecoration(
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: const Color(0xFF7C4DFF).withOpacity(0.5),
+                                                width: 2,
+                                              ),
+                                            ),
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(10),
+                                              child: Image.file(
+                                                File(_photoGallery[index].path),
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            top: 2,
+                                            right: 10,
+                                            child: GestureDetector(
+                                              onTap: () => _removeGalleryPhoto(index),
+                                              child: Container(
+                                                width: 20,
+                                                height: 20,
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.red,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(Icons.close, color: Colors.white, size: 14),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+
+                              // Add photo button
+                              GestureDetector(
+                                onTap: _addPhotogrammetryPhoto,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(0xFF7C4DFF).withOpacity(0.5),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.add_a_photo_rounded, color: Color(0xFF7C4DFF), size: 18),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _photoGallery.isEmpty ? 'Start Capture' : 'Add More Photos',
+                                        style: const TextStyle(
+                                          color: Color(0xFF7C4DFF),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              // Tips
+                              const SizedBox(height: 12),
+                              Text(
+                                'Tip: Take 10-20 photos from different angles for best 3D reconstruction',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.4),
+                                  fontSize: 11,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // 3D MODEL URL FIELD
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.35),
+                            width: 1,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.threed_rotation_rounded,
+                                      color: Color(0xFFFFC107),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              '3D Model URL',
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(0.7),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                'Optional',
+                                                style: TextStyle(
+                                                  color: Colors.white.withOpacity(0.5),
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Link to Sketchfab, etc.',
+                                          style: TextStyle(
+                                            color: Colors.white.withOpacity(0.4),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.2),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: TextField(
+                                  controller: _model3dUrlController,
+                                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                                  decoration: InputDecoration(
+                                    hintText: 'https://sketchfab.com/models/...',
+                                    hintStyle: TextStyle(
+                                      color: Colors.white.withOpacity(0.4),
+                                      fontSize: 14,
+                                    ),
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
