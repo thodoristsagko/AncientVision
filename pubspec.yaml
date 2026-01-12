@@ -21,6 +21,26 @@ dependencies:
   geolocator: ^10.1.0
   image_picker: ^1.0.7
   http: ^1.1.0
+  flutter_blue_plus: ^1.31.0
+  # Ultra-advanced photogrammetry features
+  image: ^4.1.7  # Advanced image processing & quality analysis
+  sensors_plus: ^4.0.2  # Device sensors for AR-like guidance
+  camera: ^0.10.5+9  # Advanced camera control (photo & video)
+  archive: ^3.4.10  # ZIP creation for exports
+  model_viewer_plus: ^1.7.0  # 3D model viewer (WebView-based)
+  vector_math: ^2.1.4  # 3D math utilities for custom point cloud rendering
+  video_player: ^2.8.2  # Video playback for frame extraction
+  # ULTRA++ Advanced Features
+  # qr_code_scanner: ^1.0.1  # QR code object tagging (temporarily disabled due to build issues)
+  speech_to_text: ^6.6.0  # Voice commands (hands-free)
+  flutter_tts: ^4.0.2  # Text-to-speech feedback
+  shared_preferences: ^2.2.2  # Settings persistence
+  flutter_cache_manager: ^3.3.1  # Offline caching
+  pdf: ^3.10.7  # PDF report generation
+  share_plus: ^7.2.1  # Advanced sharing options
+  uuid: ^4.2.2  # UUID generation for reconstruction IDs
+  path: ^1.8.3  # Path manipulation utilities
+  intl: ^0.19.0  # Date/time formatting for reports
 
 dev_dependencies:
   flutter_test:

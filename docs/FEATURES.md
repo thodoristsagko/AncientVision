@@ -1,0 +1,409 @@
+# AncientVision Features Guide
+
+Complete documentation of all features and capabilities.
+
+---
+
+## Table of Contents
+
+1. [Authentication](#1-authentication)
+2. [Dashboard](#2-dashboard)
+3. [Findings Management](#3-findings-management)
+4. [3D Photogrammetry](#4-3d-photogrammetry)
+5. [Manual Entry Form](#5-manual-entry-form)
+6. [Safety Monitoring](#6-safety-monitoring)
+7. [Export & Reports](#7-export--reports)
+8. [Tools Menu](#8-tools-menu)
+9. [Offline Support](#9-offline-support)
+
+---
+
+## 1. Authentication
+
+### Login Methods
+- **Email/Password** - Traditional registration with full name
+- **Google Sign-In** - One-tap OAuth authentication
+
+### Security Features
+- Firebase Authentication backend
+- Secure token management
+- Activity logging to Firestore
+- Session persistence
+
+### User Profile
+- Display name
+- Email address
+- Profile photo (Google accounts)
+- Creation date
+- Last login timestamp
+
+---
+
+## 2. Dashboard
+
+The home screen provides a complete overview of your archaeological data.
+
+### Statistics Cards
+| Card | Description |
+|------|-------------|
+| Total Findings | Count of all recorded artifacts |
+| Today's Finds | Findings added in the last 24 hours |
+| By Type | Breakdown by artifact type |
+| By Site | Distribution across excavation sites |
+
+### Recent Activity
+- Last 5 findings with thumbnails
+- Quick tap to view details
+- Timestamp and type indicators
+
+### Quick Actions
+- **Manual Entry** - Jump to recording form
+- **3D Capture** - Start photogrammetry
+- **Export PDF** - Generate reports
+- **View All** - Browse findings gallery
+
+### Sync Status
+- Shows count of pending offline uploads
+- "Sync Now" button when online
+- Visual indicator during sync
+
+---
+
+## 3. Findings Management
+
+### Gallery View
+- Grid layout with thumbnails
+- Search by name, type, or site
+- Filter by date range
+- Sort by date, name, or type
+
+### Map View
+- Interactive map with markers
+- Cluster view for dense areas
+- Tap marker for finding preview
+- GPS coordinates display
+
+### Finding Details
+Expandable sections showing:
+
+**Basic Information**
+- Name, type, site, date
+- Description and notes
+- GPS coordinates
+
+**Artifact Measurements**
+- Dimensions (L x W x H in mm)
+- Weight (grams)
+- Material classification
+
+**Archaeological Context**
+- Find number (catalog ID)
+- Excavation unit
+- Stratigraphic layer
+- Depth below surface
+- Depth below datum
+
+**Scientific Data**
+- Dating method
+- Cultural period
+- Soil type
+- Munsell color code
+- Preservation condition
+
+**Media**
+- Photo gallery (swipeable)
+- 3D model viewer (if available)
+
+---
+
+## 4. 3D Photogrammetry
+
+### Hero Feature
+The centerpiece of AncientVision - real Structure from Motion 3D reconstruction.
+
+### Capture System
+
+#### 16 Optimized Angles
+| Ring | Positions | Description |
+|------|-----------|-------------|
+| Ring 1 | 8 | Eye level, every 45° |
+| Ring 2 | 4 | 45° elevation, every 90° |
+| Top | 2 | 80° and 70° from above |
+| Detail | 2 | Close-up shots |
+
+#### Capture Modes
+- **Photo Mode** - Individual captures with guidance
+- **Video Mode** - Continuous recording with frame extraction
+- **Tutorial Mode** - Step-by-step for beginners
+
+### AR-Like Guidance
+Real-time sensor feedback during capture:
+- Device tilt indicators (X/Y axes)
+- Compass heading display
+- Rotation speed warning
+- Visual angle markers
+
+### Quality Analysis
+Each photo is analyzed for:
+- **Sharpness** - Laplacian variance (target: >500)
+- **Exposure** - Brightness histogram
+- **Blur** - Motion blur detection
+- **Noise** - Estimation of sensor noise
+
+### 3D Reconstruction
+
+#### Process Steps
+1. Load & validate images
+2. Extract Harris corner features
+3. Match features between images
+4. Estimate Essential Matrix (8-point algorithm)
+5. RANSAC outlier rejection
+6. Recover camera poses
+7. Triangulate 3D points
+8. Bundle adjustment optimization
+9. Generate point cloud
+10. Export results
+
+#### Algorithms Used
+| Algorithm | Purpose |
+|-----------|---------|
+| Harris Corner | Feature detection |
+| Cross-Correlation | Feature matching |
+| 8-Point Algorithm | Essential matrix |
+| RANSAC | Outlier rejection |
+| Triangulation | 3D point computation |
+| Bundle Adjustment | Refinement |
+
+#### Success Metrics
+- **Reprojection Error** - Target: <2.0 pixels
+- **Coverage** - Target: >60%
+- **Point Count** - Typical: 500-5000 points
+- **Success Rate** - 85-95% with proper capture
+
+### 3D Viewer
+Interactive visualization with:
+- Touch rotation (X/Y axes)
+- Pinch zoom
+- Two-finger pan
+- Auto-rotation toggle
+- Point size adjustment
+- Color/grayscale toggle
+- Statistics overlay
+
+### Export Options
+- **PLY Format** - Point cloud with colors
+- **Direct Share** - Via system share dialog
+
+### Workflow Integration
+After reconstruction:
+1. "View 3D Model" - Interactive viewer
+2. "Complete Form" - Continue to manual entry
+3. 3D data automatically saved with finding
+
+---
+
+## 5. Manual Entry Form
+
+Comprehensive archaeological documentation form with 25+ fields.
+
+### Basic Information
+| Field | Description | Example |
+|-------|-------------|---------|
+| Name | Artifact identifier | "Bronze Fibula" |
+| Type | Artifact category | "Metal Object" |
+| Site | Excavation site name | "Amphipolis Tomb D" |
+| Date | Discovery date | "2024-03-15" |
+| Description | Detailed notes | Free text |
+
+### Location Data
+| Field | Description |
+|-------|-------------|
+| Latitude | GPS north/south |
+| Longitude | GPS east/west |
+| GPS Capture | Auto-fill from device |
+
+### Archaeological Context
+| Field | Description | Example |
+|-------|-------------|---------|
+| Find Number | Catalog/accession ID | "2024-FLD-001" |
+| Excavation Unit | Grid square/trench | "A4", "Trench 2" |
+| Stratigraphic Layer | Context number | "Layer 5" |
+| Depth (Surface) | Meters below surface | "1.25" |
+| Depth (Datum) | Meters below datum | "2.50" |
+
+### Physical Properties
+| Field | Unit | Range |
+|-------|------|-------|
+| Length | mm | 0-10000 |
+| Width | mm | 0-10000 |
+| Height | mm | 0-10000 |
+| Weight | grams | 0-100000 |
+
+### Classification
+| Field | Options |
+|-------|---------|
+| Material | Terracotta, Bronze, Iron, Gold, Silver, Limestone, Marble, Glass, Bone, Wood, Textile, Other |
+| Condition | Excellent, Good, Fair, Poor, Fragmentary |
+| Dating Method | Stratigraphy, Typology, C14, TL/OSL, Dendrochronology, Numismatic, Other |
+| Cultural Period | Neolithic, Bronze Age, Iron Age, Classical, Hellenistic, Roman, Byzantine, Medieval, Modern |
+
+### Soil Information
+| Field | Description |
+|-------|-------------|
+| Soil Type | Sandy loam, Clay, Silt, etc. |
+| Munsell Color | Standardized soil color code |
+
+### Additional Data
+| Field | Description |
+|-------|-------------|
+| Associated Finds | Related artifact IDs |
+| Field Notes | Excavation observations |
+| Excavator Name | Person who discovered |
+| Weathering Degree | Surface degradation level |
+
+### Photo Attachment
+- Capture from camera
+- Select from gallery
+- Multiple photos supported
+- Auto-compression (10x smaller)
+
+### Form Features
+- **Auto-Save** - Drafts saved every 2 seconds
+- **Draft Recovery** - Resume incomplete forms
+- **Validation** - Required field checking
+- **Smart Suggestions** - Based on previous entries
+
+---
+
+## 6. Safety Monitoring
+
+### Hardware Integration
+Connects to M5StickC Plus 2 microcontroller via Bluetooth Low Energy.
+
+### Sensors Monitored
+
+#### Vibration (IMU)
+| Level | Range | Meaning |
+|-------|-------|---------|
+| Safe | <0.3g | Normal conditions |
+| Warning | 0.3-0.8g | Ground vibration detected |
+| Critical | >0.8g | Earthquake/collapse risk |
+
+#### Soil Moisture
+| Level | Range | Meaning |
+|-------|-------|---------|
+| Safe | 30-60% | Optimal conditions |
+| Dry | <30% | Soil cracking risk |
+| Wet | >60% | Saturation warning |
+| Critical | >80% | Collapse risk |
+
+### Display Features
+- **Live Values** - Real-time sensor readings
+- **Status Indicators** - Color-coded safety levels
+- **History Graph** - 1-hour vibration trend
+- **Alert Timeline** - Chronological alert log
+
+### Alert System
+- Visual warnings on screen
+- Firebase logging for records
+- Smart insights with pattern analysis
+
+### Connection Status
+- BLE device discovery
+- Connection state indicator
+- Reconnection handling
+
+---
+
+## 7. Export & Reports
+
+### PDF Reports
+Professional documentation for each finding:
+- Cover page with finding name
+- Metadata grid layout
+- Photo gallery (up to 6 images)
+- Measurement tables
+- Scientific annotations
+- Institutional footer
+
+### Data Export
+- **JSON** - All findings as structured data
+- **PLY** - 3D point clouds
+- **Share** - Via system share dialog
+
+### Batch Operations
+- Select multiple findings
+- Export all to single file
+- Share directly from app
+
+---
+
+## 8. Tools Menu
+
+Quick access hub for all features:
+
+### Hero Feature Card
+- **3D Reconstruction** - Prominent display
+- Shows algorithm badges (RANSAC, Triple Validation)
+- Success rate indicator (85-95%)
+
+### Capture & Documentation
+- Manual Entry Form
+- Quick Photo Capture
+- Batch Recording Mode
+
+### AI & Analysis
+- Smart Field Suggestions
+- Artifact Type Detection
+- Quality Assessment
+
+### Export & Reports
+- PDF Report Generator
+- JSON Data Export
+- 3D Model Export
+
+---
+
+## 9. Offline Support
+
+### Auto-Save System
+- Form drafts saved every 2 seconds
+- Triggered on any text change
+- Survives app crashes
+
+### Draft Recovery
+- Automatic prompt on app launch
+- "Resume" or "Discard" options
+- Full form state preserved
+
+### Offline Queue
+- Findings saved locally when offline
+- Automatic sync when online
+- Visual indicator of pending uploads
+
+### Local Cache
+- Recent findings cached
+- Browse without internet
+- Images stored locally
+
+### Sync Features
+- "Sync Now" manual trigger
+- Background sync when online
+- Conflict resolution (server wins)
+
+---
+
+## Feature Matrix
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| User Authentication | ✅ Complete | Email + Google |
+| Findings CRUD | ✅ Complete | Full management |
+| 3D Reconstruction | ✅ Complete | Real SfM |
+| Photo Capture | ✅ Complete | Camera + Gallery |
+| PDF Export | ✅ Complete | Professional |
+| Safety Monitoring | ✅ Complete | BLE + Firebase |
+| Offline Support | ✅ Complete | Auto-save + Queue |
+| Voice Commands | ✅ Complete | Speech-to-text |
+| AI Recognition | ⚠️ Optional | Can be enabled |
+| Cloud 3D Processing | 🔄 Future | API integration |
