@@ -477,6 +477,64 @@ class ReconstructionService {
 }
 ```
 
+### CloudPhotogrammetryService
+
+**File:** `lib/services/cloud_photogrammetry_service.dart`
+
+FREE cloud photogrammetry via OpenScan Cloud API.
+
+```dart
+class CloudPhotogrammetryService {
+  // API Configuration
+  static const String _baseUrl = 'https://openscan.eu/api';
+  static const String _username = 'openscan';  // Public credentials
+  static const String _password = 'free';
+
+  // Full reconstruction pipeline
+  Future<CloudReconstructionResult> reconstruct({
+    required List<XFile> images,
+    required String email,
+    String projectName = 'AncientVision_Scan',
+    Function(double progress, String status)? onProgress,
+  });
+
+  // Individual steps (for advanced use)
+  Future<String?> requestToken({required String email});
+  Future<String?> createProject({required String projectName});
+  Future<bool> uploadPhotos({required List<XFile> photos});
+  Future<bool> startProcessing();
+  Future<CloudProjectStatus?> getProjectStatus();
+  Future<File?> downloadModel({required String downloadUrl});
+
+  // Control
+  void cancel();
+}
+```
+
+#### Cloud vs On-Device Comparison
+
+| Aspect | Cloud (OpenScan) | On-Device (SfM) |
+|--------|------------------|-----------------|
+| **Quality** | Dense mesh + textures | Sparse point cloud |
+| **Time** | 5-15 minutes | 1-3 minutes |
+| **Internet** | Required | Not required |
+| **Output** | GLB/OBJ | PLY |
+| **Difficult objects** | Better handling | Basic only |
+| **Cost** | FREE | FREE |
+
+#### Handling Difficult Objects
+
+Both methods use feature-based matching, which struggles with:
+
+| Object Type | Why It's Hard | Mitigation |
+|-------------|---------------|------------|
+| Black objects | Low contrast | Chalk/powder spray |
+| Shiny surfaces | Moving reflections | Matte coating |
+| Smooth surfaces | No features to match | Add temporary texture |
+| Transparent | Light passes through | Not suitable |
+
+**Professional Solution:** Temporary texture spray (chalk, talcum, flour) is standard practice in museum digitization.
+
 ### ImageService
 
 **File:** `lib/services/image_service.dart`

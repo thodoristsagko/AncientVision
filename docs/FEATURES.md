@@ -180,6 +180,75 @@ Each photo is analyzed for:
 - **Point Count** - Typical: 500-5000 points
 - **Success Rate** - 85-95% with proper capture
 
+### Processing Methods
+
+#### Cloud Processing (Recommended)
+Uses **OpenScan Cloud API** - completely FREE service.
+
+| Aspect | Details |
+|--------|---------|
+| Quality | Professional dense mesh with textures |
+| Time | 5-15 minutes |
+| Requires | Internet connection |
+| Output | GLB/OBJ with textures |
+| Best for | Final documentation |
+
+#### On-Device Processing
+Quick preview using on-device SfM algorithms.
+
+| Aspect | Details |
+|--------|---------|
+| Quality | Sparse point cloud |
+| Time | 1-3 minutes |
+| Requires | Nothing (works offline) |
+| Output | PLY point cloud |
+| Best for | Quick preview, field verification |
+
+### Handling Difficult Objects
+
+Some objects are challenging for ANY photogrammetry system due to physics limitations.
+
+#### Problem Objects
+| Object Type | Issue | Difficulty |
+|-------------|-------|------------|
+| **Black objects** | Low contrast, few features | High |
+| **Shiny/metallic** | Specular reflections move | High |
+| **Smooth surfaces** | No texture to match | High |
+| **Transparent** | Light passes through | Very High |
+| **Uniform color** | No distinct features | Medium |
+
+#### Solutions for Difficult Objects
+
+**Temporary Texture Methods:**
+| Method | How to Apply | Removal |
+|--------|--------------|---------|
+| Chalk spray | Light mist coating | Brush off |
+| Talcum powder | Dust with brush | Blow off |
+| Flour | Light dusting | Wash off |
+| Developer spray | Forensic type | Evaporates |
+
+**Lighting Techniques:**
+- Use diffused lighting (cloudy day ideal)
+- Avoid direct sunlight (creates harsh shadows)
+- Cross-polarized lighting reduces reflections
+- Ring lights provide even illumination
+
+**Camera Settings:**
+- Reduce exposure for shiny objects
+- Increase ISO in low-contrast situations
+- Use HDR mode for difficult lighting
+
+#### Cloud vs On-Device for Difficult Objects
+
+| Aspect | Cloud | On-Device |
+|--------|-------|-----------|
+| Algorithm quality | Better (COLMAP-based) | Basic SfM |
+| Feature detection | More robust | Limited |
+| Gap filling | AI-enhanced | None |
+| **Still struggles with** | Black + smooth objects | Same |
+
+**Bottom line:** Cloud processing gives better results on difficult objects, but won't magically solve physics limitations. For truly challenging objects, use temporary texture spray.
+
 ### 3D Viewer
 Interactive visualization with:
 - Touch rotation (X/Y axes)

@@ -415,6 +415,43 @@ Export point clouds as PLY:
 - [ ] No motion blur
 - [ ] Artifact fills frame
 
+### Scanning Difficult Objects
+
+Some artifacts are challenging for photogrammetry. Here's how to handle them:
+
+**Problem Objects & Solutions:**
+
+| Object Type | Problem | Solution |
+|-------------|---------|----------|
+| Black/dark | Low contrast | Light chalk spray or flour dusting |
+| Shiny metal | Reflections move | Matte spray or powder coating |
+| Smooth pottery | Few features | Raking light to show texture |
+| Glass/transparent | Light passes through | Not suitable for photogrammetry |
+
+**Quick Fix: Temporary Texture**
+
+For black or smooth objects:
+1. Lightly dust with flour or talcum powder
+2. Use a soft brush to spread evenly
+3. Capture photos
+4. Brush/blow off powder when done
+
+This is a standard professional technique - even museum conservators use it!
+
+**Processing Method for Difficult Objects:**
+
+| Object Type | Recommended Method |
+|-------------|-------------------|
+| Textured artifacts | Either works |
+| Slightly smooth | Cloud Processing |
+| Very dark/smooth | Cloud + temporary texture |
+| Shiny metal | Must use powder coating |
+
+**Cloud vs On-Device:**
+- Cloud processing has better algorithms for difficult objects
+- But physics limits apply to both
+- For truly challenging objects, texture spray is the real solution
+
 ### Data Entry Tips
 
 **Be Consistent**
