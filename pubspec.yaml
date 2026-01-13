@@ -41,6 +41,7 @@ dependencies:
   uuid: ^4.2.2  # UUID generation for reconstruction IDs
   path: ^1.8.3  # Path manipulation utilities
   intl: ^0.19.0  # Date/time formatting for reports
+  flutter_local_notifications: ^17.0.0  # Local push notifications
 
 dev_dependencies:
   flutter_test:

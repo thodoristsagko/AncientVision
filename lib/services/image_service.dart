@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
@@ -58,11 +58,11 @@ class ImageService {
       final originalSize = bytes.length;
       final compressedSize = compressed.length;
       final ratio = ((1 - compressedSize / originalSize) * 100).toStringAsFixed(1);
-      print('✓ Image compressed: ${_formatBytes(originalSize)} → ${_formatBytes(compressedSize)} ($ratio% smaller)');
+      debugPrint(' Image compressed: ${_formatBytes(originalSize)} → ${_formatBytes(compressedSize)} ($ratio% smaller)');
 
       return tempFile;
     } catch (e) {
-      print('⚠️ Compression failed: $e');
+      debugPrint(' Compression failed: $e');
       return imageFile; // Return original if compression fails
     }
   }

@@ -140,7 +140,7 @@ class _Model3DViewerState extends State<Model3DViewer> {
 
           // Controls overlay
           Positioned(
-            bottom: 16,
+            bottom: widget.onCompleteForm != null ? 100 : 16,
             left: 0,
             right: 0,
             child: _buildControlsPanel(),
@@ -148,11 +148,11 @@ class _Model3DViewerState extends State<Model3DViewer> {
 
           // Instructions
           if (_showInfo)
-            const Positioned(
-              bottom: 120,
+            Positioned(
+              bottom: widget.onCompleteForm != null ? 200 : 120,
               left: 16,
               right: 16,
-              child: Center(
+              child: const Center(
                 child: Text(
                   'Drag to rotate • Pinch to zoom',
                   style: TextStyle(
@@ -165,7 +165,59 @@ class _Model3DViewerState extends State<Model3DViewer> {
                 ),
               ),
             ),
+
+          // Prominent Save Finding button
+          if (widget.onCompleteForm != null)
+            Positioned(
+              bottom: 16,
+              left: 16,
+              right: 16,
+              child: _buildSaveButton(),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSaveButton() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF4CAF50).withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onCompleteForm,
+          borderRadius: BorderRadius.circular(16),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.save_rounded, color: Colors.white, size: 24),
+                SizedBox(width: 12),
+                Text(
+                  'Save Finding to Database',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

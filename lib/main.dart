@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:url_launcher/url_launcher.dart';
@@ -19,25 +18,26 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:archive/archive_io.dart';
-import 'package:vector_math/vector_math.dart' as vmath;
 import 'package:video_player/video_player.dart';
-// import 'package:qr_code_scanner/qr_code_scanner.dart'; // Temporarily disabled
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:share_plus/share_plus.dart';
 import 'services/auth_service.dart';
 import 'services/local_storage_service.dart';
 import 'services/reconstruction_service.dart';
-import 'services/pdf_report_service.dart';
 import 'services/image_service.dart';
 import 'services/cloud_photogrammetry_service.dart';
+import 'services/notification_service.dart';
 import 'utils/validators.dart';
 import 'utils/quality_analyzer.dart';
 import 'models/reconstruction_result.dart';
 import 'widgets/model_3d_viewer.dart';
+import 'screens/analytics_screen.dart';
+import 'screens/field_journal_screen.dart';
+import 'screens/quick_capture_screen.dart';
+import 'screens/settings_screen.dart';
+import 'screens/help_screen.dart';
+import 'services/export_service.dart';
 
 // ============================================================
 // IMGBB API KEY - Get your free key at https://api.imgbb.com/
@@ -47,6 +47,9 @@ const String imgbbApiKey = '63efd0891caba4842791a2f892301d07';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  // Initialize notification service
+  await NotificationService().initialize();
+  await NotificationService().requestPermissions();
   runApp(const MyApp());
 }
 
@@ -130,10 +133,10 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
-      print('FirebaseAuthException: ${e.code} - ${e.message}');
+      debugPrint('FirebaseAuthException: ${e.code} - ${e.message}');
       _showError(_getAuthErrorMessage(e.code));
     } catch (e) {
-      print('Login error: $e');
+      debugPrint('Login error: $e');
       // Check if user is actually logged in despite the error (known firebase_auth bug)
       if (AuthService.currentUser != null && mounted) {
         Navigator.pushReplacement(
@@ -825,6 +828,7 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
   List<Map<String, dynamic>> _lastFindings = [];
   int _offlineDataCount = 0;
   bool _isSyncing = false;
+  int _unreadNotifications = 0;
 
   @override
   void initState() {
@@ -833,6 +837,14 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
     _loadUserName();
     _loadLastFindings();
     _checkOfflineData();
+    _loadUnreadNotifications();
+  }
+
+  Future<void> _loadUnreadNotifications() async {
+    final count = await NotificationService().getUnreadCount();
+    if (mounted) {
+      setState(() => _unreadNotifications = count);
+    }
   }
 
   Future<void> _checkOfflineData() async {
@@ -893,7 +905,7 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
         });
       }
     } catch (e) {
-      print('Error loading last findings: $e');
+      debugPrint('Error loading last findings: $e');
     }
   }
 
@@ -957,7 +969,7 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
         });
       }
     } catch (e) {
-      print('Error loading findings counts: $e');
+      debugPrint('Error loading findings counts: $e');
     }
   }
 
@@ -1022,7 +1034,56 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
+                  // Notifications button
+                  GestureDetector(
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                      );
+                      _loadUnreadNotifications();
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withOpacity(0.2)),
+                      ),
+                      child: Stack(
+                        children: [
+                          const Center(
+                            child: Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
+                          ),
+                          if (_unreadNotifications > 0)
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFFC107),
+                                  shape: BoxShape.circle,
+                                ),
+                                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                                child: Text(
+                                  _unreadNotifications > 9 ? '9+' : '$_unreadNotifications',
+                                  style: const TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   const _LogoCard(),
                 ],
               ),
@@ -1125,20 +1186,254 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
               // LAST FINDINGS
               _LastFindingsCard(findings: _lastFindings),
 
-              const SizedBox(height: 12),
-
-              // TODAY AT SITE
-              const _TodayAtSiteCard(),
-
-              const SizedBox(height: 12),
-
-              // INSIGHT
-              const _InsightCard(),
-
               const SizedBox(height: 120),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+//
+// ----------------------- NOTIFICATIONS SCREEN ------------------------
+//
+
+class NotificationsScreen extends StatefulWidget {
+  const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  List<NotificationItem> _notifications = [];
+  bool _isLoading = true;
+  bool _notificationsEnabled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+    _loadSettings();
+    // Clear unread count when viewing notifications
+    NotificationService().clearUnreadCount();
+  }
+
+  Future<void> _loadNotifications() async {
+    final notifications = await NotificationService().getNotificationHistory();
+    if (mounted) {
+      setState(() {
+        _notifications = notifications;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadSettings() async {
+    final enabled = await NotificationService().areNotificationsEnabled();
+    if (mounted) {
+      setState(() => _notificationsEnabled = enabled);
+    }
+  }
+
+  Future<void> _toggleNotifications(bool value) async {
+    await NotificationService().setNotificationsEnabled(value);
+    setState(() => _notificationsEnabled = value);
+  }
+
+  Future<void> _clearHistory() async {
+    await NotificationService().clearNotificationHistory();
+    setState(() => _notifications = []);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1C2523),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D3A39),
+        title: const Text('Notifications', style: TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          if (_notifications.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: const Color(0xFF1C2523),
+                    title: const Text('Clear History', style: TextStyle(color: Colors.white)),
+                    content: const Text(
+                      'Are you sure you want to clear all notifications?',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _clearHistory();
+                        },
+                        child: const Text('Clear', style: TextStyle(color: Color(0xFFFFC107))),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Settings toggle
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.notifications_active, color: Color(0xFFFFC107), size: 24),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Push Notifications',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        'Get notified when 3D processing completes',
+                        style: TextStyle(color: Colors.white60, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _notificationsEnabled,
+                  onChanged: _toggleNotifications,
+                  activeColor: const Color(0xFFFFC107),
+                ),
+              ],
+            ),
+          ),
+
+          // Notification list
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+                : _notifications.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.notifications_off_outlined, size: 64, color: Colors.white.withOpacity(0.3)),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No notifications yet',
+                              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'You\'ll be notified when cloud processing completes',
+                              style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: _notifications.length,
+                        itemBuilder: (context, index) {
+                          final notification = _notifications[index];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: notification.isSuccess
+                                    ? const Color(0xFF4CAF50).withOpacity(0.3)
+                                    : notification.isError
+                                        ? const Color(0xFFF44336).withOpacity(0.3)
+                                        : Colors.white.withOpacity(0.1),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: notification.isSuccess
+                                        ? const Color(0xFF4CAF50).withOpacity(0.2)
+                                        : notification.isError
+                                            ? const Color(0xFFF44336).withOpacity(0.2)
+                                            : Colors.white.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    notification.isSuccess
+                                        ? Icons.check_circle_outline
+                                        : notification.isError
+                                            ? Icons.error_outline
+                                            : Icons.notifications_outlined,
+                                    color: notification.isSuccess
+                                        ? const Color(0xFF4CAF50)
+                                        : notification.isError
+                                            ? const Color(0xFFF44336)
+                                            : Colors.white60,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              notification.title,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            notification.timeAgo,
+                                            style: const TextStyle(color: Colors.white38, fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        notification.body,
+                                        style: const TextStyle(color: Colors.white60, fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -1477,269 +1772,6 @@ class _FindingRow extends StatelessWidget {
   }
 }
 
-// -------- TODAY AT SITE CARD --------
-
-class _TodayAtSiteCard extends StatelessWidget {
-  const _TodayAtSiteCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.35),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'Today at Site',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Ancient Agora',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Current trench: B3',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.85),
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Weather: 23°C, Clear',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.85),
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// -------- INSIGHT CARD --------
-
-class _InsightCard extends StatefulWidget {
-  const _InsightCard({super.key});
-
-  @override
-  State<_InsightCard> createState() => _InsightCardState();
-}
-
-class _InsightCardState extends State<_InsightCard> {
-  String _currentInsight = 'Loading insights...';
-  int _currentIndex = 0;
-  List<String> _insights = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadInsights();
-  }
-
-  Future<void> _loadInsights() async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('findings')
-          .get();
-
-      final findings = snapshot.docs;
-      final total = findings.length;
-
-      if (total == 0) {
-        setState(() {
-          _insights = [
-            'No findings recorded yet. Start by adding your first archaeological discovery!',
-            'Tip: Use GPS coordinates for accurate location tracking of your finds.',
-            'Did you know? Proper documentation increases the scientific value of archaeological finds.',
-          ];
-          _currentInsight = _insights[0];
-        });
-        _startRotation();
-        return;
-      }
-
-      // Analyze findings data
-      final Map<String, int> typeCounts = {};
-      final Map<String, int> siteCounts = {};
-      int todayCount = 0;
-      final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-
-      for (final doc in findings) {
-        final data = doc.data();
-        final type = data['type'] as String? ?? 'Unknown';
-        final site = data['site'] as String? ?? 'Unknown';
-
-        typeCounts[type] = (typeCounts[type] ?? 0) + 1;
-        siteCounts[site] = (siteCounts[site] ?? 0) + 1;
-
-        final createdAt = data['createdAt'] as Timestamp?;
-        if (createdAt != null && createdAt.toDate().isAfter(startOfDay)) {
-          todayCount++;
-        }
-      }
-
-      // Find most common type and site
-      String mostCommonType = 'Unknown';
-      int maxTypeCount = 0;
-      typeCounts.forEach((type, count) {
-        if (count > maxTypeCount) {
-          maxTypeCount = count;
-          mostCommonType = type;
-        }
-      });
-
-      String mostActiveSite = 'Unknown';
-      int maxSiteCount = 0;
-      siteCounts.forEach((site, count) {
-        if (count > maxSiteCount) {
-          maxSiteCount = count;
-          mostActiveSite = site;
-        }
-      });
-
-      final typePercentage = ((maxTypeCount / total) * 100).round();
-      final sitePercentage = ((maxSiteCount / total) * 100).round();
-
-      // Generate insights
-      final generatedInsights = <String>[
-        'You have recorded $total findings in total. ${todayCount > 0 ? "$todayCount added today!" : "Add more today!"}',
-        '$typePercentage% of your findings are ${mostCommonType}s. Consider diversifying your documentation.',
-        'Most active site: $mostActiveSite with $maxSiteCount findings ($sitePercentage% of total).',
-        'Tip: Regular photo documentation helps preserve finding details for future analysis.',
-        '${typeCounts.length} different artifact types recorded across ${siteCounts.length} sites.',
-      ];
-
-      if (todayCount > 0) {
-        generatedInsights.add('Great progress! $todayCount new ${todayCount == 1 ? "finding" : "findings"} documented today.');
-      }
-
-      if (total >= 10) {
-        generatedInsights.add('Milestone: Over 10 findings documented! Your catalog is growing.');
-      }
-      if (total >= 50) {
-        generatedInsights.add('Impressive! 50+ findings in your database. Consider exporting a report.');
-      }
-
-      setState(() {
-        _insights = generatedInsights;
-        _currentInsight = _insights[0];
-      });
-
-      _startRotation();
-    } catch (e) {
-      setState(() {
-        _insights = [
-          'Tip: Use GPS for precise location tracking.',
-          'Document findings immediately for best accuracy.',
-          'Take multiple photos from different angles.',
-        ];
-        _currentInsight = _insights[0];
-      });
-      _startRotation();
-    }
-  }
-
-  void _startRotation() {
-    Future.delayed(const Duration(seconds: 8), () {
-      if (mounted && _insights.isNotEmpty) {
-        setState(() {
-          _currentIndex = (_currentIndex + 1) % _insights.length;
-          _currentInsight = _insights[_currentIndex];
-        });
-        _startRotation();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.30),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'Insight',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.lightbulb_outline,
-                    color: Colors.amber.withOpacity(0.7),
-                    size: 14,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 500),
-                child: Text(
-                  _currentInsight,
-                  key: ValueKey<String>(_currentInsight),
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 //
 // --------------------- FINDINGS TAB CONTENT ---------------------
 //
@@ -1754,29 +1786,8 @@ class _Finding {
   final double latitude;
   final double longitude;
   final String? imageUrl;
-  final List<String> photoGallery; // Multiple photos for photogrammetry
-  final String? model3dUrl; // Link to 3D model (Sketchfab, etc.)
-
-  // ULTRA++ Archaeological Professional Fields
-  final String? findNumber; // Catalog/Accession number (e.g., "2024-FLD-001")
-  final String? excavationUnit; // Grid square/unit (e.g., "A4", "Trench 2")
-  final String? stratigraphicLayer; // Context/layer number (e.g., "Layer 3", "Context 025")
-  final double? depthBelowSurface; // Depth in meters
-  final double? depthBelowDatum; // Depth from datum point in meters
-  final double? lengthMm; // Length in millimeters
-  final double? widthMm; // Width in millimeters
-  final double? heightMm; // Height/thickness in millimeters
-  final double? weightGrams; // Weight in grams
-  final String? material; // Material classification (e.g., "Terracotta", "Bronze", "Limestone")
-  final String? condition; // Preservation state (e.g., "Excellent", "Fragmentary", "Weathered")
-  final String? datingMethod; // How it was dated (e.g., "Stratigraphy", "Typology", "C14")
-  final List<String>? associatedFinds; // Related find numbers
-  final String? soilType; // Soil context (e.g., "Sandy loam", "Clay")
-  final String? colorMunsell; // Munsell color code for pottery/soil
-  final String? period; // Cultural period (e.g., "Late Bronze Age", "Roman Imperial")
-  final String? notes; // Field notes
-  final String? excavator; // Who found/excavated it
-  final String? weatheringDegree; // Weathering assessment (e.g., "None", "Slight", "Moderate", "Severe")
+  final List<String> photoGallery;
+  final String? model3dUrl;
 
   const _Finding({
     required this.id,
@@ -1790,25 +1801,6 @@ class _Finding {
     this.imageUrl,
     this.photoGallery = const [],
     this.model3dUrl,
-    this.findNumber,
-    this.excavationUnit,
-    this.stratigraphicLayer,
-    this.depthBelowSurface,
-    this.depthBelowDatum,
-    this.lengthMm,
-    this.widthMm,
-    this.heightMm,
-    this.weightGrams,
-    this.material,
-    this.condition,
-    this.datingMethod,
-    this.associatedFinds,
-    this.soilType,
-    this.colorMunsell,
-    this.period,
-    this.notes,
-    this.excavator,
-    this.weatheringDegree,
   });
 
   // Get color based on finding type for map markers
@@ -1843,7 +1835,6 @@ class _FindingsViewState extends State<_FindingsView> {
   List<_Finding> _filteredFindings = [];
   bool _isLoading = true;
   int _selectedIndex = 0;
-  String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -1860,7 +1851,6 @@ class _FindingsViewState extends State<_FindingsView> {
 
   void _filterFindings(String query) {
     setState(() {
-      _searchQuery = query;
       if (query.isEmpty) {
         _filteredFindings = _findings;
       } else {
@@ -1878,222 +1868,6 @@ class _FindingsViewState extends State<_FindingsView> {
     });
   }
 
-  Future<void> _exportReport() async {
-    if (_findings.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No findings to export'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    try {
-      // Generate HTML report
-      final reportDate = DateTime.now();
-      final dateStr = '${reportDate.year}-${reportDate.month.toString().padLeft(2, '0')}-${reportDate.day.toString().padLeft(2, '0')}';
-
-      final StringBuffer html = StringBuffer();
-      html.writeln('<!DOCTYPE html>');
-      html.writeln('<html><head>');
-      html.writeln('<meta charset="UTF-8">');
-      html.writeln('<meta name="viewport" content="width=device-width, initial-scale=1.0">');
-      html.writeln('<title>AncientVision Field Report - $dateStr</title>');
-      html.writeln('<style>');
-      html.writeln('body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f5f5; }');
-      html.writeln('.header { background: linear-gradient(135deg, #0D3A39, #1C2523); color: white; padding: 30px; border-radius: 16px; margin-bottom: 24px; }');
-      html.writeln('.header h1 { margin: 0 0 8px 0; font-size: 28px; }');
-      html.writeln('.header p { margin: 0; opacity: 0.8; }');
-      html.writeln('.stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }');
-      html.writeln('.stat { background: white; padding: 20px; border-radius: 12px; flex: 1; min-width: 150px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }');
-      html.writeln('.stat-value { font-size: 32px; font-weight: bold; color: #0D3A39; }');
-      html.writeln('.stat-label { color: #666; font-size: 14px; }');
-      html.writeln('.finding { background: white; border-radius: 16px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }');
-      html.writeln('.finding-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }');
-      html.writeln('.finding-name { font-size: 20px; font-weight: 600; color: #333; margin: 0; }');
-      html.writeln('.finding-id { background: #FFC107; color: #3E2723; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }');
-      html.writeln('.finding-type { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; }');
-      html.writeln('.finding-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }');
-      html.writeln('.finding-field { padding: 12px; background: #f8f9fa; border-radius: 8px; }');
-      html.writeln('.field-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 4px; }');
-      html.writeln('.field-value { font-size: 14px; color: #333; }');
-      html.writeln('.finding-image { width: 100%; max-height: 300px; object-fit: cover; border-radius: 12px; margin-top: 12px; }');
-      html.writeln('.footer { text-align: center; color: #666; font-size: 12px; margin-top: 40px; padding: 20px; }');
-      html.writeln('@media print { body { background: white; } .finding { break-inside: avoid; } }');
-      html.writeln('</style>');
-      html.writeln('</head><body>');
-
-      // Header
-      html.writeln('<div class="header">');
-      html.writeln('<h1>🏛️ AncientVision Field Report</h1>');
-      html.writeln('<p>Archaeological findings documentation • Generated on $dateStr</p>');
-      html.writeln('</div>');
-
-      // Stats
-      final typeCount = <String, int>{};
-      final siteCount = <String, int>{};
-      for (final f in _findings) {
-        typeCount[f.type] = (typeCount[f.type] ?? 0) + 1;
-        siteCount[f.site] = (siteCount[f.site] ?? 0) + 1;
-      }
-
-      html.writeln('<div class="stats">');
-      html.writeln('<div class="stat"><div class="stat-value">${_findings.length}</div><div class="stat-label">Total Findings</div></div>');
-      html.writeln('<div class="stat"><div class="stat-value">${typeCount.length}</div><div class="stat-label">Artifact Types</div></div>');
-      html.writeln('<div class="stat"><div class="stat-value">${siteCount.length}</div><div class="stat-label">Excavation Sites</div></div>');
-      html.writeln('</div>');
-
-      // Findings
-      for (final finding in _findings) {
-        final typeColor = _Finding.getTypeColor(finding.type);
-        final colorHex = '#${typeColor.value.toRadixString(16).substring(2)}';
-
-        html.writeln('<div class="finding">');
-        html.writeln('<div class="finding-header">');
-        html.writeln('<h2 class="finding-name">${_escapeHtml(finding.name)}</h2>');
-        html.writeln('<span class="finding-id">${finding.id}</span>');
-        html.writeln('</div>');
-        html.writeln('<span class="finding-type" style="background: ${colorHex}20; color: $colorHex;">${_escapeHtml(finding.type)}</span>');
-
-        html.writeln('<div class="finding-grid">');
-        html.writeln('<div class="finding-field"><div class="field-label">Site</div><div class="field-value">${_escapeHtml(finding.site)}</div></div>');
-        html.writeln('<div class="finding-field"><div class="field-label">Date Found</div><div class="field-value">${_escapeHtml(finding.date)}</div></div>');
-        html.writeln('<div class="finding-field"><div class="field-label">Coordinates</div><div class="field-value">${finding.latitude.toStringAsFixed(6)}, ${finding.longitude.toStringAsFixed(6)}</div></div>');
-        if (finding.model3dUrl != null && finding.model3dUrl!.isNotEmpty) {
-          html.writeln('<div class="finding-field"><div class="field-label">3D Model</div><div class="field-value"><a href="${_escapeHtml(finding.model3dUrl!)}" target="_blank">View Model</a></div></div>');
-        }
-        html.writeln('</div>');
-
-        if (finding.description.isNotEmpty) {
-          html.writeln('<div class="finding-field" style="margin-top: 12px;"><div class="field-label">Description</div><div class="field-value">${_escapeHtml(finding.description)}</div></div>');
-        }
-
-        if (finding.imageUrl != null && finding.imageUrl!.isNotEmpty) {
-          html.writeln('<img class="finding-image" src="${finding.imageUrl}" alt="${_escapeHtml(finding.name)}">');
-        }
-
-        if (finding.photoGallery.isNotEmpty) {
-          html.writeln('<div style="margin-top: 12px;"><div class="field-label">Photo Gallery (${finding.photoGallery.length} photos)</div>');
-          html.writeln('<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">');
-          for (int i = 0; i < finding.photoGallery.length && i < 4; i++) {
-            html.writeln('<img src="${finding.photoGallery[i]}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px;" alt="Gallery photo ${i + 1}">');
-          }
-          if (finding.photoGallery.length > 4) {
-            html.writeln('<div style="width: 100px; height: 100px; background: #e0e0e0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #666;">+${finding.photoGallery.length - 4} more</div>');
-          }
-          html.writeln('</div></div>');
-        }
-
-        html.writeln('</div>');
-      }
-
-      // Footer
-      html.writeln('<div class="footer">');
-      html.writeln('<p>Generated by AncientVision • FLL Archaeological Field Management App</p>');
-      html.writeln('<p>© ${reportDate.year} AncientVision Project</p>');
-      html.writeln('</div>');
-
-      html.writeln('</body></html>');
-
-      // Save to file
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/AncientVision_Report_$dateStr.html');
-      await file.writeAsString(html.toString());
-
-      // Show success dialog with options
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF1C2523),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 28),
-                SizedBox(width: 12),
-                Text('Report Generated!', style: TextStyle(color: Colors.white)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Your archaeological findings report has been saved.',
-                  style: TextStyle(color: Colors.white.withOpacity(0.8)),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.folder, color: Color(0xFFFFC107), size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          file.path,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
-                            fontSize: 11,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text('Close', style: TextStyle(color: Colors.white.withOpacity(0.6))),
-              ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  final uri = Uri.file(file.path);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri);
-                  }
-                },
-                icon: const Icon(Icons.open_in_new, size: 18),
-                label: const Text('Open Report'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFC107),
-                  foregroundColor: const Color(0xFF3E2723),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error generating report: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  String _escapeHtml(String text) {
-    return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-  }
 
   Future<void> _loadFindings() async {
     debugPrint('=== _loadFindings called ===');
@@ -2265,28 +2039,6 @@ class _FindingsViewState extends State<_FindingsView> {
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.75),
                           fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    // Export Report button
-                    GestureDetector(
-                      onTap: _exportReport,
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF4CAF50).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: const Color(0xFF4CAF50).withOpacity(0.5),
-                            width: 1,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.file_download_outlined,
-                          color: Color(0xFF4CAF50),
-                          size: 18,
                         ),
                       ),
                     ),
@@ -3241,34 +2993,117 @@ class _ToolsView extends StatelessWidget {
                       ]),
                       const SizedBox(height: 20),
 
-                      // === EXPORT & SHARING ===
-                      _buildCategoryHeader('Export & Reports'),
+                      // === FIELD WORK TOOLS ===
+                      _buildCategoryHeader('Field Work'),
                       const SizedBox(height: 12),
                       _buildToolGrid(context, [
                         _ToolCard(
-                          icon: Icons.picture_as_pdf_rounded,
-                          title: 'PDF Reports',
-                          description: 'Publication-ready docs',
-                          badge: 'Pro',
-                          color: const Color(0xFFF44336),
+                          icon: Icons.book_rounded,
+                          title: 'Field Journal',
+                          description: 'Daily logs & notes',
+                          badge: 'Voice',
+                          color: const Color(0xFF795548),
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const PDFExportScreen()),
+                            MaterialPageRoute(builder: (_) => const FieldJournalScreen()),
                           ),
                         ),
                         _ToolCard(
-                          icon: Icons.share_rounded,
-                          title: 'Export Data',
-                          description: 'Export findings & 3D models',
-                          badge: 'Share',
-                          color: const Color(0xFF00BCD4),
+                          icon: Icons.flash_on_rounded,
+                          title: 'Quick Capture',
+                          description: 'Rapid documentation',
+                          badge: 'Fast',
+                          color: const Color(0xFFE91E63),
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const ExportDataScreen()),
+                            MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
                           ),
                         ),
                       ]),
+                      const SizedBox(height: 20),
 
+                      // === DATA & REPORTS ===
+                      _buildCategoryHeader('Data & Reports'),
+                      const SizedBox(height: 12),
+                      _buildToolGrid(context, [
+                        _ToolCard(
+                          icon: Icons.insights_rounded,
+                          title: 'Analytics',
+                          description: 'Stats & achievements',
+                          badge: 'Progress',
+                          color: const Color(0xFF00BCD4),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
+                          ),
+                        ),
+                        _ToolCard(
+                          icon: Icons.file_download_rounded,
+                          title: 'Export Data',
+                          description: 'CSV, JSON, GeoJSON',
+                          badge: 'Backup',
+                          color: const Color(0xFF607D8B),
+                          onTap: () => _showExportDialog(context),
+                        ),
+                      ]),
+                      const SizedBox(height: 20),
+
+                      // === SETTINGS & HELP ===
+                      _buildCategoryHeader('Settings & Help'),
+                      const SizedBox(height: 12),
+                      _buildToolGrid(context, [
+                        _ToolCard(
+                          icon: Icons.settings_rounded,
+                          title: 'Settings',
+                          description: 'Theme & preferences',
+                          badge: 'Config',
+                          color: const Color(0xFF455A64),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                          ),
+                        ),
+                        _ToolCard(
+                          icon: Icons.help_outline_rounded,
+                          title: 'Help & Guide',
+                          description: 'Tutorials & FAQ',
+                          badge: 'Learn',
+                          color: const Color(0xFF3F51B5),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const HelpScreen()),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 20),
+
+                      // === ADMIN SECTION (only visible to admins) ===
+                      FutureBuilder<bool>(
+                        future: AuthService.isCurrentUserAdmin(),
+                        builder: (context, snapshot) {
+                          if (snapshot.data != true) return const SizedBox.shrink();
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildCategoryHeader('Admin'),
+                              const SizedBox(height: 12),
+                              _buildToolGrid(context, [
+                                _ToolCard(
+                                  icon: Icons.admin_panel_settings_rounded,
+                                  title: 'User Management',
+                                  description: 'Manage roles & users',
+                                  badge: 'Admin',
+                                  color: const Color(0xFFF44336),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
+                                  ),
+                                ),
+                              ]),
+                            ],
+                          );
+                        },
+                      ),
                       const SizedBox(height: 120),
                     ],
                   ],
@@ -3490,6 +3325,174 @@ class _ToolsView extends StatelessWidget {
           Icon(Icons.lock_outline_rounded, color: Colors.white38, size: 20),
         ],
       ),
+    );
+  }
+
+  void _showExportDialog(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF2a2a3e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Export Data',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Choose an export format for your findings',
+              style: TextStyle(color: Colors.white.withOpacity(0.7)),
+            ),
+            const SizedBox(height: 20),
+            _ExportOptionTile(
+              icon: Icons.code,
+              title: 'JSON',
+              subtitle: 'Full data with all fields',
+              color: const Color(0xFF4CAF50),
+              onTap: () async {
+                Navigator.pop(context);
+                await _exportData(context, ExportFormat.json);
+              },
+            ),
+            _ExportOptionTile(
+              icon: Icons.table_chart,
+              title: 'CSV',
+              subtitle: 'Spreadsheet compatible',
+              color: const Color(0xFF2196F3),
+              onTap: () async {
+                Navigator.pop(context);
+                await _exportData(context, ExportFormat.csv);
+              },
+            ),
+            _ExportOptionTile(
+              icon: Icons.map,
+              title: 'GeoJSON',
+              subtitle: 'For GIS applications',
+              color: const Color(0xFFFF9800),
+              onTap: () async {
+                Navigator.pop(context);
+                await _exportData(context, ExportFormat.geojson);
+              },
+            ),
+            _ExportOptionTile(
+              icon: Icons.place,
+              title: 'KML',
+              subtitle: 'Google Earth format',
+              color: const Color(0xFF9C27B0),
+              onTap: () async {
+                Navigator.pop(context);
+                await _exportData(context, ExportFormat.kml);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportData(BuildContext context, ExportFormat format) async {
+    try {
+      // Get findings from Firestore
+      final snapshot = await FirebaseFirestore.instance
+          .collection('findings')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      final findings = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+
+      if (findings.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No findings to export')),
+          );
+        }
+        return;
+      }
+
+      final exportService = ExportService();
+      File? file;
+
+      switch (format) {
+        case ExportFormat.json:
+          file = await exportService.exportFindingsToJson(findings);
+          break;
+        case ExportFormat.csv:
+          file = await exportService.exportFindingsToCsv(findings);
+          break;
+        case ExportFormat.geojson:
+          file = await exportService.exportFindingsToGeoJson(findings);
+          break;
+        case ExportFormat.kml:
+          file = await exportService.exportFindingsToKml(findings);
+          break;
+      }
+
+      if (file != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${findings.length} findings to ${file.path.split('/').last}'),
+            backgroundColor: const Color(0xFF4CAF50),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}
+
+class _ExportOptionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ExportOptionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: color, size: 24),
+      ),
+      title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+      trailing: Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.5)),
+      onTap: onTap,
     );
   }
 }
@@ -3739,11 +3742,13 @@ class _AddOptionCard extends StatelessWidget {
 class ManualEntryFormScreen extends StatefulWidget {
   final ReconstructionResult? reconstructionResult;
   final List<XFile>? photoGallery;
+  final String? cloudModelUrl;
 
   const ManualEntryFormScreen({
     super.key,
     this.reconstructionResult,
     this.photoGallery,
+    this.cloudModelUrl,
   });
 
   @override
@@ -3778,140 +3783,18 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   late String _typeHint;
   late String _siteHint;
 
-  // Name-Type pairs that match logically (~100 pairs)
   static const _nameTypePairs = [
-    // Coins
     {'name': 'Bronze Coin', 'type': 'Coin'},
-    {'name': 'Silver Denarius', 'type': 'Coin'},
-    {'name': 'Gold Stater', 'type': 'Coin'},
-    {'name': 'Copper As', 'type': 'Coin'},
-    {'name': 'Silver Drachma', 'type': 'Coin'},
-    {'name': 'Gold Aureus', 'type': 'Coin'},
-    {'name': 'Bronze Sestertius', 'type': 'Coin'},
-    {'name': 'Silver Tetradrachm', 'type': 'Coin'},
-    {'name': 'Electrum Coin', 'type': 'Coin'},
-    {'name': 'Lead Token', 'type': 'Coin'},
-    {'name': 'Bronze Obol', 'type': 'Coin'},
-    {'name': 'Silver Shekel', 'type': 'Coin'},
-    {'name': 'Gold Solidus', 'type': 'Coin'},
-    {'name': 'Copper Follis', 'type': 'Coin'},
-    {'name': 'Bronze Nummus', 'type': 'Coin'},
-    // Pottery
     {'name': 'Ceramic Vase', 'type': 'Pottery'},
-    {'name': 'Painted Amphora', 'type': 'Pottery'},
-    {'name': 'Clay Bowl', 'type': 'Pottery'},
-    {'name': 'Terracotta Lamp', 'type': 'Pottery'},
-    {'name': 'Red-Figure Krater', 'type': 'Pottery'},
-    {'name': 'Black-Figure Kylix', 'type': 'Pottery'},
-    {'name': 'Ceramic Jug', 'type': 'Pottery'},
-    {'name': 'Clay Pithos', 'type': 'Pottery'},
-    {'name': 'Painted Lekythos', 'type': 'Pottery'},
-    {'name': 'Terracotta Oinochoe', 'type': 'Pottery'},
-    {'name': 'Ceramic Pyxis', 'type': 'Pottery'},
-    {'name': 'Clay Storage Jar', 'type': 'Pottery'},
-    {'name': 'Painted Hydria', 'type': 'Pottery'},
-    {'name': 'Ceramic Plate', 'type': 'Pottery'},
-    {'name': 'Terracotta Cup', 'type': 'Pottery'},
-    {'name': 'Clay Cooking Pot', 'type': 'Pottery'},
-    {'name': 'Ceramic Skyphos', 'type': 'Pottery'},
-    {'name': 'Painted Kantharos', 'type': 'Pottery'},
-    {'name': 'Clay Oil Lamp', 'type': 'Pottery'},
-    {'name': 'Terracotta Askos', 'type': 'Pottery'},
-    // Sculpture
     {'name': 'Marble Statue', 'type': 'Sculpture'},
-    {'name': 'Bronze Figurine', 'type': 'Sculpture'},
-    {'name': 'Clay Figurine', 'type': 'Sculpture'},
-    {'name': 'Limestone Head', 'type': 'Sculpture'},
-    {'name': 'Terracotta Bust', 'type': 'Sculpture'},
-    {'name': 'Marble Relief', 'type': 'Sculpture'},
-    {'name': 'Bronze Statuette', 'type': 'Sculpture'},
-    {'name': 'Stone Torso', 'type': 'Sculpture'},
-    {'name': 'Ivory Carving', 'type': 'Sculpture'},
-    {'name': 'Marble Portrait', 'type': 'Sculpture'},
-    {'name': 'Bronze Horse', 'type': 'Sculpture'},
-    {'name': 'Clay Animal Figure', 'type': 'Sculpture'},
-    {'name': 'Limestone Sphinx', 'type': 'Sculpture'},
-    {'name': 'Terracotta Mask', 'type': 'Sculpture'},
-    {'name': 'Marble Hand', 'type': 'Sculpture'},
-    // Tools
     {'name': 'Iron Chisel', 'type': 'Tool'},
-    {'name': 'Bronze Needle', 'type': 'Tool'},
-    {'name': 'Stone Hammer', 'type': 'Tool'},
-    {'name': 'Copper Awl', 'type': 'Tool'},
-    {'name': 'Iron Knife', 'type': 'Tool'},
-    {'name': 'Bronze Stylus', 'type': 'Tool'},
-    {'name': 'Stone Pestle', 'type': 'Tool'},
-    {'name': 'Iron Sickle', 'type': 'Tool'},
-    {'name': 'Bronze Tweezers', 'type': 'Tool'},
-    {'name': 'Flint Scraper', 'type': 'Tool'},
-    {'name': 'Iron Tongs', 'type': 'Tool'},
-    {'name': 'Bronze Spatula', 'type': 'Tool'},
-    // Jewelry
     {'name': 'Gold Ring', 'type': 'Jewelry'},
-    {'name': 'Silver Bracelet', 'type': 'Jewelry'},
-    {'name': 'Glass Bead', 'type': 'Jewelry'},
-    {'name': 'Gold Earring', 'type': 'Jewelry'},
-    {'name': 'Bronze Fibula', 'type': 'Jewelry'},
-    {'name': 'Silver Necklace', 'type': 'Jewelry'},
-    {'name': 'Gold Pendant', 'type': 'Jewelry'},
-    {'name': 'Amber Bead', 'type': 'Jewelry'},
-    {'name': 'Bronze Brooch', 'type': 'Jewelry'},
-    {'name': 'Silver Anklet', 'type': 'Jewelry'},
-    {'name': 'Gold Diadem', 'type': 'Jewelry'},
-    {'name': 'Carnelian Intaglio', 'type': 'Jewelry'},
-    {'name': 'Bronze Armband', 'type': 'Jewelry'},
-    {'name': 'Pearl Earring', 'type': 'Jewelry'},
-    {'name': 'Gold Torc', 'type': 'Jewelry'},
-    // Weapons
     {'name': 'Bronze Sword', 'type': 'Weapon'},
-    {'name': 'Iron Spearhead', 'type': 'Weapon'},
-    {'name': 'Obsidian Blade', 'type': 'Weapon'},
-    {'name': 'Bronze Arrowhead', 'type': 'Weapon'},
-    {'name': 'Iron Dagger', 'type': 'Weapon'},
-    {'name': 'Bronze Shield Boss', 'type': 'Weapon'},
-    {'name': 'Iron Axehead', 'type': 'Weapon'},
-    {'name': 'Bronze Helmet', 'type': 'Weapon'},
-    {'name': 'Iron Javelin Tip', 'type': 'Weapon'},
-    {'name': 'Bronze Greave', 'type': 'Weapon'},
-    {'name': 'Iron Sword Hilt', 'type': 'Weapon'},
-    {'name': 'Bronze Scabbard', 'type': 'Weapon'},
-    // Inscriptions
     {'name': 'Stone Tablet', 'type': 'Inscription'},
-    {'name': 'Lead Seal', 'type': 'Inscription'},
-    {'name': 'Clay Tablet', 'type': 'Inscription'},
-    {'name': 'Bronze Plaque', 'type': 'Inscription'},
-    {'name': 'Marble Stele', 'type': 'Inscription'},
-    {'name': 'Limestone Block', 'type': 'Inscription'},
-    {'name': 'Pottery Ostracon', 'type': 'Inscription'},
-    {'name': 'Lead Curse Tablet', 'type': 'Inscription'},
-    // Organic
     {'name': 'Bone Comb', 'type': 'Organic'},
-    {'name': 'Ivory Handle', 'type': 'Organic'},
-    {'name': 'Shell Ornament', 'type': 'Organic'},
-    {'name': 'Bone Pin', 'type': 'Organic'},
-    {'name': 'Antler Tool', 'type': 'Organic'},
-    {'name': 'Wooden Box', 'type': 'Organic'},
-    {'name': 'Leather Fragment', 'type': 'Organic'},
-    {'name': 'Bone Dice', 'type': 'Organic'},
-    // Glass
-    {'name': 'Glass Vessel', 'type': 'Glass'},
-    {'name': 'Glass Perfume Bottle', 'type': 'Glass'},
-    {'name': 'Glass Bowl', 'type': 'Glass'},
-    {'name': 'Glass Unguentarium', 'type': 'Glass'},
-    {'name': 'Glass Cup', 'type': 'Glass'},
-    {'name': 'Glass Flask', 'type': 'Glass'},
-    // Mosaic & Fresco
-    {'name': 'Mosaic Tile', 'type': 'Mosaic'},
-    {'name': 'Mosaic Fragment', 'type': 'Mosaic'},
-    {'name': 'Fresco Fragment', 'type': 'Fresco'},
-    {'name': 'Painted Plaster', 'type': 'Fresco'},
   ];
 
-  static const _siteExamples = [
-    'Trench A1', 'Trench B2', 'Trench C3', 'Trench D4', 'Trench E5',
-    'Grid 12-N', 'Grid 15-S', 'Grid 8-W', 'Sector Alpha', 'Sector Beta',
-    'North Wall', 'South Gate', 'East Chamber', 'West Courtyard',
-  ];
+  static const _siteExamples = ['Trench A1', 'Grid 12-N', 'North Wall'];
 
   @override
   void initState() {
@@ -3926,6 +3809,11 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     if (widget.photoGallery != null && widget.photoGallery!.isNotEmpty) {
       _photoGallery.addAll(widget.photoGallery!);
       _isPhotogrammetryMode = true;
+    }
+
+    // Initialize cloud model URL if provided
+    if (widget.cloudModelUrl != null) {
+      _model3dUrlController.text = widget.cloudModelUrl!;
     }
 
     // Load draft if exists
@@ -5468,7 +5356,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
 // BLE-enabled Trench Safety Monitor for M5StickC Plus 2
 //
 
-// BLE Service and Characteristic UUIDs (must match Arduino code)
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const String _bleIMUCharUUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 const String _bleMoistureCharUUID = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
@@ -5482,13 +5369,11 @@ class _SafetyView extends StatefulWidget {
 }
 
 class _SafetyViewState extends State<_SafetyView> {
-  // BLE state
   BluetoothDevice? _connectedDevice;
   bool _isScanning = false;
   bool _isConnecting = false;
   String _connectionStatus = 'Disconnected';
 
-  // Sensor data
   double _accX = 0.0, _accY = 0.0, _accZ = 0.0;
   double _vibration = 0.0;
   int _moisturePercent = 0;
@@ -5496,19 +5381,14 @@ class _SafetyViewState extends State<_SafetyView> {
   String _alertMessage = '';
   String _lastUpdate = '--:--';
 
-  // Alert history
   final List<_AlertData> _alerts = [];
 
-  // Subscriptions
   StreamSubscription? _scanSubscription;
   StreamSubscription? _connectionSubscription;
   List<StreamSubscription> _charSubscriptions = [];
 
-  // Simulation mode
   bool _isSimulating = false;
   Timer? _simulationTimer;
-
-  // Firebase data logging
   Timer? _firebaseLogTimer;
   List<Map<String, dynamic>> _sensorHistory = [];
 
@@ -5533,19 +5413,15 @@ class _SafetyViewState extends State<_SafetyView> {
   }
 
   Future<void> _checkBluetoothAndScan() async {
-    // Check if Bluetooth is on
     if (await FlutterBluePlus.isSupported == false) {
-      _showError('Bluetooth not supported on this device');
+      _showError('Bluetooth not supported');
       return;
     }
-
-    // Check Bluetooth state
     final state = await FlutterBluePlus.adapterState.first;
     if (state != BluetoothAdapterState.on) {
       setState(() => _connectionStatus = 'Bluetooth OFF');
       return;
     }
-
     _startScan();
   }
 
@@ -5558,17 +5434,14 @@ class _SafetyViewState extends State<_SafetyView> {
     });
 
     try {
-      // Start scanning
       await FlutterBluePlus.startScan(
         withServices: [Guid(_bleSensorServiceUUID)],
         timeout: const Duration(seconds: 10),
       );
 
-      // Listen for scan results
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
         for (ScanResult r in results) {
           if (r.device.platformName.contains('AncientVision')) {
-            debugPrint('Found AncientVision sensor: ${r.device.platformName}');
             FlutterBluePlus.stopScan();
             _connectToDevice(r.device);
             break;
@@ -5576,7 +5449,6 @@ class _SafetyViewState extends State<_SafetyView> {
         }
       });
 
-      // Handle scan timeout
       await Future.delayed(const Duration(seconds: 10));
       if (_connectedDevice == null && mounted) {
         setState(() {
@@ -5585,7 +5457,6 @@ class _SafetyViewState extends State<_SafetyView> {
         });
       }
     } catch (e) {
-      debugPrint('Scan error: $e');
       if (mounted) {
         setState(() {
           _isScanning = false;
@@ -5613,23 +5484,18 @@ class _SafetyViewState extends State<_SafetyView> {
         _connectionStatus = 'Connected';
       });
 
-      // Listen for disconnection
       _connectionSubscription = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected && mounted) {
           setState(() {
             _connectedDevice = null;
             _connectionStatus = 'Disconnected';
           });
-          // Try to reconnect after a delay
           Future.delayed(const Duration(seconds: 2), _startScan);
         }
       });
 
-      // Discover services and subscribe to characteristics
       await _discoverAndSubscribe(device);
-
     } catch (e) {
-      debugPrint('Connection error: $e');
       if (mounted) {
         setState(() {
           _isConnecting = false;
@@ -5642,18 +5508,13 @@ class _SafetyViewState extends State<_SafetyView> {
   Future<void> _discoverAndSubscribe(BluetoothDevice device) async {
     try {
       List<BluetoothService> services = await device.discoverServices();
-
       for (BluetoothService service in services) {
         if (service.uuid.toString().toLowerCase() == _bleSensorServiceUUID.toLowerCase()) {
           for (BluetoothCharacteristic char in service.characteristics) {
-            final charUuid = char.uuid.toString().toLowerCase();
-
-            // Subscribe to notifications
             if (char.properties.notify) {
               await char.setNotifyValue(true);
-
               final sub = char.onValueReceived.listen((value) {
-                _handleCharacteristicData(charUuid, value);
+                _handleCharacteristicData(char.uuid.toString().toLowerCase(), value);
               });
               _charSubscriptions.add(sub);
             }
@@ -5684,7 +5545,6 @@ class _SafetyViewState extends State<_SafetyView> {
           final newLevel = data['level'] as String? ?? 'safe';
           final newMessage = data['message'] as String? ?? '';
 
-          // Add to alert history if level changed or new message
           if (newLevel != 'safe' && newMessage.isNotEmpty) {
             _alerts.insert(0, _AlertData(
               time: _lastUpdate,
@@ -5692,10 +5552,7 @@ class _SafetyViewState extends State<_SafetyView> {
               title: newLevel == 'critical' ? 'Critical Alert' : 'Warning',
               message: newMessage,
             ));
-            // Keep only last 10 alerts
             if (_alerts.length > 10) _alerts.removeLast();
-
-            // Save alert to Firebase
             _saveAlertToFirebase(newLevel, newMessage);
           }
 
@@ -5721,14 +5578,12 @@ class _SafetyViewState extends State<_SafetyView> {
         'deviceName': _isSimulating ? 'Simulator' : (_connectedDevice?.platformName ?? 'Unknown'),
         'timestamp': FieldValue.serverTimestamp(),
       });
-      debugPrint('Alert saved to Firebase: $level - $message');
     } catch (e) {
-      debugPrint('Error saving alert to Firebase: $e');
+      debugPrint('Error saving alert: $e');
     }
   }
 
   void _startFirebaseLogging() {
-    // Save sensor data to Firebase every 10 seconds
     _firebaseLogTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (mounted && (_connectedDevice != null || _isSimulating)) {
         _saveSensorDataToFirebase();
@@ -5747,9 +5602,8 @@ class _SafetyViewState extends State<_SafetyView> {
         'deviceName': _isSimulating ? 'Simulator' : (_connectedDevice?.platformName ?? 'Unknown'),
         'timestamp': FieldValue.serverTimestamp(),
       });
-      debugPrint('Sensor data logged to Firebase');
     } catch (e) {
-      debugPrint('Error saving sensor data to Firebase: $e');
+      debugPrint('Error saving sensor data: $e');
     }
   }
 
@@ -5951,7 +5805,7 @@ class _SafetyViewState extends State<_SafetyView> {
                           ? 'Simulation Mode Active'
                           : isConnected
                             ? 'Connected to M5StickC Plus 2'
-                            : '$_connectionStatus ${_isScanning ? '' : '- Tap to scan'}',
+                            : '$_connectionStatus ${_isConnecting ? '' : '- Tap to scan'}',
                         style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 13),
                       ),
                     ),
@@ -6853,7 +6707,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         }
       },
       onError: (error) {
-        print('Voice recognition error: $error');
+        debugPrint('Voice recognition error: $error');
         setState(() => _isListening = false);
       },
     );
@@ -6865,9 +6719,9 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     await _flutterTts.setPitch(1.0);
 
     if (available) {
-      print('✅ Voice commands initialized successfully');
+      debugPrint(' Voice commands initialized successfully');
     } else {
-      print('⚠️ Voice recognition not available on this device');
+      debugPrint(' Voice recognition not available on this device');
     }
   }
 
@@ -7027,7 +6881,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       final image = img.decodeImage(bytes);
 
       if (image == null) {
-        print('⚠️ AI: Could not decode image');
+        debugPrint(' AI: Could not decode image');
         return;
       }
 
@@ -7055,13 +6909,13 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         try {
           await _speak('AI detected: $_aiDetectedType, confidence ${(_aiConfidence * 100).toInt()}%');
         } catch (voiceError) {
-          print('Voice feedback error: $voiceError');
+          debugPrint('Voice feedback error: $voiceError');
         }
       }
 
     } catch (e, stackTrace) {
-      print('⚠️ AI recognition error: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint(' AI recognition error: $e');
+      debugPrint('Stack trace: $stackTrace');
       // Reset AI detection state on error
       if (mounted) {
         setState(() {
@@ -7436,11 +7290,11 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
               await _runAIArtifactRecognition(imageForAI).timeout(
                 const Duration(seconds: 5),
                 onTimeout: () {
-                  debugPrint('⚠️ AI recognition timed out');
+                  debugPrint(' AI recognition timed out');
                 },
               );
             } catch (e) {
-              debugPrint('⚠️ AI recognition skipped: $e');
+              debugPrint(' AI recognition skipped: $e');
               // Silently fail - AI is optional and should never block the main workflow
             }
           });
@@ -7662,7 +7516,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       return XFile(hdrPath);
 
     } catch (e) {
-      print('HDR merge error: $e');
+      debugPrint('HDR merge error: $e');
       return exposures.isNotEmpty ? exposures[0] : null;
     }
   }
@@ -7901,7 +7755,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       }
 
     } catch (e) {
-      debugPrint('❌ Frame extraction error: $e');
+      debugPrint(' Frame extraction error: $e');
 
       // Close progress dialog if open
       if (mounted) {
@@ -7948,7 +7802,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       // Return overall score
       return metrics.overallScore;
     } catch (e) {
-      debugPrint('⚠️ Quality analysis error: $e');
+      debugPrint(' Quality analysis error: $e');
       return 0.5;
     }
   }
@@ -8124,9 +7978,9 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         encoder.create(zipPath);
         encoder.addDirectory(exportDir);
         encoder.close();
-        debugPrint('✅ ZIP created: $zipPath');
+        debugPrint(' ZIP created: $zipPath');
       } catch (e) {
-        debugPrint('⚠️ ZIP creation failed: $e');
+        debugPrint(' ZIP creation failed: $e');
       }
 
       if (mounted) {
@@ -8466,106 +8320,25 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       }
 
       if (result.isComplete && mounted) {
-        // Show success and navigate to 3D viewer
-        await showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF1C2523),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
-              children: [
-                Icon(Icons.view_in_ar, color: Color(0xFF7C4DFF), size: 28),
-                SizedBox(width: 12),
-                Text('3D Model Generated!', style: TextStyle(color: Colors.white)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Sparse point cloud created with ${result.pointCount} points!',
-                  style: TextStyle(color: Colors.white.withOpacity(0.8)),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF7C4DFF).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Quick Preview:',
-                        style: TextStyle(color: Color(0xFF7C4DFF), fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '✓ Processing Time: ${result.processingTimeSeconds!.toStringAsFixed(1)}s\n'
-                        '✓ Method: On-Device Sparse SfM\n'
-                        '✓ Quality: Preview (for full quality, use cloud processing)',
-                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  // Navigate to 3D viewer first
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => Model3DViewer(
-                        result: result,
-                        onCompleteForm: () {
-                          // After viewing 3D, go to form
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ManualEntryFormScreen(
-                                reconstructionResult: result,
-                                photoGallery: _captures.map((c) => c.file).toList(),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+        // Go directly to 3D viewer - user can save from there
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => Model3DViewer(
+              result: result,
+              onCompleteForm: () {
+                // After viewing 3D, go to form to save finding
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ManualEntryFormScreen(
+                      reconstructionResult: result,
+                      photoGallery: _captures.map((c) => c.file).toList(),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.visibility),
-                label: const Text('View 3D Model'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7C4DFF),
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  // Navigate directly to manual entry form with 3D model data
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ManualEntryFormScreen(
-                        reconstructionResult: result,
-                        photoGallery: _captures.map((c) => c.file).toList(),
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.edit_note_rounded),
-                label: const Text('Complete Form'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4CAF50),
-                ),
-              ),
-            ],
+                  ),
+                );
+              },
+            ),
           ),
         );
       } else if (result.hasFailed && mounted) {
@@ -8630,85 +8403,21 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       });
 
       if (result.success && mounted) {
-        // Show success dialog
-        await showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF1C2523),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
-              children: [
-                Icon(Icons.cloud_done_rounded, color: Color(0xFF4CAF50), size: 28),
-                SizedBox(width: 12),
-                Expanded(child: Text('Cloud Processing Complete!', style: TextStyle(color: Colors.white, fontSize: 18))),
-              ],
+        // Cloud model ready - go directly to save finding form
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Cloud processing complete! Fill in the finding details.'),
+            backgroundColor: Color(0xFF4CAF50),
+          ),
+        );
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ManualEntryFormScreen(
+              photoGallery: _captures.map((c) => c.file).toList(),
+              cloudModelUrl: result.downloadUrl,
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Professional Quality Model:', style: TextStyle(color: Color(0xFF4CAF50), fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text(
-                        '✓ Dense mesh with textures\n'
-                        '${result.vertexCount != null ? "✓ ${result.vertexCount} vertices\n" : ""}'
-                        '${result.processingTime != null ? "✓ Processed in ${result.processingTime!.toStringAsFixed(0)}s\n" : ""}'
-                        '✓ Ready for archaeological documentation',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (result.downloadUrl != null)
-                  Text(
-                    'Model saved locally and can be exported.',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
-                  ),
-              ],
-            ),
-            actions: [
-              if (result.downloadUrl != null)
-                TextButton.icon(
-                  onPressed: () async {
-                    // Share the download URL
-                    await Share.share(
-                      'AncientVision 3D Model: ${result.downloadUrl}',
-                      subject: 'Archaeological 3D Scan',
-                    );
-                  },
-                  icon: const Icon(Icons.share, size: 18),
-                  label: const Text('Share Link'),
-                  style: TextButton.styleFrom(foregroundColor: Colors.white70),
-                ),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  // Navigate to manual entry with cloud model data
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ManualEntryFormScreen(
-                        photoGallery: _captures.map((c) => c.file).toList(),
-                        // Pass cloud model URL
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.edit_note_rounded),
-                label: const Text('Complete Form'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4CAF50)),
-              ),
-            ],
           ),
         );
       } else if (!result.success && mounted) {
@@ -10092,393 +9801,6 @@ class _AngleProgressPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
-//
-// --------------------- PDF EXPORT SCREEN ---------------------
-//
-
-class PDFExportScreen extends StatefulWidget {
-  const PDFExportScreen({super.key});
-
-  @override
-  State<PDFExportScreen> createState() => _PDFExportScreenState();
-}
-
-class _PDFExportScreenState extends State<PDFExportScreen> {
-  List<Map<String, dynamic>> _findings = [];
-  bool _isLoading = true;
-  bool _isGenerating = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFindings();
-  }
-
-  Future<void> _loadFindings() async {
-    try {
-      final user = AuthService.currentUser;
-      if (user == null) return;
-
-      final snapshot = await FirebaseFirestore.instance
-          .collection('findings')
-          .orderBy('createdAt', descending: true)
-          .get();
-
-      setState(() {
-        _findings = snapshot.docs.map((doc) {
-          final data = doc.data();
-          data['id'] = doc.id;
-          return data;
-        }).toList();
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _generatePDF(Map<String, dynamic> finding) async {
-    setState(() => _isGenerating = true);
-
-    try {
-      final pdfService = PDFReportService();
-
-      // Prepare data
-      final findingData = {
-        'ID': finding['id'],
-        'Type': finding['type'] ?? 'Unknown',
-        'Site': finding['site'] ?? 'Unknown',
-        'Date': finding['date'] ?? 'Unknown',
-        'Latitude': finding['latitude']?.toString() ?? 'N/A',
-        'Longitude': finding['longitude']?.toString() ?? 'N/A',
-      };
-
-      // Load photos if available
-      final photoUrls = (finding['photoGallery'] as List?)?.cast<String>() ?? [];
-      final photoFiles = <File>[];
-
-      // For now, skip downloading photos (would require HTTP calls)
-      // In production, we'd download from URLs
-
-      final file = await pdfService.generateArchaeologicalReport(
-        findingName: finding['name'] ?? 'Unknown Finding',
-        findingData: findingData,
-        photoFiles: photoFiles,
-        reconstruction: null, // Would need to serialize/deserialize
-      );
-
-      setState(() => _isGenerating = false);
-
-      if (mounted) {
-        // Share the PDF
-        await Share.shareXFiles(
-          [XFile(file.path)],
-          subject: 'Archaeological Report - ${finding['name']}',
-        );
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PDF report generated successfully!'),
-            backgroundColor: Color(0xFF4CAF50),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() => _isGenerating = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error generating PDF: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0D3A39), Color(0xFF1C2523)],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    const Text(
-                      'Generate PDF Reports',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Content
-              Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _findings.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No findings to export',
-                              style: TextStyle(color: Colors.white70),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _findings.length,
-                            itemBuilder: (context, index) {
-                              final finding = _findings[index];
-                              return Card(
-                                color: Colors.white.withOpacity(0.1),
-                                margin: const EdgeInsets.only(bottom: 12),
-                                child: ListTile(
-                                  leading: const Icon(
-                                    Icons.picture_as_pdf,
-                                    color: Color(0xFFF44336),
-                                  ),
-                                  title: Text(
-                                    finding['name'] ?? 'Unknown',
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                  subtitle: Text(
-                                    '${finding['type']} - ${finding['site']}',
-                                    style: TextStyle(color: Colors.white.withOpacity(0.7)),
-                                  ),
-                                  trailing: _isGenerating
-                                      ? const SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        )
-                                      : IconButton(
-                                          icon: const Icon(Icons.download, color: Color(0xFF4CAF50)),
-                                          onPressed: () => _generatePDF(finding),
-                                        ),
-                                ),
-                              );
-                            },
-                          ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-//
-// --------------------- EXPORT DATA SCREEN ---------------------
-//
-
-class ExportDataScreen extends StatelessWidget {
-  const ExportDataScreen({super.key});
-
-  Future<void> _exportAllData(BuildContext context) async {
-    try {
-      final user = AuthService.currentUser;
-      if (user == null) return;
-
-      // Fetch all findings
-      final snapshot = await FirebaseFirestore.instance
-          .collection('findings')
-          .orderBy('createdAt', descending: true)
-          .get();
-
-      final findings = snapshot.docs.map((doc) => doc.data()).toList();
-
-      // Convert to JSON
-      final jsonData = jsonEncode(findings);
-
-      // Save to file
-      final output = await getApplicationDocumentsDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${output.path}/findings_export_$timestamp.json');
-      await file.writeAsString(jsonData);
-
-      // Share the file
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject: 'AncientVision Findings Export',
-        text: 'Exported ${findings.length} archaeological findings',
-      );
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Exported ${findings.length} findings successfully!'),
-            backgroundColor: const Color(0xFF4CAF50),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Export failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0D3A39), Color(0xFF1C2523)],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    const Text(
-                      'Export Data',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Export options
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      _buildExportCard(
-                        context,
-                        icon: Icons.folder_zip,
-                        title: 'Export All Findings',
-                        description: 'Export all findings as JSON file',
-                        color: const Color(0xFF2196F3),
-                        onTap: () => _exportAllData(context),
-                      ),
-                      const SizedBox(height: 16),
-                      _buildExportCard(
-                        context,
-                        icon: Icons.view_in_ar,
-                        title: 'Export 3D Models',
-                        description: 'Export 3D models as PLY files (Coming Soon)',
-                        color: const Color(0xFF9C27B0),
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('3D model export: Use Share button in 3D viewer'),
-                              backgroundColor: Color(0xFFFFC107),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExportCard(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String description,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: color.withOpacity(0.3),
-            width: 2,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 32),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.arrow_forward_ios, color: color, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // Data classes for photogrammetry
 class CaptureAngle {
@@ -10511,4 +9833,282 @@ class PhotogrammetryCapture {
     required this.capturedAt,
     required this.qualityScore,
   });
+}
+
+// =============================================================================
+// ADMIN PANEL SCREEN - User & Role Management
+// =============================================================================
+
+class AdminPanelScreen extends StatefulWidget {
+  const AdminPanelScreen({super.key});
+
+  @override
+  State<AdminPanelScreen> createState() => _AdminPanelScreenState();
+}
+
+class _AdminPanelScreenState extends State<AdminPanelScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0D3A39), Color(0xFF1C2523)],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const Icon(Icons.admin_panel_settings, color: Color(0xFFF44336), size: 28),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Admin Panel',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // User list
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: AuthService.getUsersStream(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'No users found',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      );
+                    }
+
+                    final users = snapshot.data!.docs;
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: users.length,
+                      itemBuilder: (context, index) {
+                        final userData = users[index].data() as Map<String, dynamic>;
+                        final uid = users[index].id;
+                        final email = userData['email'] ?? 'Unknown';
+                        final name = userData['fullName'] ?? email;
+                        final role = userData['role'] ?? 'viewer';
+                        final status = userData['status'] ?? 'active';
+                        final isCurrentUser = uid == AuthService.currentUser?.uid;
+
+                        return Card(
+                          color: Colors.white.withOpacity(0.1),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: _getRoleColor(role).withOpacity(0.5),
+                              width: 1,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: _getRoleColor(role),
+                                      radius: 20,
+                                      child: Text(
+                                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  name,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              if (isCurrentUser)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue.withOpacity(0.3),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: const Text(
+                                                    'You',
+                                                    style: TextStyle(color: Colors.blue, fontSize: 10),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          Text(
+                                            email,
+                                            style: TextStyle(
+                                              color: Colors.white.withOpacity(0.6),
+                                              fontSize: 13,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    // Role badge
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: _getRoleColor(role).withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: _getRoleColor(role), width: 1),
+                                      ),
+                                      child: Text(
+                                        role.toUpperCase(),
+                                        style: TextStyle(
+                                          color: _getRoleColor(role),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Status badge
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: status == 'active'
+                                            ? Colors.green.withOpacity(0.2)
+                                            : Colors.red.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        status.toUpperCase(),
+                                        style: TextStyle(
+                                          color: status == 'active' ? Colors.green : Colors.red,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    // Role change dropdown
+                                    if (!isCurrentUser)
+                                      PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert, color: Colors.white70),
+                                        color: const Color(0xFF1C2523),
+                                        onSelected: (newRole) => _changeUserRole(uid, email, newRole),
+                                        itemBuilder: (context) => [
+                                          _buildRoleMenuItem('admin', role),
+                                          _buildRoleMenuItem('archeologist', role),
+                                          _buildRoleMenuItem('viewer', role),
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getRoleColor(String role) {
+    switch (role) {
+      case 'admin':
+        return const Color(0xFFF44336);
+      case 'archeologist':
+        return const Color(0xFFFFC107);
+      case 'viewer':
+      default:
+        return const Color(0xFF4CAF50);
+    }
+  }
+
+  PopupMenuItem<String> _buildRoleMenuItem(String role, String currentRole) {
+    final isSelected = role == currentRole;
+    return PopupMenuItem(
+      value: role,
+      child: Row(
+        children: [
+          Icon(
+            isSelected ? Icons.check_circle : Icons.circle_outlined,
+            color: _getRoleColor(role),
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            role.toUpperCase(),
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changeUserRole(String uid, String email, String newRole) async {
+    final success = await AuthService.updateUserRole(uid, newRole);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Updated $email to $newRole'
+                : 'Failed to update role',
+          ),
+          backgroundColor: success ? const Color(0xFF4CAF50) : Colors.red,
+        ),
+      );
+    }
+  }
 }

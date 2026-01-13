@@ -6,8 +6,8 @@ import 'reconstruction_service.dart';
 class RobustSfM {
   /// RANSAC parameters
   static const int ransacIterations = 1000;
-  static const double ransacThreshold = 0.01; // Reprojection error threshold
-  static const double minInlierRatio = 0.3; // 30% inliers required
+  static const double ransacThreshold = 0.02; // Reprojection error threshold (relaxed)
+  static const double minInlierRatio = 0.15; // 15% inliers required (more tolerant)
 
   /// Estimate essential matrix using RANSAC with 8-point algorithm
   static EssentialMatrixResult estimateEssentialMatrix(
@@ -59,15 +59,23 @@ class RobustSfM {
 
     if (bestE == null || maxInliers < 8) {
       throw Exception(
-          'RANSAC failed: Only $maxInliers inliers found (need at least 8). '
-          'Try:\n• Better feature quality\n• More angle variation\n• Keep object still');
+          'Could not find consistent camera geometry ($maxInliers valid matches).\n'
+          'This can happen with:\n'
+          '• Very smooth or reflective objects\n'
+          '• Inconsistent lighting between shots\n'
+          '• Camera too far from object\n\n'
+          'Try cloud processing for better results.');
     }
 
     final inlierRatio = maxInliers / matches.length;
     if (inlierRatio < minInlierRatio) {
       throw Exception(
-          'Poor match quality: Only ${(inlierRatio * 100).toInt()}% inliers '
-          '(need ${(minInlierRatio * 100).toInt()}%). Object may have moved.');
+          'Low match quality (${(inlierRatio * 100).toInt()}% consistent matches).\n'
+          'Try:\n'
+          '• Better/more even lighting\n'
+          '• More textured objects\n'
+          '• Keep camera steady\n'
+          '• More overlap between photos');
     }
 
     return EssentialMatrixResult(

@@ -36,7 +36,12 @@
       "Bash(timeout /t 3)",
       "Bash(dir:*)",
       "Bash(flutter devices:*)",
-      "Bash(./gradlew assembleRelease:*)"
+      "Bash(./gradlew assembleRelease:*)",
+      "Bash(del \"c:\\\\Users\\\\thodo\\\\Desktop\\\\FLL_Thodoris\\\\AncientVisionFLL\\\\AncientVision\\\\lib\\\\widgets\\\\liquid_glass.dart\")",
+      "Bash(del /q COMPREHENSIVE_FIX.md FINAL_STATUS.md MARKET_LEADER.md PERFECT_3D_SYSTEM.md PRODUCTION_IMPROVEMENTS.md REAL_SFM_IMPLEMENTATION.md ULTIMATE_SYSTEM_COMPLETE.md ULTRA_FEATURES.md ULTRA_FIX_COMPLETE.md WORLD_CLASS_APP.md WORLD_CLASS_FEATURES.md)",
+      "Bash(flutter install:*)",
+      "Bash(taskkill:*)",
+      "Bash(timeout:*)"
     ]
   }
 }

@@ -132,7 +132,7 @@ This application was developed for the FIRST LEGO League Innovation Project. Key
 
 ## License
 
-This project was created for FLL 2024-2025 competition.
+This project was created for FLL 2025-2026 competition.
 
 ---
 

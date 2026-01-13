@@ -6,11 +6,13 @@ class Point3D {
   final Vector3 position;
   final Color color;
   final double confidence; // 0.0 to 1.0
+  final Vector3? normal; // Surface normal at this point
 
   Point3D({
     required this.position,
     required this.color,
     this.confidence = 1.0,
+    this.normal,
   });
 
   Map<String, dynamic> toJson() => {
@@ -22,6 +24,9 @@ class Point3D {
         'b': color.b,
         'a': color.a,
         'confidence': confidence,
+        if (normal != null) 'nx': normal!.x,
+        if (normal != null) 'ny': normal!.y,
+        if (normal != null) 'nz': normal!.z,
       };
 
   factory Point3D.fromJson(Map<String, dynamic> json) => Point3D(
@@ -37,6 +42,13 @@ class Point3D {
           json['b'] as int,
         ),
         confidence: json['confidence'] as double? ?? 1.0,
+        normal: json['nx'] != null
+            ? Vector3(
+                json['nx'] as double,
+                json['ny'] as double,
+                json['nz'] as double,
+              )
+            : null,
       );
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'notification_service.dart';
 
 /// Cloud Photogrammetry Service using OpenScan Cloud API
 ///
@@ -27,6 +28,11 @@ class CloudPhotogrammetryService {
     return 'Basic $credentials';
   }
 
+  String? _lastError;
+
+  /// Get last error message
+  String? get lastError => _lastError;
+
   /// Request a new token for processing
   Future<String?> requestToken({
     required String email,
@@ -34,6 +40,7 @@ class CloudPhotogrammetryService {
     String lastname = 'User',
   }) async {
     try {
+      debugPrint('🔑 Requesting token from OpenScan Cloud...');
       final response = await http.get(
         Uri.parse('$_baseUrl/requestToken').replace(queryParameters: {
           'email': email,
@@ -43,14 +50,22 @@ class CloudPhotogrammetryService {
         headers: {'Authorization': _authHeader},
       ).timeout(const Duration(seconds: 30));
 
+      debugPrint('Token response: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _token = data['token'];
+        debugPrint(' Token received');
         return _token;
+      } else {
+        _lastError = 'Token request failed: HTTP ${response.statusCode}';
+        debugPrint(' $_lastError');
+        debugPrint('Response body: ${response.body}');
       }
       return null;
     } catch (e) {
-      print('Error requesting token: $e');
+      _lastError = 'Token request error: $e';
+      debugPrint(' $_lastError');
       return null;
     }
   }
@@ -72,21 +87,48 @@ class CloudPhotogrammetryService {
       }
       return null;
     } catch (e) {
-      print('Error getting token info: $e');
+      debugPrint('Error getting token info: $e');
       return null;
     }
   }
 
-  /// Check server status
-  Future<bool> checkServerStatus() async {
+  /// Check server status by testing the API
+  Future<Map<String, dynamic>> checkServerStatus() async {
     try {
+      // Try to reach the server with a simple request
       final response = await http.get(
-        Uri.parse('$_baseUrl/status'),
-      ).timeout(const Duration(seconds: 10));
+        Uri.parse(_baseUrl),
+        headers: {'Authorization': _authHeader},
+      ).timeout(const Duration(seconds: 15));
 
-      return response.statusCode == 200;
+      if (response.statusCode == 200 || response.statusCode == 404) {
+        // Server is reachable (404 is fine - endpoint might not exist but server is up)
+        return {'ok': true, 'message': 'Server reachable'};
+      } else {
+        return {
+          'ok': false,
+          'message': 'Server returned status ${response.statusCode}',
+          'statusCode': response.statusCode,
+        };
+      }
+    } on SocketException catch (e) {
+      return {
+        'ok': false,
+        'message': 'No internet connection',
+        'error': e.toString(),
+      };
+    } on http.ClientException catch (e) {
+      return {
+        'ok': false,
+        'message': 'Connection failed',
+        'error': e.toString(),
+      };
     } catch (e) {
-      return false;
+      return {
+        'ok': false,
+        'message': 'Network error: ${e.runtimeType}',
+        'error': e.toString(),
+      };
     }
   }
 
@@ -112,27 +154,37 @@ class CloudPhotogrammetryService {
     required String projectName,
   }) async {
     if (_token == null) {
-      print('No token available. Call requestToken first.');
+      _lastError = 'No token available';
+      debugPrint(' $_lastError');
       return null;
     }
 
     try {
+      debugPrint('📁 Creating project: $projectName');
       final response = await http.get(
         Uri.parse('$_baseUrl/createProject').replace(queryParameters: {
           'token': _token!,
           'project_name': projectName,
         }),
         headers: {'Authorization': _authHeader},
-      );
+      ).timeout(const Duration(seconds: 30));
+
+      debugPrint('Create project response: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _currentProjectId = data['project_id'] ?? data['projectId'];
+        debugPrint(' Project created: $_currentProjectId');
         return _currentProjectId;
+      } else {
+        _lastError = 'Create project failed: HTTP ${response.statusCode}';
+        debugPrint(' $_lastError');
+        debugPrint('Response: ${response.body}');
       }
       return null;
     } catch (e) {
-      print('Error creating project: $e');
+      _lastError = 'Create project error: $e';
+      debugPrint(' $_lastError');
       return null;
     }
   }
@@ -143,7 +195,7 @@ class CloudPhotogrammetryService {
     Function(int uploaded, int total)? onProgress,
   }) async {
     if (_token == null || _currentProjectId == null) {
-      print('No token or project. Create project first.');
+      debugPrint('No token or project. Create project first.');
       return false;
     }
 
@@ -152,7 +204,7 @@ class CloudPhotogrammetryService {
 
     for (final photo in photos) {
       if (_isCancelled) {
-        print('Upload cancelled');
+        debugPrint('Upload cancelled');
         return false;
       }
 
@@ -179,10 +231,10 @@ class CloudPhotogrammetryService {
           uploaded++;
           onProgress?.call(uploaded, photos.length);
         } else {
-          print('Failed to upload photo ${photo.name}: ${response.statusCode}');
+          debugPrint('Failed to upload photo ${photo.name}: ${response.statusCode}');
         }
       } catch (e) {
-        print('Error uploading photo: $e');
+        debugPrint('Error uploading photo: $e');
       }
     }
 
@@ -206,7 +258,7 @@ class CloudPhotogrammetryService {
 
       return response.statusCode == 200;
     } catch (e) {
-      print('Error starting processing: $e');
+      debugPrint('Error starting processing: $e');
       return false;
     }
   }
@@ -232,7 +284,7 @@ class CloudPhotogrammetryService {
       }
       return null;
     } catch (e) {
-      print('Error getting project status: $e');
+      debugPrint('Error getting project status: $e');
       return null;
     }
   }
@@ -249,7 +301,7 @@ class CloudPhotogrammetryService {
     while (!_isCancelled) {
       final elapsed = DateTime.now().difference(startTime);
       if (elapsed > timeout) {
-        print('Processing timeout');
+        debugPrint('Processing timeout');
         return null;
       }
 
@@ -262,7 +314,7 @@ class CloudPhotogrammetryService {
         }
 
         if (status.isFailed) {
-          print('Processing failed: ${status.errorMessage}');
+          debugPrint('Processing failed: ${status.errorMessage}');
           return status;
         }
       }
@@ -292,7 +344,7 @@ class CloudPhotogrammetryService {
       }
       return null;
     } catch (e) {
-      print('Error downloading model: $e');
+      debugPrint('Error downloading model: $e');
       return null;
     }
   }
@@ -314,27 +366,34 @@ class CloudPhotogrammetryService {
     required String email,
     String projectName = 'AncientVision_Scan',
     Function(double progress, String status)? onProgress,
+    bool sendNotifications = true,
   }) async {
     _isCancelled = false;
+    final notificationService = NotificationService();
 
     try {
-      // Step 1: Check server
-      onProgress?.call(0.05, 'Checking server status...');
-      final serverOk = await checkServerStatus();
-      if (!serverOk) {
+      // Step 1: Check server connectivity
+      onProgress?.call(0.05, 'Checking connection...');
+      final serverStatus = await checkServerStatus();
+      if (serverStatus['ok'] != true) {
         return CloudReconstructionResult(
           success: false,
-          errorMessage: 'Server unavailable. Please try again later.',
+          errorMessage: 'Cannot connect to cloud server.\n'
+              '${serverStatus['message']}\n\n'
+              'Check your internet connection and try again.',
         );
       }
 
       // Step 2: Request token
-      onProgress?.call(0.10, 'Authenticating...');
+      onProgress?.call(0.10, 'Authenticating with OpenScan Cloud...');
       final token = await requestToken(email: email);
       if (token == null) {
         return CloudReconstructionResult(
           success: false,
-          errorMessage: 'Failed to authenticate. Check your internet connection.',
+          errorMessage: 'Failed to authenticate with OpenScan Cloud.\n'
+              '${_lastError ?? "Unknown error"}\n\n'
+              'The OpenScan service may be temporarily unavailable.\n'
+              'Try on-device processing instead.',
         );
       }
 
@@ -344,7 +403,9 @@ class CloudPhotogrammetryService {
       if (projectId == null) {
         return CloudReconstructionResult(
           success: false,
-          errorMessage: 'Failed to create project.',
+          errorMessage: 'Failed to create cloud project.\n'
+              '${_lastError ?? "Unknown error"}\n\n'
+              'Try on-device processing instead.',
         );
       }
 
@@ -385,9 +446,17 @@ class CloudPhotogrammetryService {
       );
 
       if (result == null || !result.isComplete) {
+        final errorMsg = result?.errorMessage ?? 'Processing timed out or was cancelled.';
+        if (sendNotifications) {
+          await notificationService.showProcessingFailed(
+            projectName: projectName,
+            errorMessage: errorMsg,
+          );
+          await notificationService.incrementUnreadCount();
+        }
         return CloudReconstructionResult(
           success: false,
-          errorMessage: result?.errorMessage ?? 'Processing timed out or was cancelled.',
+          errorMessage: errorMsg,
         );
       }
 
@@ -403,6 +472,15 @@ class CloudPhotogrammetryService {
 
       onProgress?.call(1.0, 'Complete!');
 
+      // Send success notification
+      if (sendNotifications) {
+        await notificationService.showProcessingComplete(
+          projectName: projectName,
+          pointCount: result.pointCount,
+        );
+        await notificationService.incrementUnreadCount();
+      }
+
       return CloudReconstructionResult(
         success: true,
         modelFile: modelFile,
@@ -415,6 +493,15 @@ class CloudPhotogrammetryService {
       );
 
     } catch (e) {
+      // Send failure notification
+      if (sendNotifications) {
+        await notificationService.showProcessingFailed(
+          projectName: projectName,
+          errorMessage: e.toString(),
+        );
+        await notificationService.incrementUnreadCount();
+      }
+
       return CloudReconstructionResult(
         success: false,
         errorMessage: 'Error: $e',

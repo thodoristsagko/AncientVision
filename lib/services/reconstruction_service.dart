@@ -10,6 +10,7 @@ import 'package:vector_math/vector_math_64.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../models/point_cloud.dart';
+import '../models/mesh_model.dart';
 import '../models/reconstruction_result.dart';
 import 'sfm_robust.dart';
 
@@ -71,7 +72,7 @@ class ReconstructionService {
         throw Exception('Need at least 3 images for reconstruction (got ${imageFiles.length})');
       }
       if (imageFiles.length < 8) {
-        debugPrint('⚠️ Warning: Using ${imageFiles.length} images. 8+ recommended for best results.');
+        debugPrint('Warning: Using ${imageFiles.length} images. 8+ recommended for best results.');
       }
 
       // Step 1: Load and downsample images with memory management (10%)
@@ -84,7 +85,7 @@ class ReconstructionService {
         if (images.isEmpty) {
           throw Exception('Failed to load any valid images. Check file permissions and formats.');
         }
-        debugPrint('✅ Loaded ${images.length} images successfully');
+        debugPrint(' Loaded ${images.length} images successfully');
       } catch (e) {
         throw Exception('Image loading failed: $e. Ensure photos are valid JPEG/PNG files.');
       }
@@ -97,13 +98,19 @@ class ReconstructionService {
         if (_isCancelled) throw Exception('Reconstruction cancelled by user');
 
         final totalFeatures = features.fold<int>(0, (sum, f) => sum + f.length);
-        if (totalFeatures < 100) {
-          throw Exception('Not enough features detected ($totalFeatures found). Try:\n'
-              '• Better lighting\n'
-              '• More textured objects\n'
-              '• Sharper photos');
+        if (totalFeatures < 50) {
+          throw Exception(
+            'Not enough features detected ($totalFeatures found).\n'
+            'The object may be too:\n'
+            '• Smooth or shiny (reflections)\n'
+            '• Dark or black (low contrast)\n'
+            '• Uniform in color\n\n'
+            'Solutions:\n'
+            '• Add temporary texture (flour/chalk)\n'
+            '• Improve lighting\n'
+            '• Use cloud processing');
         }
-        debugPrint('✅ Extracted $totalFeatures features from ${features.length} images');
+        debugPrint(' Extracted $totalFeatures features from ${features.length} images');
       } catch (e) {
         throw Exception('Feature extraction failed: $e');
       } finally {
@@ -120,10 +127,17 @@ class ReconstructionService {
         if (_isCancelled) throw Exception('Reconstruction cancelled by user');
 
         final totalMatches = matches.fold<int>(0, (sum, m) => sum + m.length);
-        if (totalMatches < 50) {
-          throw Exception('Insufficient feature matches ($totalMatches found). Object may have moved between shots.');
+        if (totalMatches < 30) {
+          throw Exception(
+            'Not enough matching features ($totalMatches found).\n'
+            'This usually means:\n'
+            '• Object is too smooth/uniform\n'
+            '• Lighting is too dim or uneven\n'
+            '• Photos are blurry\n'
+            '• Not enough overlap between angles\n\n'
+            'Try cloud processing for difficult objects.');
         }
-        debugPrint('✅ Found $totalMatches feature matches');
+        debugPrint(' Found $totalMatches feature matches');
       } catch (e) {
         throw Exception('Feature matching failed: $e');
       }
@@ -134,17 +148,18 @@ class ReconstructionService {
       try {
         cameraPoses = await _estimateCameraPoses(matches, imageFiles.length);
         if (_isCancelled) throw Exception('Reconstruction cancelled by user');
-        debugPrint('✅ Estimated ${cameraPoses.length} camera poses');
+        debugPrint(' Estimated ${cameraPoses.length} camera poses');
       } catch (e) {
         throw Exception('Camera pose estimation failed: $e');
       }
 
-      // Step 5: Triangulate 3D points (95%)
-      onProgress?.call(0.80, 'Reconstructing 3D points...');
+      // Step 5: Triangulate 3D points (70%)
+      onProgress?.call(0.70, 'Reconstructing 3D points...');
       PointCloud? pointCloud;
+      List<img.Image>? colorImages;
       try {
         // Reload only necessary images for color extraction
-        final colorImages = await _loadImagesForColor(imageFiles);
+        colorImages = await _loadImagesForColor(imageFiles);
         pointCloud = await _triangulatePoints(
           features,
           matches,
@@ -153,21 +168,84 @@ class ReconstructionService {
         );
         if (_isCancelled) throw Exception('Reconstruction cancelled by user');
 
-        // Clear intermediate data
-        colorImages.clear();
-        features.clear();
-        matches.clear();
-        cameraPoses.clear();
-
         if (pointCloud.points.length < 100) {
-          debugPrint('⚠️ Warning: Only ${pointCloud.points.length} points reconstructed. Quality may be low.');
+          debugPrint('Warning: Only ${pointCloud.points.length} points reconstructed. Quality may be low.');
         }
-        debugPrint('✅ Reconstructed ${pointCloud.points.length} 3D points');
+        debugPrint(' Reconstructed ${pointCloud.points.length} 3D points');
       } catch (e) {
         throw Exception('3D triangulation failed: $e');
       }
 
-      onProgress?.call(1.0, '✅ Reconstruction complete!');
+      // Use non-null locals for post-processing
+      var currentCloud = pointCloud!;
+      var currentPoses = cameraPoses!;
+
+      // Step 6: Bundle Adjustment - refine poses and points together (80%)
+      onProgress?.call(0.80, 'Optimizing reconstruction...');
+      try {
+        final bundleResult = await _bundleAdjustment(
+          currentCloud,
+          currentPoses,
+          features,
+          matches,
+        );
+        currentCloud = bundleResult.pointCloud;
+        currentPoses = bundleResult.poses;
+        debugPrint(' Bundle adjustment improved ${bundleResult.improvementPercent.toStringAsFixed(1)}%');
+      } catch (e) {
+        debugPrint(' Bundle adjustment skipped: $e');
+      }
+
+      // Step 7: Statistical outlier removal (85%)
+      onProgress?.call(0.85, 'Filtering outliers...');
+      try {
+        final beforeCount = currentCloud.points.length;
+        currentCloud = _removeStatisticalOutliers(currentCloud);
+        final removed = beforeCount - currentCloud.points.length;
+        debugPrint(' Removed $removed outlier points');
+      } catch (e) {
+        debugPrint(' Outlier removal skipped: $e');
+      }
+
+      // Step 8: Multi-view color sampling (88%)
+      onProgress?.call(0.88, 'Enhancing colors...');
+      try {
+        currentCloud = await _multiViewColorSampling(
+          currentCloud,
+          currentPoses,
+          colorImages!,
+        );
+        debugPrint(' Multi-view color sampling complete');
+      } catch (e) {
+        debugPrint(' Color sampling skipped: $e');
+      }
+
+      // Step 9: Normal estimation (92%)
+      onProgress?.call(0.92, 'Computing normals...');
+      try {
+        currentCloud = _estimateNormals(currentCloud);
+        debugPrint(' Normal estimation complete');
+      } catch (e) {
+        debugPrint(' Normal estimation skipped: $e');
+      }
+
+      // Step 10: Point interpolation for denser cloud (96%)
+      onProgress?.call(0.96, 'Densifying point cloud...');
+      try {
+        final beforeCount = currentCloud.points.length;
+        currentCloud = _interpolatePoints(currentCloud);
+        final added = currentCloud.points.length - beforeCount;
+        debugPrint(' Added $added interpolated points');
+      } catch (e) {
+        debugPrint(' Point interpolation skipped: $e');
+      }
+
+      // Clear intermediate data
+      colorImages?.clear();
+      features.clear();
+      matches.clear();
+
+      onProgress?.call(1.0, 'Reconstruction complete!');
 
       final endTime = DateTime.now();
       final processingTime = endTime.difference(startTime).inSeconds.toDouble();
@@ -178,15 +256,15 @@ class ReconstructionService {
         status: ReconstructionStatus.completed,
         startedAt: startTime,
         completedAt: endTime,
-        pointCloud: pointCloud,
+        pointCloud: currentCloud,
         progress: 1.0,
-        statusMessage: 'Reconstruction completed with ${pointCloud.points.length} points',
+        statusMessage: 'Reconstruction completed with ${currentCloud.points.length} points',
         inputImageCount: imageFiles.length,
         processingTimeSeconds: processingTime,
         qualityMetrics: {
-          'point_count': pointCloud.points.length,
+          'point_count': currentCloud.points.length,
           'image_count': imageFiles.length,
-          'average_confidence': _calculateAverageConfidence(pointCloud),
+          'average_confidence': _calculateAverageConfidence(currentCloud),
           'processing_time_seconds': processingTime,
         },
       );
@@ -194,14 +272,14 @@ class ReconstructionService {
       // Auto-save result
       try {
         await saveResult(result);
-        debugPrint('✅ Saved reconstruction to persistent storage');
+        debugPrint(' Saved reconstruction to persistent storage');
       } catch (e) {
-        debugPrint('⚠️ Failed to save result: $e');
+        debugPrint(' Failed to save result: $e');
       }
 
       return result;
     } catch (e, stackTrace) {
-      debugPrint('❌ Reconstruction error: $e');
+      debugPrint(' Reconstruction error: $e');
       debugPrint('Stack trace: $stackTrace');
 
       return ReconstructionResult(
@@ -245,10 +323,10 @@ class ReconstructionService {
           final progress = 0.05 + (i / imageFiles.length) * 0.10;
           onProgress?.call(progress, 'Loading image ${i + 1}/${imageFiles.length}...');
         } else {
-          debugPrint('⚠️ Failed to decode image ${i + 1}');
+          debugPrint(' Failed to decode image ${i + 1}');
         }
       } catch (e) {
-        debugPrint('⚠️ Error loading image ${i + 1}: $e');
+        debugPrint(' Error loading image ${i + 1}: $e');
       }
     }
 
@@ -278,7 +356,7 @@ class ReconstructionService {
           images.add(downsampled);
         }
       } catch (e) {
-        debugPrint('⚠️ Error loading image ${i + 1} for color: $e');
+        debugPrint(' Error loading image ${i + 1} for color: $e');
         // Add placeholder if loading fails
         images.add(img.Image(width: 512, height: 512));
       }
@@ -305,50 +383,60 @@ class ReconstructionService {
     return allFeatures;
   }
 
-  /// Extract features from a single image (runs in isolate)
+  /// Extract features from a single image with multi-scale detection (runs in isolate)
   static List<ImageFeature> _extractFeaturesFromImage(img.Image image) {
     final features = <ImageFeature>[];
     final width = image.width;
     final height = image.height;
 
     try {
-      // Convert to grayscale for feature detection
       final gray = img.grayscale(image);
-
-      // Enhanced grid-based feature extraction with adaptive threshold
-      const gridSize = 20; // 20x20 grid for better coverage
-      final cellWidth = width / gridSize;
-      final cellHeight = height / gridSize;
-
-      // Calculate adaptive threshold based on image statistics
-      double maxStrength = 0;
       final candidateFeatures = <ImageFeature>[];
 
-      // First pass: collect all potential features
-      for (int gy = 0; gy < gridSize; gy++) {
-        for (int gx = 0; gx < gridSize; gx++) {
-          // Sample multiple points in each cell for better coverage
-          for (int dy = 0; dy < 2; dy++) {
-            for (int dx = 0; dx < 2; dx++) {
-              final cx = ((gx + (dx + 0.5) / 2) * cellWidth).toInt();
-              final cy = ((gy + (dy + 0.5) / 2) * cellHeight).toInt();
+      // Multi-scale feature detection for robustness
+      final scales = [1.0, 0.75, 0.5];
 
-              if (cx < 4 || cx >= width - 4 || cy < 4 || cy >= height - 4) continue;
+      for (final scale in scales) {
+        img.Image scaledGray;
+        if (scale < 1.0) {
+          scaledGray = img.copyResize(gray,
+            width: (width * scale).toInt(),
+            height: (height * scale).toInt(),
+            interpolation: img.Interpolation.linear,
+          );
+        } else {
+          scaledGray = gray;
+        }
 
-              // Calculate corner strength (enhanced Harris response)
-              final cornerStrength = _calculateCornerStrength(gray, cx, cy);
+        final sw = scaledGray.width;
+        final sh = scaledGray.height;
 
-              if (cornerStrength > maxStrength) {
-                maxStrength = cornerStrength;
-              }
+        // Dense grid sampling
+        const gridSize = 25;
+        final cellW = sw / gridSize;
+        final cellH = sh / gridSize;
 
-              if (cornerStrength > 500) {
-                // Lower threshold for initial collection
+        for (int gy = 0; gy < gridSize; gy++) {
+          for (int gx = 0; gx < gridSize; gx++) {
+            // Multiple samples per cell
+            for (int s = 0; s < 3; s++) {
+              final cx = ((gx + (s % 2) * 0.5 + 0.25) * cellW).toInt();
+              final cy = ((gy + (s ~/ 2) * 0.5 + 0.25) * cellH).toInt();
+
+              if (cx < 5 || cx >= sw - 5 || cy < 5 || cy >= sh - 5) continue;
+
+              final strength = _calculateCornerStrength(scaledGray, cx, cy);
+
+              if (strength > 300) {
+                // Scale coordinates back to original
+                final origX = cx / scale;
+                final origY = cy / scale;
+
                 candidateFeatures.add(ImageFeature(
-                  x: cx.toDouble(),
-                  y: cy.toDouble(),
-                  strength: cornerStrength,
-                  descriptor: [], // Descriptor extracted later
+                  x: origX,
+                  y: origY,
+                  strength: strength * scale, // Weight by scale
+                  descriptor: [],
                 ));
               }
             }
@@ -356,19 +444,19 @@ class ReconstructionService {
         }
       }
 
-      // Adaptive threshold: use 20% of max strength
-      final threshold = maxStrength * 0.15;
+      // Adaptive threshold
+      if (candidateFeatures.isEmpty) return features;
 
-      // Second pass: extract descriptors for strong features
+      candidateFeatures.sort((a, b) => b.strength.compareTo(a.strength));
+      final threshold = candidateFeatures[candidateFeatures.length ~/ 4].strength * 0.5;
+
+      // Extract descriptors for strong features
       for (final candidate in candidateFeatures) {
         if (candidate.strength > threshold) {
-          // Extract local descriptor (8x8 patch around feature)
-          final descriptor = _extractDescriptor(
-            gray,
-            candidate.x.toInt(),
-            candidate.y.toInt(),
-          );
+          final x = candidate.x.toInt().clamp(8, width - 9);
+          final y = candidate.y.toInt().clamp(8, height - 9);
 
+          final descriptor = _extractDescriptor(gray, x, y);
           features.add(ImageFeature(
             x: candidate.x,
             y: candidate.y,
@@ -378,31 +466,36 @@ class ReconstructionService {
         }
       }
 
-      // Non-maximum suppression: remove features too close to stronger ones
+      // Non-maximum suppression with spatial hashing for speed
       final suppressedFeatures = <ImageFeature>[];
       features.sort((a, b) => b.strength.compareTo(a.strength));
+      final occupied = <int>{};
+      const cellSize = 8;
 
       for (final feature in features) {
-        bool shouldKeep = true;
-        for (final kept in suppressedFeatures) {
-          final dx = feature.x - kept.x;
-          final dy = feature.y - kept.y;
-          final distance = math.sqrt(dx * dx + dy * dy);
-          if (distance < 10) {
-            // Too close to existing feature
-            shouldKeep = false;
-            break;
+        final cellX = (feature.x / cellSize).toInt();
+        final cellY = (feature.y / cellSize).toInt();
+        final cellKey = cellY * 10000 + cellX;
+
+        // Check neighboring cells
+        bool tooClose = false;
+        for (int dy = -1; dy <= 1 && !tooClose; dy++) {
+          for (int dx = -1; dx <= 1 && !tooClose; dx++) {
+            if (occupied.contains((cellY + dy) * 10000 + (cellX + dx))) {
+              tooClose = true;
+            }
           }
         }
-        if (shouldKeep) {
+
+        if (!tooClose) {
           suppressedFeatures.add(feature);
+          occupied.add(cellKey);
         }
       }
 
-      // Keep top 300 features for better matching (increased from 200)
-      return suppressedFeatures.take(300).toList();
+      // Keep top 500 features for better matching
+      return suppressedFeatures.take(500).toList();
     } catch (e) {
-      debugPrint('Error extracting features: $e');
       return features;
     }
   }
@@ -491,42 +584,81 @@ class ReconstructionService {
     return matches;
   }
 
-  /// Match features between two images (runs in isolate)
+  /// Match features between two images with cross-check (runs in isolate)
   static List<FeatureMatch> _matchFeaturePair(Map<String, dynamic> args) {
     final features1 = args['features1'] as List<ImageFeature>;
     final features2 = args['features2'] as List<ImageFeature>;
-    final matches = <FeatureMatch>[];
 
-    for (final f1 in features1) {
-      double bestDistance = double.infinity;
-      double secondBestDistance = double.infinity;
+    // Forward matching: f1 -> f2
+    final forwardMatches = <int, _MatchCandidate>{};
+    for (int i = 0; i < features1.length; i++) {
+      final f1 = features1[i];
+      double best = double.infinity;
+      double secondBest = double.infinity;
       int bestIdx = -1;
 
       for (int j = 0; j < features2.length; j++) {
-        final f2 = features2[j];
-        final distance = _descriptorDistance(f1.descriptor, f2.descriptor);
-
-        if (distance < bestDistance) {
-          secondBestDistance = bestDistance;
-          bestDistance = distance;
+        final dist = _descriptorDistance(f1.descriptor, features2[j].descriptor);
+        if (dist < best) {
+          secondBest = best;
+          best = dist;
           bestIdx = j;
-        } else if (distance < secondBestDistance) {
-          secondBestDistance = distance;
+        } else if (dist < secondBest) {
+          secondBest = dist;
         }
       }
 
-      // Lowe's ratio test: good match if best is significantly better than second best
-      if (bestIdx >= 0 && bestDistance < 0.8 * secondBestDistance) {
+      // Lowe's ratio test (tighter threshold for quality)
+      if (bestIdx >= 0 && best < 0.75 * secondBest) {
+        forwardMatches[i] = _MatchCandidate(bestIdx, best);
+      }
+    }
+
+    // Backward matching: f2 -> f1 (cross-check)
+    final backwardMatches = <int, int>{};
+    for (int j = 0; j < features2.length; j++) {
+      final f2 = features2[j];
+      double best = double.infinity;
+      double secondBest = double.infinity;
+      int bestIdx = -1;
+
+      for (int i = 0; i < features1.length; i++) {
+        final dist = _descriptorDistance(features1[i].descriptor, f2.descriptor);
+        if (dist < best) {
+          secondBest = best;
+          best = dist;
+          bestIdx = i;
+        } else if (dist < secondBest) {
+          secondBest = dist;
+        }
+      }
+
+      if (bestIdx >= 0 && best < 0.75 * secondBest) {
+        backwardMatches[j] = bestIdx;
+      }
+    }
+
+    // Keep only bidirectional matches (cross-check validation)
+    final matches = <FeatureMatch>[];
+    for (final entry in forwardMatches.entries) {
+      final i = entry.key;
+      final j = entry.value.idx;
+
+      // Cross-check: f1->f2 and f2->f1 must agree
+      if (backwardMatches[j] == i) {
         matches.add(FeatureMatch(
-          feature1: f1,
-          feature2: features2[bestIdx],
-          distance: bestDistance,
+          feature1: features1[i],
+          feature2: features2[j],
+          distance: entry.value.distance,
         ));
       }
     }
 
+    // Sort by quality and return
+    matches.sort((a, b) => a.distance.compareTo(b.distance));
     return matches;
   }
+
 
   /// Calculate Euclidean distance between descriptors
   static double _descriptorDistance(List<double> d1, List<double> d2) {
@@ -553,18 +685,21 @@ class ReconstructionService {
       focalLength: focalLength,
     ));
 
-    debugPrint('📐 Starting ROBUST camera pose estimation with RANSAC...');
+    debugPrint(' Starting ROBUST camera pose estimation with RANSAC...');
 
     // Estimate each subsequent camera pose using Essential Matrix + RANSAC
     for (int i = 0; i < matches.length; i++) {
       final pairMatches = matches[i];
 
       if (pairMatches.length < 8) {
-        // Not enough matches - FAIL instead of guessing
+        // Not enough matches - suggest solutions
         throw Exception(
-          'Insufficient matches between images ${i + 1} and ${i + 2}: '
-          'Found ${pairMatches.length} matches, need at least 8.\n'
-          'Try:\n• More overlap between photos\n• Better lighting\n• Sharper focus'
+          'Images ${i + 1} and ${i + 2} don\'t overlap enough.\n'
+          'Found only ${pairMatches.length} matching points (need 8+).\n\n'
+          'Solutions:\n'
+          '• Capture smaller angle steps between photos\n'
+          '• Ensure 60-80% overlap between adjacent shots\n'
+          '• Try cloud processing (more robust)'
         );
       }
 
@@ -577,7 +712,7 @@ class ReconstructionService {
           focalLength,
         );
 
-        debugPrint('    ✅ RANSAC: ${essentialResult.inlierCount} inliers '
+        debugPrint(' RANSAC: ${essentialResult.inlierCount} inliers '
             '(${(essentialResult.inlierRatio * 100).toInt()}%)');
 
         // Recover camera pose from Essential Matrix
@@ -605,19 +740,19 @@ class ReconstructionService {
           focalLength: focalLength,
         ));
 
-        debugPrint('    📍 Pose ${i + 2}: pos=${worldPosition.x.toStringAsFixed(2)}, '
+        debugPrint(' Pose ${i + 2}: pos=${worldPosition.x.toStringAsFixed(2)}, '
             '${worldPosition.y.toStringAsFixed(2)}, ${worldPosition.z.toStringAsFixed(2)}');
 
       } catch (e) {
         // RANSAC failed - provide actionable error
-        debugPrint('    ❌ Pose estimation failed: $e');
+        debugPrint(' Pose estimation failed: $e');
         throw Exception(
           'Camera pose estimation failed for images ${i + 1}-${i + 2}:\n$e'
         );
       }
     }
 
-    debugPrint('✅ Estimated ${poses.length} camera poses with RANSAC');
+    debugPrint(' Estimated ${poses.length} camera poses with RANSAC');
     return poses;
   }
 
@@ -636,7 +771,7 @@ class ReconstructionService {
     int failedAngle = 0;
     int failedReprojection = 0;
 
-    debugPrint('🔺 Starting ROBUST triangulation...');
+    debugPrint(' Starting ROBUST triangulation...');
 
     // Triangulate points from consecutive image pairs
     for (int i = 0; i < matches.length; i++) {
@@ -737,19 +872,19 @@ class ReconstructionService {
       }
 
       if (pairPoints > 0) {
-        debugPrint('  📍 Pair ${i + 1}-${i + 2}: $pairPoints points triangulated');
+        debugPrint(' Pair ${i + 1}-${i + 2}: $pairPoints points triangulated');
       }
     }
 
-    debugPrint('✅ Triangulation complete:');
+    debugPrint(' Triangulation complete:');
     debugPrint('   Total: $totalTriangulated');
-    debugPrint('   ✅ Passed: $passed (${(passed / totalTriangulated * 100).toInt()}%)');
-    debugPrint('   ❌ Failed depth: $failedDepth');
-    debugPrint('   ❌ Failed angle: $failedAngle');
-    debugPrint('   ❌ Failed reproj: $failedReprojection');
+    debugPrint(' Passed: $passed (${(passed / totalTriangulated * 100).toInt()}%)');
+    debugPrint(' Failed depth: $failedDepth');
+    debugPrint(' Failed angle: $failedAngle');
+    debugPrint(' Failed reproj: $failedReprojection');
 
     if (passed < 100) {
-      debugPrint('⚠️ Warning: Low point count. Consider:');
+      debugPrint('Warning: Low point count. Consider:');
       debugPrint('   • Better lighting');
       debugPrint('   • More textured object');
       debugPrint('   • More photos (16 recommended)');
@@ -1029,6 +1164,518 @@ class ReconstructionService {
     return validation;
   }
 
+  /// Bundle Adjustment - jointly optimize camera poses and 3D points
+  Future<BundleAdjustmentResult> _bundleAdjustment(
+    PointCloud pointCloud,
+    List<CameraPose> poses,
+    List<List<ImageFeature>> features,
+    List<List<FeatureMatch>> matches,
+  ) async {
+    // Simplified bundle adjustment using gradient descent
+    final points = List<Point3D>.from(pointCloud.points);
+    var currentPoses = List<CameraPose>.from(poses);
+
+    double initialError = _calculateTotalReprojectionError(points, currentPoses, matches);
+    double currentError = initialError;
+
+    const iterations = 10;
+    const learningRate = 0.001;
+
+    for (int iter = 0; iter < iterations; iter++) {
+      // Optimize each point position
+      for (int i = 0; i < points.length; i++) {
+        final point = points[i];
+        final gradient = _computePointGradient(point, currentPoses, matches, i);
+
+        points[i] = Point3D(
+          position: point.position - gradient * learningRate,
+          color: point.color,
+          confidence: point.confidence,
+          normal: point.normal,
+        );
+      }
+
+      // Optimize camera positions (skip first camera - fixed at origin)
+      for (int c = 1; c < currentPoses.length; c++) {
+        final pose = currentPoses[c];
+        final gradient = _computePoseGradient(pose, points, matches, c);
+
+        currentPoses[c] = CameraPose(
+          position: pose.position - gradient * learningRate,
+          rotation: pose.rotation,
+          focalLength: pose.focalLength,
+        );
+      }
+
+      currentError = _calculateTotalReprojectionError(points, currentPoses, matches);
+    }
+
+    final improvement = ((initialError - currentError) / initialError * 100).clamp(0.0, 100.0);
+
+    return BundleAdjustmentResult(
+      pointCloud: PointCloud(
+        points: points,
+        method: pointCloud.method,
+        metadata: pointCloud.metadata,
+      ),
+      poses: currentPoses,
+      improvementPercent: improvement,
+    );
+  }
+
+  /// Calculate total reprojection error
+  double _calculateTotalReprojectionError(
+    List<Point3D> points,
+    List<CameraPose> poses,
+    List<List<FeatureMatch>> matches,
+  ) {
+    double totalError = 0;
+    int count = 0;
+
+    for (int i = 0; i < matches.length && i < poses.length - 1; i++) {
+      for (final match in matches[i]) {
+        if (count < points.length) {
+          final reproj1 = _reprojectPoint(points[count].position, poses[i]);
+          final reproj2 = _reprojectPoint(points[count].position, poses[i + 1]);
+
+          totalError += (reproj1.x - match.feature1.x).abs() + (reproj1.y - match.feature1.y).abs();
+          totalError += (reproj2.x - match.feature2.x).abs() + (reproj2.y - match.feature2.y).abs();
+          count++;
+        }
+      }
+    }
+
+    return count > 0 ? totalError / count : 0;
+  }
+
+  /// Compute gradient for point optimization
+  Vector3 _computePointGradient(
+    Point3D point,
+    List<CameraPose> poses,
+    List<List<FeatureMatch>> matches,
+    int pointIdx,
+  ) {
+    const epsilon = 0.001;
+    var gradient = Vector3.zero();
+
+    // Numerical gradient for each dimension
+    for (int dim = 0; dim < 3; dim++) {
+      final delta = Vector3(
+        dim == 0 ? epsilon : 0,
+        dim == 1 ? epsilon : 0,
+        dim == 2 ? epsilon : 0,
+      );
+
+      final pointPlus = Point3D(
+        position: point.position + delta,
+        color: point.color,
+        confidence: point.confidence,
+      );
+      final pointMinus = Point3D(
+        position: point.position - delta,
+        color: point.color,
+        confidence: point.confidence,
+      );
+
+      double errorPlus = 0;
+      double errorMinus = 0;
+
+      for (int c = 0; c < poses.length; c++) {
+        final reproj1 = _reprojectPoint(pointPlus.position, poses[c]);
+        final reproj2 = _reprojectPoint(pointMinus.position, poses[c]);
+        errorPlus += reproj1.length;
+        errorMinus += reproj2.length;
+      }
+
+      final grad = (errorPlus - errorMinus) / (2 * epsilon);
+      if (dim == 0) gradient.x = grad;
+      if (dim == 1) gradient.y = grad;
+      if (dim == 2) gradient.z = grad;
+    }
+
+    return gradient;
+  }
+
+  /// Compute gradient for camera pose optimization
+  Vector3 _computePoseGradient(
+    CameraPose pose,
+    List<Point3D> points,
+    List<List<FeatureMatch>> matches,
+    int poseIdx,
+  ) {
+    const epsilon = 0.001;
+    var gradient = Vector3.zero();
+
+    for (int dim = 0; dim < 3; dim++) {
+      final delta = Vector3(
+        dim == 0 ? epsilon : 0,
+        dim == 1 ? epsilon : 0,
+        dim == 2 ? epsilon : 0,
+      );
+
+      final posePlus = CameraPose(
+        position: pose.position + delta,
+        rotation: pose.rotation,
+        focalLength: pose.focalLength,
+      );
+      final poseMinus = CameraPose(
+        position: pose.position - delta,
+        rotation: pose.rotation,
+        focalLength: pose.focalLength,
+      );
+
+      double errorPlus = 0;
+      double errorMinus = 0;
+
+      for (final point in points.take(50)) {
+        final reproj1 = _reprojectPoint(point.position, posePlus);
+        final reproj2 = _reprojectPoint(point.position, poseMinus);
+        errorPlus += reproj1.length;
+        errorMinus += reproj2.length;
+      }
+
+      final grad = (errorPlus - errorMinus) / (2 * epsilon);
+      if (dim == 0) gradient.x = grad;
+      if (dim == 1) gradient.y = grad;
+      if (dim == 2) gradient.z = grad;
+    }
+
+    return gradient;
+  }
+
+  /// Statistical outlier removal using k-nearest neighbors
+  PointCloud _removeStatisticalOutliers(PointCloud cloud, {int k = 10, double stdRatio = 2.0}) {
+    if (cloud.points.length < k + 1) return cloud;
+
+    final points = cloud.points;
+    final distances = <double>[];
+
+    // Calculate mean distance to k nearest neighbors for each point
+    for (int i = 0; i < points.length; i++) {
+      final dists = <double>[];
+      for (int j = 0; j < points.length; j++) {
+        if (i != j) {
+          dists.add((points[i].position - points[j].position).length);
+        }
+      }
+      dists.sort();
+
+      // Mean distance to k nearest neighbors
+      double meanDist = 0;
+      for (int n = 0; n < k && n < dists.length; n++) {
+        meanDist += dists[n];
+      }
+      meanDist /= k;
+      distances.add(meanDist);
+    }
+
+    // Calculate global mean and std
+    final globalMean = distances.reduce((a, b) => a + b) / distances.length;
+    final variance = distances.map((d) => (d - globalMean) * (d - globalMean)).reduce((a, b) => a + b) / distances.length;
+    final globalStd = math.sqrt(variance);
+
+    // Filter outliers
+    final threshold = globalMean + stdRatio * globalStd;
+    final filteredPoints = <Point3D>[];
+
+    for (int i = 0; i < points.length; i++) {
+      if (distances[i] < threshold) {
+        filteredPoints.add(points[i]);
+      }
+    }
+
+    return PointCloud(
+      points: filteredPoints,
+      method: cloud.method,
+      metadata: {...cloud.metadata, 'outliers_removed': points.length - filteredPoints.length},
+    );
+  }
+
+  /// Multi-view color sampling - average colors from multiple camera views
+  Future<PointCloud> _multiViewColorSampling(
+    PointCloud cloud,
+    List<CameraPose> poses,
+    List<img.Image> images,
+  ) async {
+    final enhancedPoints = <Point3D>[];
+
+    for (final point in cloud.points) {
+      final colors = <Color>[];
+      final weights = <double>[];
+
+      // Sample color from each camera that can see this point
+      for (int c = 0; c < poses.length && c < images.length; c++) {
+        final pose = poses[c];
+        final image = images[c];
+
+        // Check if point is in front of camera
+        final camDir = pose.rotation.transposed().transform(Vector3(0, 0, 1));
+        final toPoint = point.position - pose.position;
+        final depth = toPoint.dot(camDir);
+
+        if (depth > 0.1) {
+          // Project point to image
+          final reproj = _reprojectPoint(point.position, pose);
+          final x = reproj.x.toInt();
+          final y = reproj.y.toInt();
+
+          // Scale to image size (images are 512x512)
+          final imgX = (x * 512 / 1024).toInt().clamp(0, image.width - 1);
+          final imgY = (y * 512 / 1024).toInt().clamp(0, image.height - 1);
+
+          if (imgX >= 0 && imgX < image.width && imgY >= 0 && imgY < image.height) {
+            final pixel = image.getPixel(imgX, imgY);
+            colors.add(Color.fromARGB(255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt()));
+
+            // Weight by viewing angle (prefer frontal views)
+            final viewAngle = toPoint.normalized().dot(camDir).abs();
+            weights.add(viewAngle);
+          }
+        }
+      }
+
+      // Weighted average of colors
+      Color finalColor = point.color;
+      if (colors.isNotEmpty) {
+        double totalWeight = weights.reduce((a, b) => a + b);
+        if (totalWeight > 0) {
+          double r = 0, g = 0, b = 0;
+          for (int i = 0; i < colors.length; i++) {
+            final w = weights[i] / totalWeight;
+            r += colors[i].r * w;
+            g += colors[i].g * w;
+            b += colors[i].b * w;
+          }
+          finalColor = Color.fromARGB(255, r.round().clamp(0, 255), g.round().clamp(0, 255), b.round().clamp(0, 255));
+        }
+      }
+
+      enhancedPoints.add(Point3D(
+        position: point.position,
+        color: finalColor,
+        confidence: point.confidence,
+        normal: point.normal,
+      ));
+    }
+
+    return PointCloud(
+      points: enhancedPoints,
+      method: cloud.method,
+      metadata: {...cloud.metadata, 'multi_view_color': true},
+    );
+  }
+
+  /// Estimate normals for each point using local neighborhood
+  PointCloud _estimateNormals(PointCloud cloud, {int k = 8}) {
+    if (cloud.points.length < k + 1) return cloud;
+
+    final pointsWithNormals = <Point3D>[];
+
+    for (final point in cloud.points) {
+      // Find k nearest neighbors
+      final neighbors = <Point3D>[];
+      final dists = <MapEntry<Point3D, double>>[];
+
+      for (final other in cloud.points) {
+        if (other != point) {
+          final dist = (point.position - other.position).length;
+          dists.add(MapEntry(other, dist));
+        }
+      }
+
+      dists.sort((a, b) => a.value.compareTo(b.value));
+      for (int i = 0; i < k && i < dists.length; i++) {
+        neighbors.add(dists[i].key);
+      }
+
+      // Compute centroid
+      var centroid = Vector3.zero();
+      for (final n in neighbors) {
+        centroid += n.position;
+      }
+      centroid /= neighbors.length.toDouble();
+
+      // Compute covariance matrix
+      double cxx = 0, cxy = 0, cxz = 0, cyy = 0, cyz = 0, czz = 0;
+      for (final n in neighbors) {
+        final d = n.position - centroid;
+        cxx += d.x * d.x;
+        cxy += d.x * d.y;
+        cxz += d.x * d.z;
+        cyy += d.y * d.y;
+        cyz += d.y * d.z;
+        czz += d.z * d.z;
+      }
+
+      // Simple normal estimation using cross product of principal directions
+      final v1 = Vector3(cxx, cxy, cxz).normalized();
+      final v2 = Vector3(cxy, cyy, cyz).normalized();
+      var normal = v1.cross(v2);
+
+      if (normal.length > 0.001) {
+        normal = normal.normalized();
+      } else {
+        normal = Vector3(0, 1, 0); // Default up normal
+      }
+
+      pointsWithNormals.add(Point3D(
+        position: point.position,
+        color: point.color,
+        confidence: point.confidence,
+        normal: normal,
+      ));
+    }
+
+    return PointCloud(
+      points: pointsWithNormals,
+      method: cloud.method,
+      metadata: {...cloud.metadata, 'has_normals': true},
+    );
+  }
+
+  /// Interpolate points to create denser point cloud
+  PointCloud _interpolatePoints(PointCloud cloud, {int maxNewPoints = 500}) {
+    if (cloud.points.length < 10) return cloud;
+
+    final interpolated = List<Point3D>.from(cloud.points);
+    final original = cloud.points;
+    int added = 0;
+
+    // Find point pairs that are close together and add midpoints
+    for (int i = 0; i < original.length && added < maxNewPoints; i++) {
+      for (int j = i + 1; j < original.length && added < maxNewPoints; j++) {
+        final dist = (original[i].position - original[j].position).length;
+
+        // Only interpolate between nearby points
+        if (dist > 0.01 && dist < 0.5) {
+          // Midpoint
+          final midPos = (original[i].position + original[j].position) / 2;
+
+          // Average color
+          final midColor = Color.fromARGB(
+            255,
+            ((original[i].color.r + original[j].color.r) / 2).round(),
+            ((original[i].color.g + original[j].color.g) / 2).round(),
+            ((original[i].color.b + original[j].color.b) / 2).round(),
+          );
+
+          // Average confidence
+          final midConf = (original[i].confidence + original[j].confidence) / 2;
+
+          // Interpolated normal
+          Vector3? midNormal;
+          if (original[i].normal != null && original[j].normal != null) {
+            midNormal = ((original[i].normal! + original[j].normal!) / 2).normalized();
+          }
+
+          interpolated.add(Point3D(
+            position: midPos,
+            color: midColor,
+            confidence: midConf * 0.9, // Slightly lower confidence for interpolated
+            normal: midNormal,
+          ));
+          added++;
+        }
+      }
+    }
+
+    return PointCloud(
+      points: interpolated,
+      method: cloud.method,
+      metadata: {...cloud.metadata, 'interpolated_points': added},
+    );
+  }
+
+  /// Generate a simple triangle mesh from point cloud using k-nearest neighbor triangulation
+  MeshModel generateMeshFromPointCloud(PointCloud cloud, {int k = 6}) {
+    if (cloud.points.length < 4) {
+      return MeshModel(
+        vertices: [],
+        faces: [],
+        method: 'knn_triangulation',
+      );
+    }
+
+    final vertices = <MeshVertex>[];
+    final faces = <MeshFace>[];
+    final points = cloud.points;
+
+    // Create vertices from points
+    for (final point in points) {
+      vertices.add(MeshVertex(
+        position: point.position,
+        normal: point.normal,
+        color: point.color,
+      ));
+    }
+
+    // Build neighbor lists for each point
+    final neighbors = <int, List<int>>{};
+    for (int i = 0; i < points.length; i++) {
+      final dists = <MapEntry<int, double>>[];
+      for (int j = 0; j < points.length; j++) {
+        if (i != j) {
+          final dist = (points[i].position - points[j].position).length;
+          dists.add(MapEntry(j, dist));
+        }
+      }
+      dists.sort((a, b) => a.value.compareTo(b.value));
+      neighbors[i] = dists.take(k).map((e) => e.key).toList();
+    }
+
+    // Create triangles from point triplets using k-nearest neighbors
+    final addedFaces = <String>{};
+
+    for (int i = 0; i < points.length; i++) {
+      final myNeighbors = neighbors[i]!;
+
+      // Try to form triangles with pairs of neighbors
+      for (int ni = 0; ni < myNeighbors.length; ni++) {
+        for (int nj = ni + 1; nj < myNeighbors.length; nj++) {
+          final j = myNeighbors[ni];
+          final kIdx = myNeighbors[nj];
+
+          // Check if j and k are also neighbors of each other (form coherent triangle)
+          if (neighbors[j]!.contains(kIdx) || neighbors[kIdx]!.contains(j)) {
+            // Sort indices to avoid duplicate triangles
+            final indices = [i, j, kIdx]..sort();
+            final faceKey = '${indices[0]}_${indices[1]}_${indices[2]}';
+
+            if (!addedFaces.contains(faceKey)) {
+              addedFaces.add(faceKey);
+
+              // Check triangle quality (avoid degenerate triangles)
+              final v0 = points[indices[0]].position;
+              final v1 = points[indices[1]].position;
+              final v2 = points[indices[2]].position;
+
+              final edge1 = v1 - v0;
+              final edge2 = v2 - v0;
+              final normal = edge1.cross(edge2);
+
+              // Only add if triangle has reasonable area
+              if (normal.length > 0.0001) {
+                faces.add(MeshFace(indices[0], indices[1], indices[2]));
+              }
+            }
+          }
+        }
+      }
+    }
+
+    debugPrint(' Generated mesh: ${vertices.length} vertices, ${faces.length} faces');
+
+    return MeshModel(
+      vertices: vertices,
+      faces: faces,
+      method: 'knn_triangulation',
+      metadata: {
+        'source_points': cloud.points.length,
+        'k_neighbors': k,
+      },
+    );
+  }
+
   /// Calculate image variance (sharpness indicator)
   double _calculateImageVariance(img.Image image) {
     // Sample 100 pixels for quick estimate
@@ -1096,5 +1743,24 @@ class CameraPose {
     required this.position,
     required this.rotation,
     required this.focalLength,
+  });
+}
+
+class _MatchCandidate {
+  final int idx;
+  final double distance;
+  _MatchCandidate(this.idx, this.distance);
+}
+
+/// Result of bundle adjustment optimization
+class BundleAdjustmentResult {
+  final PointCloud pointCloud;
+  final List<CameraPose> poses;
+  final double improvementPercent;
+
+  BundleAdjustmentResult({
+    required this.pointCloud,
+    required this.poses,
+    required this.improvementPercent,
   });
 }
