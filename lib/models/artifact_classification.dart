@@ -118,16 +118,43 @@ class ArtifactClassification {
   factory ArtifactClassification() => _instance;
   ArtifactClassification._internal();
 
-  // ========== ARTIFACT TYPES ==========
+  // ========== PRIORITIZED ARTIFACT TYPES (Coins & Fragments First) ==========
   static const List<ArtifactType> artifactTypes = [
+    // ★ PRIORITY 1: Coins & Currency
+    ArtifactType(
+      id: 'coins',
+      name: 'Coins & Currency',
+      description: 'Ancient coins, tokens, and monetary objects',
+      icon: Icons.paid,
+      color: Color(0xFFB8860B),
+      commonMaterials: ['bronze', 'silver', 'gold', 'copper'],
+      subTypes: [
+        'Bronze Coin', 'Silver Coin', 'Gold Coin', 'Copper Coin',
+        'Token', 'Tessera', 'Medal', 'Seal', 'Weight', 'Ingot'
+      ],
+    ),
+    // ★ PRIORITY 2: Pottery Fragments (Sherds)
+    ArtifactType(
+      id: 'fragments',
+      name: 'Pottery Fragments',
+      description: 'Ceramic sherds and vessel fragments',
+      icon: Icons.broken_image,
+      color: Color(0xFFCD853F),
+      commonMaterials: ['ceramic', 'terracotta'],
+      subTypes: [
+        'Rim Sherd', 'Body Sherd', 'Base Sherd', 'Handle Fragment',
+        'Spout Fragment', 'Lid Fragment', 'Foot Fragment', 'Decorated Sherd'
+      ],
+    ),
+    // Complete Pottery (for whole vessels)
     ArtifactType(
       id: 'pottery',
-      name: 'Pottery & Ceramics',
-      description: 'Clay vessels, fragments, and ceramic objects',
+      name: 'Complete Pottery',
+      description: 'Intact or reconstructable clay vessels',
       icon: Icons.local_cafe,
       color: Color(0xFFD2691E),
       commonMaterials: ['ceramic', 'terracotta', 'porcelain'],
-      subTypes: ['Amphora', 'Bowl', 'Jar', 'Vase', 'Plate', 'Figurine', 'Tile', 'Sherd'],
+      subTypes: ['Amphora', 'Bowl', 'Jar', 'Vase', 'Plate', 'Figurine', 'Tile', 'Lamp'],
     ),
     ArtifactType(
       id: 'tools',
@@ -155,15 +182,6 @@ class ArtifactClassification {
       color: Color(0xFFFFD700),
       commonMaterials: ['gold', 'silver', 'bronze', 'glass', 'bone', 'shell'],
       subTypes: ['Ring', 'Bracelet', 'Necklace', 'Pendant', 'Earring', 'Brooch', 'Bead'],
-    ),
-    ArtifactType(
-      id: 'coins',
-      name: 'Coins & Currency',
-      description: 'Monetary objects and trade items',
-      icon: Icons.paid,
-      color: Color(0xFFB8860B),
-      commonMaterials: ['gold', 'silver', 'bronze', 'copper'],
-      subTypes: ['Coin', 'Token', 'Weight', 'Ingot'],
     ),
     ArtifactType(
       id: 'sculpture',
@@ -632,6 +650,26 @@ class ArtifactMetadata {
   final List<String>? associatedFindings;
   final String? stratigraphicContext;
 
+  // ========== COIN-SPECIFIC FIELDS ==========
+  final String? denomination;      // Drachma, Obol, Denarius, As, etc.
+  final String? mint;              // Minting location
+  final String? ruler;             // Issuing authority/emperor
+  final String? obverseLegend;     // Front inscription text
+  final String? reverseLegend;     // Back inscription text
+  final int? dieAxis;              // Clock position (1-12)
+  final String? obverseDescription; // What's depicted on front
+  final String? reverseDescription; // What's depicted on back
+
+  // ========== FRAGMENT-SPECIFIC FIELDS ==========
+  final String? vesselPart;        // rim, body, base, handle, spout, lid, foot
+  final String? wareType;          // coarse, fine, cooking, storage, tableware
+  final String? decorationStyle;   // plain, painted, incised, stamped, glazed
+  final String? fabricColorInt;    // Interior Munsell color
+  final String? fabricColorExt;    // Exterior Munsell color
+  final double? rimDiameter;       // Estimated rim diameter in mm
+  final double? wallThickness;     // Sherd thickness in mm
+  final String? surfaceTreatment;  // slip, burnish, glaze, etc.
+
   ArtifactMetadata({
     this.typeId,
     this.subType,
@@ -643,12 +681,36 @@ class ArtifactMetadata {
     this.conservationNotes,
     this.associatedFindings,
     this.stratigraphicContext,
+    // Coin fields
+    this.denomination,
+    this.mint,
+    this.ruler,
+    this.obverseLegend,
+    this.reverseLegend,
+    this.dieAxis,
+    this.obverseDescription,
+    this.reverseDescription,
+    // Fragment fields
+    this.vesselPart,
+    this.wareType,
+    this.decorationStyle,
+    this.fabricColorInt,
+    this.fabricColorExt,
+    this.rimDiameter,
+    this.wallThickness,
+    this.surfaceTreatment,
   });
 
   ArtifactType? get type => ArtifactClassification.getTypeById(typeId ?? '');
   ArtifactMaterial? get material => ArtifactClassification.getMaterialById(materialId ?? '');
   HistoricalPeriod? get period => ArtifactClassification.getPeriodById(periodId ?? '');
   ArtifactCondition? get condition => ArtifactClassification.getConditionById(conditionId ?? '');
+
+  /// Check if this is a coin type
+  bool get isCoin => typeId == 'coins';
+
+  /// Check if this is a fragment/sherd type
+  bool get isFragment => typeId == 'fragments';
 
   Map<String, dynamic> toJson() => {
         'typeId': typeId,
@@ -661,6 +723,24 @@ class ArtifactMetadata {
         'conservationNotes': conservationNotes,
         'associatedFindings': associatedFindings,
         'stratigraphicContext': stratigraphicContext,
+        // Coin fields
+        'denomination': denomination,
+        'mint': mint,
+        'ruler': ruler,
+        'obverseLegend': obverseLegend,
+        'reverseLegend': reverseLegend,
+        'dieAxis': dieAxis,
+        'obverseDescription': obverseDescription,
+        'reverseDescription': reverseDescription,
+        // Fragment fields
+        'vesselPart': vesselPart,
+        'wareType': wareType,
+        'decorationStyle': decorationStyle,
+        'fabricColorInt': fabricColorInt,
+        'fabricColorExt': fabricColorExt,
+        'rimDiameter': rimDiameter,
+        'wallThickness': wallThickness,
+        'surfaceTreatment': surfaceTreatment,
       };
 
   factory ArtifactMetadata.fromJson(Map<String, dynamic> json) => ArtifactMetadata(
@@ -678,5 +758,68 @@ class ArtifactMetadata {
             ? List<String>.from(json['associatedFindings'])
             : null,
         stratigraphicContext: json['stratigraphicContext'],
+        // Coin fields
+        denomination: json['denomination'],
+        mint: json['mint'],
+        ruler: json['ruler'],
+        obverseLegend: json['obverseLegend'],
+        reverseLegend: json['reverseLegend'],
+        dieAxis: json['dieAxis'],
+        obverseDescription: json['obverseDescription'],
+        reverseDescription: json['reverseDescription'],
+        // Fragment fields
+        vesselPart: json['vesselPart'],
+        wareType: json['wareType'],
+        decorationStyle: json['decorationStyle'],
+        fabricColorInt: json['fabricColorInt'],
+        fabricColorExt: json['fabricColorExt'],
+        rimDiameter: json['rimDiameter']?.toDouble(),
+        wallThickness: json['wallThickness']?.toDouble(),
+        surfaceTreatment: json['surfaceTreatment'],
       );
+}
+
+// ========== COIN DENOMINATION OPTIONS ==========
+class CoinDenominations {
+  static const List<String> greek = [
+    'Drachma', 'Didrachm', 'Tetradrachm', 'Obol', 'Hemiobol',
+    'Triobol', 'Stater', 'Hemidrachm',
+  ];
+
+  static const List<String> roman = [
+    'Denarius', 'As', 'Sestertius', 'Dupondius', 'Quadrans',
+    'Aureus', 'Antoninianus', 'Follis', 'Solidus',
+  ];
+
+  static const List<String> byzantine = [
+    'Solidus', 'Semissis', 'Tremissis', 'Follis', 'Nummus',
+  ];
+
+  static const List<String> all = [
+    ...greek, ...roman, ...byzantine, 'Unknown',
+  ];
+}
+
+// ========== FRAGMENT VESSEL PART OPTIONS ==========
+class VesselParts {
+  static const List<String> parts = [
+    'Rim', 'Body', 'Base', 'Handle', 'Spout', 'Lid', 'Foot',
+    'Neck', 'Shoulder', 'Lug', 'Knob',
+  ];
+}
+
+// ========== WARE TYPE OPTIONS ==========
+class WareTypes {
+  static const List<String> types = [
+    'Coarse Ware', 'Fine Ware', 'Cooking Ware', 'Storage Ware',
+    'Tableware', 'Transport (Amphora)', 'Ritual Ware', 'Unknown',
+  ];
+}
+
+// ========== DECORATION STYLE OPTIONS ==========
+class DecorationStyles {
+  static const List<String> styles = [
+    'Plain', 'Painted', 'Incised', 'Stamped', 'Glazed',
+    'Relief', 'Appliqué', 'Burnished', 'Combed', 'Slipped',
+  ];
 }

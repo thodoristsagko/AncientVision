@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
 import '../services/backup_service.dart';
 import '../services/notification_service.dart';
+import '../services/biometric_service.dart';
 
 /// Settings Screen with comprehensive app configuration
 class SettingsScreen extends StatefulWidget {
@@ -15,7 +16,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _settingsService = SettingsService();
   final _backupService = BackupService();
   final _notificationService = NotificationService();
+  final _biometricService = BiometricService();
   bool _isLoading = true;
+  bool _biometricSupported = false;
+  bool _biometricEnrolled = false;
+  bool _biometricEnabled = false;
+  String _biometricType = 'Biometric';
 
   @override
   void initState() {
@@ -25,18 +31,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     await _settingsService.initialize();
+    await _loadBiometricState();
     if (mounted) {
       setState(() => _isLoading = false);
     }
   }
 
+  Future<void> _loadBiometricState() async {
+    _biometricSupported = await _biometricService.isDeviceSupported();
+    _biometricEnrolled = await _biometricService.isEnrolled();
+    _biometricEnabled = await _biometricService.isEnabled();
+    _biometricType = await _biometricService.getBiometricTypeName();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: const Color(0xFF0D3A39),
       appBar: AppBar(
         title: const Text('Settings'),
         backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
         elevation: 0,
       ),
       body: _isLoading
@@ -94,6 +109,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
+
+                // Security section - only show if biometrics supported
+                if (_biometricSupported) ...[
+                  _buildSection(
+                    'Security',
+                    Icons.security,
+                    [
+                      _buildBiometricTile(),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                ],
 
                 _buildSection(
                   '3D & Photogrammetry',
@@ -154,6 +181,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 // Reset button
                 _buildResetButton(),
+                const SizedBox(height: 16),
+                _buildBackToDashboardButton(),
 
                 const SizedBox(height: 24),
 
@@ -170,7 +199,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         Row(
           children: [
-            Icon(icon, color: const Color(0xFF8B4513), size: 20),
+            Icon(icon, color: const Color(0xFFFFC107), size: 20),
             const SizedBox(width: 8),
             Text(
               title,
@@ -218,31 +247,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildColorSelector() {
-    return ListTile(
-      title: const Text('Accent Color', style: TextStyle(color: Colors.white)),
-      trailing: Wrap(
-        spacing: 8,
-        children: List.generate(
-          AccentColorOption.options.length.clamp(0, 5),
-          (index) {
-            final option = AccentColorOption.options[index];
-            final isSelected = _settingsService.settings.accentColorIndex == index;
-            return GestureDetector(
-              onTap: () => _updateSetting('accentColorIndex', index),
-              child: Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: option.color,
-                  shape: BoxShape.circle,
-                  border: isSelected
-                      ? Border.all(color: Colors.white, width: 2)
-                      : null,
-                ),
-              ),
-            );
-          },
-        ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Accent Color', style: TextStyle(color: Colors.white)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: List.generate(
+              AccentColorOption.options.length,
+              (index) {
+                final option = AccentColorOption.options[index];
+                final isSelected = _settingsService.settings.accentColorIndex == index;
+                return GestureDetector(
+                  onTap: () => _updateSetting('accentColorIndex', index),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: option.color,
+                          shape: BoxShape.circle,
+                          border: isSelected
+                              ? Border.all(color: Colors.white, width: 3)
+                              : null,
+                          boxShadow: isSelected
+                              ? [BoxShadow(color: option.color.withAlpha(128), blurRadius: 8)]
+                              : null,
+                        ),
+                        child: isSelected
+                            ? const Icon(Icons.check, color: Colors.white, size: 20)
+                            : null,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        option.name,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.white54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -256,7 +311,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         max: 1.4,
         divisions: 6,
         label: '${(_settingsService.settings.fontSize * 100).toInt()}%',
-        activeColor: const Color(0xFF8B4513),
+        activeColor: const Color(0xFFFFC107),
         onChanged: (value) => _updateSetting('fontSize', value),
       ),
     );
@@ -272,7 +327,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: Text(title, style: const TextStyle(color: Colors.white)),
       subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 12)),
       value: value,
-      activeColor: const Color(0xFF8B4513),
+      activeColor: const Color(0xFFFFC107),
       onChanged: onChanged,
     );
   }
@@ -295,7 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               max: max,
               divisions: (max - min).toInt(),
               label: value.toInt().toString(),
-              activeColor: const Color(0xFF8B4513),
+              activeColor: const Color(0xFFFFC107),
               onChanged: onChanged,
             ),
           ),
@@ -317,12 +372,102 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildBiometricTile() {
+    if (!_biometricEnrolled) {
+      // Not enrolled - show setup option
+      return ListTile(
+        leading: const Icon(Icons.fingerprint, color: Color(0xFFFFC107)),
+        title: Text('Set up $_biometricType', style: const TextStyle(color: Colors.white)),
+        subtitle: const Text('Quick unlock for faster access', style: TextStyle(color: Colors.white54, fontSize: 12)),
+        trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+        onTap: () async {
+          final success = await _biometricService.enroll();
+          if (success && mounted) {
+            await _loadBiometricState();
+            setState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Quick unlock enabled!'),
+                backgroundColor: Color(0xFF4CAF50),
+              ),
+            );
+          }
+        },
+      );
+    }
+
+    // Enrolled - show toggle
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.fingerprint, color: Color(0xFFFFC107)),
+          title: Text('$_biometricType Unlock', style: const TextStyle(color: Colors.white)),
+          subtitle: Text(
+            _biometricEnabled ? 'Enabled - unlock with $_biometricType' : 'Disabled',
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+          value: _biometricEnabled,
+          activeColor: const Color(0xFFFFC107),
+          onChanged: (value) async {
+            if (value) {
+              await _biometricService.enable();
+            } else {
+              await _biometricService.disable();
+            }
+            await _loadBiometricState();
+            if (mounted) setState(() {});
+          },
+        ),
+        ListTile(
+          leading: const SizedBox(width: 24),
+          title: Text('Remove $_biometricType', style: const TextStyle(color: Colors.red)),
+          dense: true,
+          onTap: () => _showRemoveBiometricConfirmation(),
+        ),
+      ],
+    );
+  }
+
+  void _showRemoveBiometricConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1C2523),
+        title: const Text('Remove Quick Unlock?', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'You will need to use your password to sign in. You can set up $_biometricType again later.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _biometricService.unenroll();
+              await _loadBiometricState();
+              if (mounted) {
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Quick unlock removed')),
+                );
+              }
+            },
+            child: const Text('Remove', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMeasurementSelector() {
     return ListTile(
       title: const Text('Measurement System', style: TextStyle(color: Colors.white)),
       trailing: DropdownButton<MeasurementSystem>(
         value: _settingsService.settings.measurementSystem,
-        dropdownColor: const Color(0xFF2a2a3e),
+        dropdownColor: const Color(0xFF1C2523),
         style: const TextStyle(color: Colors.white),
         underline: const SizedBox(),
         items: MeasurementSystem.values.map((system) => DropdownMenuItem(
@@ -341,7 +486,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: const Text('Date Format', style: TextStyle(color: Colors.white)),
       trailing: DropdownButton<DateFormatPreference>(
         value: _settingsService.settings.dateFormat,
-        dropdownColor: const Color(0xFF2a2a3e),
+        dropdownColor: const Color(0xFF1C2523),
         style: const TextStyle(color: Colors.white),
         underline: const SizedBox(),
         items: DateFormatPreference.values.map((format) => DropdownMenuItem(
@@ -365,6 +510,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildBackToDashboardButton() {
+    return Center(
+      child: ElevatedButton.icon(
+        onPressed: () => Navigator.pop(context),
+        icon: const Icon(Icons.arrow_back),
+        label: const Text('Return'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFFFC107),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAppInfo() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -374,7 +534,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       child: Column(
         children: [
-          const Icon(Icons.explore, color: Color(0xFF8B4513), size: 40),
+          const Icon(Icons.explore, color: Color(0xFFFFC107), size: 40),
           const SizedBox(height: 8),
           const Text(
             'AncientVision',
@@ -412,7 +572,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showBackupDialog() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -464,7 +624,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showBackupList(List<BackupInfo> backups) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -502,7 +662,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF2a2a3e),
+        backgroundColor: const Color(0xFF1C2523),
         title: const Text('Reset Settings?', style: TextStyle(color: Colors.white)),
         content: const Text(
           'This will reset all settings to their default values. This cannot be undone.',
@@ -525,4 +685,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+
 }

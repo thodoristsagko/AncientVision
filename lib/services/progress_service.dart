@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'cloud_database_service.dart';
+import 'notification_service.dart';
 
 /// Achievement badge types
 enum AchievementType {
@@ -161,6 +163,7 @@ class DailyStats {
 /// User progress and statistics summary
 class UserProgress {
   final int totalFindings;
+  final int totalPhotos;
   final int total3DModels;
   final int totalContexts;
   final int totalNotes;
@@ -172,6 +175,7 @@ class UserProgress {
 
   UserProgress({
     this.totalFindings = 0,
+    this.totalPhotos = 0,
     this.total3DModels = 0,
     this.totalContexts = 0,
     this.totalNotes = 0,
@@ -225,6 +229,7 @@ class UserProgress {
 
   Map<String, dynamic> toJson() => {
         'totalFindings': totalFindings,
+        'totalPhotos': totalPhotos,
         'total3DModels': total3DModels,
         'totalContexts': totalContexts,
         'totalNotes': totalNotes,
@@ -237,6 +242,7 @@ class UserProgress {
 
   factory UserProgress.fromJson(Map<String, dynamic> json) => UserProgress(
         totalFindings: json['totalFindings'] ?? 0,
+        totalPhotos: json['totalPhotos'] ?? 0,
         total3DModels: json['total3DModels'] ?? 0,
         totalContexts: json['totalContexts'] ?? 0,
         totalNotes: json['totalNotes'] ?? 0,
@@ -255,13 +261,18 @@ class UserProgress {
 }
 
 /// Service for tracking user progress and achievements
+/// Hybrid: Cloud (Firestore) when logged in, local (SharedPreferences) always as cache
 class ProgressService {
   static final ProgressService _instance = ProgressService._internal();
   factory ProgressService() => _instance;
   ProgressService._internal();
 
-  static const String _progressKey = 'user_progress';
-  static const String _dailyStatsKey = 'daily_stats';
+  final _cloudDb = CloudDatabaseService();
+
+  // SharedPreferences keys for local storage
+  static const _progressKey = 'user_progress';
+  static const _dailyStatsKey = 'daily_stats';
+  static const _weeklyStatsKey = 'weekly_stats';
 
   UserProgress _progress = UserProgress();
   DailyStats _todayStats = DailyStats(date: DateTime.now());
@@ -276,8 +287,28 @@ class ProgressService {
     await _checkStreak();
   }
 
-  /// Load progress from storage
+  /// Load progress - from cloud if logged in, local otherwise
   Future<void> _loadProgress() async {
+    try {
+      // Always load local first as cache
+      await _loadProgressLocal();
+
+      // If logged in, also try to get from cloud and merge
+      if (_cloudDb.useCloud) {
+        final data = await _cloudDb.getProgressStats();
+        if (data != null) {
+          _progress = UserProgress.fromJson(data);
+          // Update local cache
+          await _saveProgressLocal();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading progress: $e');
+    }
+  }
+
+  /// Load progress from local SharedPreferences
+  Future<void> _loadProgressLocal() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = prefs.getString(_progressKey);
@@ -285,12 +316,50 @@ class ProgressService {
         _progress = UserProgress.fromJson(jsonDecode(json));
       }
     } catch (e) {
+      debugPrint('Error loading local progress: $e');
       _progress = UserProgress();
+    }
+  }
+
+  /// Save progress to local SharedPreferences
+  Future<void> _saveProgressLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_progressKey, jsonEncode(_progress.toJson()));
+    } catch (e) {
+      debugPrint('Error saving local progress: $e');
     }
   }
 
   /// Load today's stats
   Future<void> _loadTodayStats() async {
+    try {
+      // Load local first
+      await _loadTodayStatsLocal();
+
+      // If logged in, also try cloud
+      if (_cloudDb.useCloud) {
+        final today = DateTime.now();
+        final dateKey = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+        final data = await _cloudDb.getDailyStats(dateKey);
+
+        if (data != null) {
+          final stats = DailyStats.fromJson(data);
+          if (stats.date.year == today.year &&
+              stats.date.month == today.month &&
+              stats.date.day == today.day) {
+            _todayStats = stats;
+            await _saveTodayStatsLocal();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading today stats: $e');
+    }
+  }
+
+  /// Load today's stats from local
+  Future<void> _loadTodayStatsLocal() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = prefs.getString(_dailyStatsKey);
@@ -304,9 +373,22 @@ class ProgressService {
         } else {
           _todayStats = DailyStats(date: today);
         }
+      } else {
+        _todayStats = DailyStats(date: DateTime.now());
       }
     } catch (e) {
+      debugPrint('Error loading local today stats: $e');
       _todayStats = DailyStats(date: DateTime.now());
+    }
+  }
+
+  /// Save today's stats to local
+  Future<void> _saveTodayStatsLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_dailyStatsKey, jsonEncode(_todayStats.toJson()));
+    } catch (e) {
+      debugPrint('Error saving local today stats: $e');
     }
   }
 
@@ -329,6 +411,7 @@ class ProgressService {
       // Streak broken
       _progress = UserProgress(
         totalFindings: _progress.totalFindings,
+        totalPhotos: _progress.totalPhotos,
         total3DModels: _progress.total3DModels,
         totalContexts: _progress.totalContexts,
         totalNotes: _progress.totalNotes,
@@ -351,6 +434,7 @@ class ProgressService {
 
     _progress = UserProgress(
       totalFindings: _progress.totalFindings + 1,
+      totalPhotos: _progress.totalPhotos,
       total3DModels: _progress.total3DModels,
       totalContexts: _progress.totalContexts,
       totalNotes: _progress.totalNotes,
@@ -374,6 +458,7 @@ class ProgressService {
 
     _progress = UserProgress(
       totalFindings: _progress.totalFindings,
+      totalPhotos: _progress.totalPhotos,
       total3DModels: _progress.total3DModels + 1,
       totalContexts: _progress.totalContexts,
       totalNotes: _progress.totalNotes,
@@ -397,6 +482,7 @@ class ProgressService {
 
     _progress = UserProgress(
       totalFindings: _progress.totalFindings,
+      totalPhotos: _progress.totalPhotos,
       total3DModels: _progress.total3DModels,
       totalContexts: _progress.totalContexts + 1,
       totalNotes: _progress.totalNotes,
@@ -420,6 +506,7 @@ class ProgressService {
 
     _progress = UserProgress(
       totalFindings: _progress.totalFindings,
+      totalPhotos: _progress.totalPhotos,
       total3DModels: _progress.total3DModels,
       totalContexts: _progress.totalContexts,
       totalNotes: _progress.totalNotes + 1,
@@ -443,6 +530,7 @@ class ProgressService {
 
     _progress = UserProgress(
       totalFindings: _progress.totalFindings,
+      totalPhotos: _progress.totalPhotos,
       total3DModels: _progress.total3DModels,
       totalContexts: _progress.totalContexts,
       totalNotes: _progress.totalNotes,
@@ -454,6 +542,31 @@ class ProgressService {
     );
 
     return await _checkAchievements();
+  }
+
+  /// Record photos captured (can record multiple at once)
+  Future<void> recordPhotos(int count) async {
+    if (count <= 0) return;
+
+    _todayStats = _todayStats.copyWith(
+      photosCapture: _todayStats.photosCapture + count,
+    );
+    await _saveTodayStats();
+
+    _progress = UserProgress(
+      totalFindings: _progress.totalFindings,
+      totalPhotos: _progress.totalPhotos + count,
+      total3DModels: _progress.total3DModels,
+      totalContexts: _progress.totalContexts,
+      totalNotes: _progress.totalNotes,
+      totalReports: _progress.totalReports,
+      currentStreak: _progress.currentStreak,
+      longestStreak: _progress.longestStreak,
+      achievements: _progress.achievements,
+      lastActivityDate: _progress.lastActivityDate,
+    );
+
+    await _saveProgress();
   }
 
   /// Update streak
@@ -492,6 +605,7 @@ class ProgressService {
 
     _progress = UserProgress(
       totalFindings: _progress.totalFindings,
+      totalPhotos: _progress.totalPhotos,
       total3DModels: _progress.total3DModels,
       totalContexts: _progress.totalContexts,
       totalNotes: _progress.totalNotes,
@@ -564,6 +678,7 @@ class ProgressService {
       final allAchievements = [..._progress.achievements, ...newAchievements];
       _progress = UserProgress(
         totalFindings: _progress.totalFindings,
+        totalPhotos: _progress.totalPhotos,
         total3DModels: _progress.total3DModels,
         totalContexts: _progress.totalContexts,
         totalNotes: _progress.totalNotes,
@@ -574,6 +689,15 @@ class ProgressService {
         lastActivityDate: _progress.lastActivityDate,
       );
       await _saveProgress();
+
+      // Send notification for each new achievement
+      final notificationService = NotificationService();
+      for (final achievement in newAchievements) {
+        await notificationService.showAchievementUnlocked(
+          achievementTitle: achievement.type.title,
+          achievementDescription: achievement.type.description,
+        );
+      }
     }
 
     return newAchievements;
@@ -609,24 +733,171 @@ class ProgressService {
     ];
   }
 
-  /// Save progress
+  /// Save progress - to cloud if logged in, always to local
   Future<void> _saveProgress() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_progressKey, jsonEncode(_progress.toJson()));
+    // Always save locally
+    await _saveProgressLocal();
+
+    // Also save to cloud if logged in
+    if (_cloudDb.useCloud) {
+      await _cloudDb.saveProgressStats(_progress.toJson());
+    }
   }
 
-  /// Save today's stats
+  /// Save today's stats - to cloud if logged in, always to local
   Future<void> _saveTodayStats() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_dailyStatsKey, jsonEncode(_todayStats.toJson()));
+    // Always save locally
+    await _saveTodayStatsLocal();
+
+    // Also save to cloud if logged in
+    if (_cloudDb.useCloud) {
+      final today = DateTime.now();
+      final dateKey = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      await _cloudDb.saveDailyStats(dateKey, _todayStats.toJson());
+    }
+
+    // Also update weekly stats locally
+    await _saveWeeklyStatsLocal();
+  }
+
+  /// Save weekly stats for charting (local)
+  Future<void> _saveWeeklyStatsLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final existingJson = prefs.getString(_weeklyStatsKey);
+      List<DailyStats> weeklyStats = [];
+
+      if (existingJson != null) {
+        final list = jsonDecode(existingJson) as List;
+        weeklyStats = list.map((e) => DailyStats.fromJson(e)).toList();
+      }
+
+      // Update or add today's stats
+      final todayIndex = weeklyStats.indexWhere((s) =>
+          s.date.year == _todayStats.date.year &&
+          s.date.month == _todayStats.date.month &&
+          s.date.day == _todayStats.date.day);
+
+      if (todayIndex >= 0) {
+        weeklyStats[todayIndex] = _todayStats;
+      } else {
+        weeklyStats.add(_todayStats);
+      }
+
+      // Keep only last 7 days
+      final cutoff = DateTime.now().subtract(const Duration(days: 7));
+      weeklyStats = weeklyStats.where((s) => s.date.isAfter(cutoff)).toList();
+
+      await prefs.setString(
+        _weeklyStatsKey,
+        jsonEncode(weeklyStats.map((s) => s.toJson()).toList()),
+      );
+    } catch (e) {
+      debugPrint('Error saving weekly stats: $e');
+    }
   }
 
   /// Reset all progress
   Future<void> resetProgress() async {
     _progress = UserProgress();
     _todayStats = DailyStats(date: DateTime.now());
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_progressKey);
-    await prefs.remove(_dailyStatsKey);
+    await _saveProgress();
+    await _saveTodayStats();
+  }
+
+  /// Get weekly stats for charting (last 7 days)
+  Future<List<DailyStats>> getWeeklyStats() async {
+    final stats = <DailyStats>[];
+
+    try {
+      // Try cloud first if logged in
+      if (_cloudDb.useCloud) {
+        final data = await _cloudDb.getWeeklyStats();
+        for (final item in data) {
+          stats.add(DailyStats.fromJson(item));
+        }
+      }
+
+      // If no cloud data, load from local
+      if (stats.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        final json = prefs.getString(_weeklyStatsKey);
+        if (json != null) {
+          final list = jsonDecode(json) as List;
+          for (final item in list) {
+            stats.add(DailyStats.fromJson(item));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting weekly stats: $e');
+    }
+
+    // Ensure we have 7 days of data (fill gaps with zeros)
+    final now = DateTime.now();
+    final result = <DailyStats>[];
+
+    for (int i = 6; i >= 0; i--) {
+      final date = DateTime(now.year, now.month, now.day - i);
+      final existing = stats.where((s) =>
+          s.date.year == date.year &&
+          s.date.month == date.month &&
+          s.date.day == date.day).toList();
+
+      if (existing.isNotEmpty) {
+        result.add(existing.first);
+      } else if (i == 0) {
+        // Today - use current todayStats
+        result.add(_todayStats);
+      } else {
+        result.add(DailyStats(date: date));
+      }
+    }
+
+    return result;
+  }
+
+  /// Get XP progress to next level
+  int get currentXP {
+    return _progress.totalFindings + _progress.total3DModels + _progress.totalContexts;
+  }
+
+  int get xpForCurrentLevel {
+    switch (_progress.level) {
+      case 1: return 0;
+      case 2: return 15;
+      case 3: return 30;
+      case 4: return 50;
+      case 5: return 70;
+      case 6: return 100;
+      case 7: return 150;
+      case 8: return 200;
+      case 9: return 300;
+      case 10: return 500;
+      default: return 0;
+    }
+  }
+
+  int get xpForNextLevel {
+    switch (_progress.level) {
+      case 1: return 15;
+      case 2: return 30;
+      case 3: return 50;
+      case 4: return 70;
+      case 5: return 100;
+      case 6: return 150;
+      case 7: return 200;
+      case 8: return 300;
+      case 9: return 500;
+      case 10: return 500; // Max level
+      default: return 15;
+    }
+  }
+
+  double get levelProgress {
+    if (_progress.level >= 10) return 1.0;
+    final current = currentXP - xpForCurrentLevel;
+    final needed = xpForNextLevel - xpForCurrentLevel;
+    return (current / needed).clamp(0.0, 1.0);
   }
 }

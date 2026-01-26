@@ -7,12 +7,13 @@ Deep dive into system design, algorithms, and implementation details.
 ## Table of Contents
 
 1. [System Architecture](#system-architecture)
-2. [3D Reconstruction Algorithms](#3d-reconstruction-algorithms)
-3. [Services Layer](#services-layer)
-4. [Data Models](#data-models)
-5. [Firebase Integration](#firebase-integration)
-6. [Performance Optimizations](#performance-optimizations)
-7. [Dependencies](#dependencies)
+2. [Data Flow Architecture](#data-flow-architecture)
+3. [3D Reconstruction Algorithms](#3d-reconstruction-algorithms)
+4. [Services Layer](#services-layer)
+5. [Data Models](#data-models)
+6. [Firebase Integration](#firebase-integration)
+7. [Performance Optimizations](#performance-optimizations)
+8. [Dependencies](#dependencies)
 
 ---
 
@@ -59,6 +60,380 @@ Deep dive into system design, algorithms, and implementation details.
 │  └──────────┘  └──────────┘  └──────────┘                   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Data Flow Architecture
+
+### Master Data Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ANCIENTVISION DATA FLOW                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌───────────┐     ┌───────────┐     ┌───────────┐     ┌───────────┐      │
+│  │   ENTRY   │ ──▶ │  PROCESS  │ ──▶ │   STORE   │ ──▶ │  EXPORT   │      │
+│  └───────────┘     └───────────┘     └───────────┘     └───────────┘      │
+│                                                                             │
+│  • Camera          • Compress        • Local Cache     • JSON/CSV          │
+│  • Forms           • 3D Reconstruct  • Firebase        • GeoJSON/KML       │
+│  • Voice           • Classify        • File System     • 3D Models         │
+│  • Import          • Analyze         • Offline Queue   • PDF/ZIP           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Entry Points
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            DATA ENTRY POINTS                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐        │
+│  │  QUICK CAPTURE  │    │  MANUAL ENTRY   │    │   VOICE INPUT   │        │
+│  │   (Camera)      │    │    (Forms)      │    │  (Speech-Text)  │        │
+│  └────────┬────────┘    └────────┬────────┘    └────────┬────────┘        │
+│           │                      │                      │                  │
+│           ▼                      ▼                      ▼                  │
+│  ┌─────────────────────────────────────────────────────────────────┐      │
+│  │                        DATA CAPTURED                             │      │
+│  ├─────────────────────────────────────────────────────────────────┤      │
+│  │  • Photos (XFile)           • Full Metadata         • Audio     │      │
+│  │  • GPS Coordinates          • Coin/Fragment Data    • Transcript│      │
+│  │  • Artifact Type            • Context Sheets        • Timestamps│      │
+│  │  • Quick Notes              • Measurements          • Tags      │      │
+│  └─────────────────────────────────────────────────────────────────┘      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Entry Point | Trigger | Data Captured | Service | Destination |
+|-------------|---------|---------------|---------|-------------|
+| Quick Capture | Camera FAB | Image, GPS, type, notes | ImageService | Local → Firebase |
+| Manual Entry | "+" button | Full archaeological metadata | FirebaseService | Local → Firebase |
+| Voice Notes | Mic button | Audio file, transcription | VoiceService | JournalEntry |
+| Field Journal | Journal tab | Daily logs, weather, observations | CloudDatabaseService | Local → Firebase |
+| Import | Import action | GeoJSON, CSV, KML data | ExportService | Findings collection |
+
+### Processing Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          PROCESSING PIPELINE                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌───────────────┐                                                         │
+│  │  Raw Image    │                                                         │
+│  │   (5-10MB)    │                                                         │
+│  └───────┬───────┘                                                         │
+│          │                                                                  │
+│          ▼                                                                  │
+│  ┌───────────────────────────────────────────────────────────────┐        │
+│  │                    IMAGE SERVICE                               │        │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │        │
+│  │  │  Compress   │  │  Thumbnail  │  │   Quality   │           │        │
+│  │  │  (500KB)    │  │   (20KB)    │  │  Analysis   │           │        │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘           │        │
+│  └───────────────────────────────────────────────────────────────┘        │
+│          │                                                                  │
+│          ▼                                                                  │
+│  ┌───────────────────────────────────────────────────────────────┐        │
+│  │              3D RECONSTRUCTION (Choice)                        │        │
+│  │                                                                 │        │
+│  │   ┌─────────────────────┐    ┌─────────────────────┐          │        │
+│  │   │   LOCAL (On-Device) │    │    CLOUD (OpenScan) │          │        │
+│  │   ├─────────────────────┤    ├─────────────────────┤          │        │
+│  │   │ • Sparse SfM        │    │ • Dense MVS         │          │        │
+│  │   │ • 1-3 min           │    │ • 5-15 min          │          │        │
+│  │   │ • No internet       │    │ • Internet required │          │        │
+│  │   │ • Point cloud (PLY) │    │ • Textured mesh     │          │        │
+│  │   └─────────────────────┘    └─────────────────────┘          │        │
+│  └───────────────────────────────────────────────────────────────┘        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3D Reconstruction Decision Flow
+
+```
+                    ┌───────────────────┐
+                    │   8+ Images       │
+                    │   Captured        │
+                    └─────────┬─────────┘
+                              │
+                              ▼
+                    ┌───────────────────┐
+                    │  Internet         │
+                    │  Available?       │
+                    └─────────┬─────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              │ NO                        YES │
+              ▼                               ▼
+    ┌─────────────────┐             ┌─────────────────┐
+    │  LOCAL SfM      │             │  User Choice    │
+    │  (Automatic)    │             │  Local/Cloud?   │
+    └────────┬────────┘             └────────┬────────┘
+             │                               │
+             ▼                    ┌──────────┴──────────┐
+    ┌─────────────────┐          │                      │
+    │  Sparse Point   │    ┌─────▼─────┐    ┌─────────▼─────────┐
+    │  Cloud (PLY)    │    │   Local   │    │    Cloud API      │
+    └─────────────────┘    │   SfM     │    │    (OpenScan)     │
+                           └─────┬─────┘    └─────────┬─────────┘
+                                 │                    │
+                                 ▼                    ▼
+                        ┌───────────────┐    ┌───────────────┐
+                        │  Point Cloud  │    │ Textured Mesh │
+                        │    (PLY)      │    │  (GLB/OBJ)    │
+                        └───────────────┘    └───────────────┘
+```
+
+### Storage Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          STORAGE ARCHITECTURE                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────┐      │
+│  │                     LOCAL STORAGE                                 │      │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │      │
+│  │  │SharedPrefs   │  │ App Cache    │  │ Documents    │           │      │
+│  │  ├──────────────┤  ├──────────────┤  ├──────────────┤           │      │
+│  │  │• Settings    │  │• Form drafts │  │• Exports     │           │      │
+│  │  │• Offline     │  │• Image cache │  │• 3D models   │           │      │
+│  │  │  queue       │  │• Thumbnails  │  │• Backups     │           │      │
+│  │  │• Finding IDs │  │              │  │• PDFs        │           │      │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘           │      │
+│  └──────────────────────────────────────────────────────────────────┘      │
+│                                    │                                        │
+│                                    ▼                                        │
+│                         ┌──────────────────┐                               │
+│                         │  SYNC MANAGER    │                               │
+│                         │  (Online/Offline)│                               │
+│                         └─────────┬────────┘                               │
+│                                   │                                        │
+│                                   ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐      │
+│  │                      CLOUD STORAGE                                │      │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │      │
+│  │  │  Firestore   │  │Firebase Auth │  │Firebase      │           │      │
+│  │  ├──────────────┤  ├──────────────┤  │Storage       │           │      │
+│  │  │• findings    │  │• Users       │  ├──────────────┤           │      │
+│  │  │• sites       │  │• Roles       │  │• Images      │           │      │
+│  │  │• journals    │  │• Profiles    │  │• Backups     │           │      │
+│  │  │• contexts    │  │              │  │• 3D files    │           │      │
+│  │  │• logs        │  │              │  │              │           │      │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘           │      │
+│  └──────────────────────────────────────────────────────────────────┘      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Storage Layer | Technology | Data Types | Persistence |
+|---------------|------------|------------|-------------|
+| Settings | SharedPreferences | Theme, units, preferences | Permanent |
+| Cache | SharedPreferences | Drafts, pending queue | Until synced |
+| Local DB | SharedPreferences | Finding IDs, offline data | Permanent |
+| Files | App Documents | Exports, 3D models, PDFs | Permanent |
+| Cloud DB | Firestore | All entities | Synced |
+| Cloud Files | Firebase Storage | Images, backups | Synced |
+
+### Offline/Online Sync Strategy
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      OFFLINE/ONLINE SYNC STRATEGY                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    DATA ENTRY (Always Works)                         │   │
+│  └──────────────────────────────┬──────────────────────────────────────┘   │
+│                                 │                                           │
+│                                 ▼                                           │
+│                    ┌────────────────────────┐                              │
+│                    │   LocalStorageService  │                              │
+│                    │   (Primary Storage)    │                              │
+│                    └───────────┬────────────┘                              │
+│                                │                                           │
+│                                ▼                                           │
+│                    ┌────────────────────────┐                              │
+│                    │   Check Connectivity   │                              │
+│                    └───────────┬────────────┘                              │
+│                                │                                           │
+│            ┌───────────────────┴───────────────────┐                       │
+│            │ OFFLINE                       ONLINE │                       │
+│            ▼                                      ▼                       │
+│   ┌────────────────────┐              ┌────────────────────┐              │
+│   │ Queue for Upload   │              │  Sync to Firebase  │              │
+│   │ (pending_uploads)  │              │  (Immediate)       │              │
+│   └─────────┬──────────┘              └────────────────────┘              │
+│             │                                                              │
+│             │  When connection restored:                                   │
+│             │                                                              │
+│             ▼                                                              │
+│   ┌────────────────────────────────────────┐                              │
+│   │  syncPendingUploads()                  │                              │
+│   │  • Process queue sequentially          │                              │
+│   │  • Remove from queue on success        │                              │
+│   │  • Retry failed items                  │                              │
+│   └────────────────────────────────────────┘                              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Export Data Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           EXPORT DATA FLOW                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌────────────────────────────────────────────────────────────────┐        │
+│  │                    SOURCE DATA                                  │        │
+│  │  Findings │ Sites │ Journals │ Contexts │ Measurements │ 3D    │        │
+│  └─────────────────────────────┬──────────────────────────────────┘        │
+│                                │                                            │
+│                                ▼                                            │
+│  ┌────────────────────────────────────────────────────────────────┐        │
+│  │                    EXPORT SERVICE                               │        │
+│  └────────────────────────────┬───────────────────────────────────┘        │
+│                               │                                            │
+│      ┌────────────────────────┼────────────────────────┐                   │
+│      │            │           │           │            │                   │
+│      ▼            ▼           ▼           ▼            ▼                   │
+│  ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐               │
+│  │ JSON  │   │  CSV  │   │GeoJSON│   │  KML  │   │  ZIP  │               │
+│  └───┬───┘   └───┬───┘   └───┬───┘   └───┬───┘   └───┬───┘               │
+│      │           │           │           │           │                     │
+│      │           │           │           │           ▼                     │
+│      │           │           │           │     ┌───────────────┐          │
+│      │           │           │           │     │ Full Backup:  │          │
+│      │           │           │           │     │ • manifest    │          │
+│      │           │           │           │     │ • all JSON    │          │
+│      │           │           │           │     │ • photos      │          │
+│      │           │           │           │     └───────────────┘          │
+│      │           │           │           │                                 │
+│      └───────────┴───────────┴───────────┴─────────────┐                  │
+│                                                         │                  │
+│                                                         ▼                  │
+│                              ┌────────────────────────────────────┐       │
+│                              │     App Documents/exports/         │       │
+│                              │     {name}_{timestamp}.{ext}       │       │
+│                              └─────────────────┬──────────────────┘       │
+│                                                │                          │
+│                                                ▼                          │
+│                              ┌────────────────────────────────────┐       │
+│                              │         SHARE (Optional)           │       │
+│                              │  Email │ Drive │ AirDrop │ etc.   │       │
+│                              └────────────────────────────────────┘       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Export Format Matrix
+
+| Format | Findings | Sites | Journals | Contexts | 3D Data | GPS |
+|--------|:--------:|:-----:|:--------:|:--------:|:-------:|:---:|
+| JSON | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| CSV | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| GeoJSON | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| KML | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| PLY | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
+| OBJ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
+| GLB | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
+| ZIP | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+### Service Dependency Map
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       SERVICE DEPENDENCY MAP                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│                        ┌──────────────────┐                                │
+│                        │    AuthService   │                                │
+│                        │   (Firebase Auth)│                                │
+│                        └────────┬─────────┘                                │
+│                                 │                                          │
+│           ┌─────────────────────┼─────────────────────┐                   │
+│           │                     │                     │                   │
+│           ▼                     ▼                     ▼                   │
+│  ┌────────────────┐   ┌────────────────┐   ┌────────────────┐            │
+│  │ FirebaseService│   │CloudDBService  │   │SettingsService │            │
+│  │ (Firestore)    │   │(Hybrid Storage)│   │(Preferences)   │            │
+│  └───────┬────────┘   └───────┬────────┘   └───────┬────────┘            │
+│          │                    │                    │                      │
+│          │         ┌──────────┴──────────┐        │                      │
+│          │         │                     │        │                      │
+│          ▼         ▼                     ▼        │                      │
+│  ┌────────────────────┐         ┌────────────────────┐                   │
+│  │LocalStorageService │◀────────│ConnectivityHelper  │                   │
+│  │(SharedPreferences) │         │(Online/Offline)    │                   │
+│  └─────────┬──────────┘         └────────────────────┘                   │
+│            │                                                              │
+│  ┌─────────┼───────────────────────────────────────────────────┐         │
+│  │         │                                                    │         │
+│  ▼         ▼                     ▼                     ▼        ▼        │
+│ ┌──────┐ ┌──────────┐    ┌────────────┐    ┌───────────────┐ ┌───────┐  │
+│ │Image │ │Reconstruc│    │ Progress   │    │ Notification  │ │Export │  │
+│ │Svc   │ │tionSvc   │    │ Service    │    │ Service       │ │Svc    │  │
+│ └──┬───┘ └────┬─────┘    └─────┬──────┘    └───────────────┘ └───┬───┘  │
+│    │          │                │                                  │      │
+│    │          │                └──────────────────────────────────┤      │
+│    │          │                                                   │      │
+│    │    ┌─────┴────────────────────────┐                         │      │
+│    │    │                              │                         │      │
+│    ▼    ▼                              ▼                         ▼      │
+│ ┌──────────────┐              ┌────────────────┐         ┌────────────┐ │
+│ │CloudPhotogram│              │   VoiceService │         │ReportService│ │
+│ │metryService  │              │  (Speech/TTS)  │         │   (PDF)    │ │
+│ └──────────────┘              └────────────────┘         └────────────┘ │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Complete Data Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      COMPLETE DATA LIFECYCLE                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. CAPTURE                                                                 │
+│     User → Camera/Form → Raw Data                                          │
+│                                                                             │
+│  2. PROCESS                                                                 │
+│     Raw Data → ImageService (compress) → Quality Check                     │
+│             → Classification → Validation                                   │
+│                                                                             │
+│  3. STORE                                                                   │
+│     Processed → LocalStorage (immediate)                                   │
+│              → SyncManager → Firebase (when online)                        │
+│                                                                             │
+│  4. RECONSTRUCT (Optional)                                                 │
+│     Multiple Images → SfM/Cloud → 3D Model                                 │
+│                    → Point Cloud → Mesh                                    │
+│                                                                             │
+│  5. ANALYZE                                                                 │
+│     Stored Data → ProgressService → Statistics                             │
+│                → AnalyticsScreen → Visualizations                          │
+│                                                                             │
+│  6. EXPORT                                                                  │
+│     Database → ExportService → Format Conversion                           │
+│             → File System → Share Intent                                   │
+│                                                                             │
+│  7. ARCHIVE                                                                 │
+│     All Data → ZIP Backup → Cloud Storage                                  │
+│             → External Drive → Long-term Preservation                      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ### File Structure
 

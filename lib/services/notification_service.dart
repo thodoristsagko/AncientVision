@@ -20,6 +20,7 @@ class NotificationService {
   static const int processingCompleteId = 1;
   static const int processingFailedId = 2;
   static const int uploadProgressId = 3;
+  static const int achievementUnlockedId = 4;
 
   /// Initialize the notification service
   Future<void> initialize() async {
@@ -178,6 +179,27 @@ class NotificationService {
   /// Cancel upload progress notification
   Future<void> cancelUploadProgress() async {
     await _notifications.cancel(uploadProgressId);
+  }
+
+  /// Show notification when achievement is unlocked
+  Future<void> showAchievementUnlocked({
+    required String achievementTitle,
+    required String achievementDescription,
+  }) async {
+    if (!await areNotificationsEnabled()) return;
+
+    await _showNotification(
+      id: achievementUnlockedId,
+      title: '🏆 Achievement Unlocked!',
+      body: '$achievementTitle - $achievementDescription',
+      payload: 'achievement:$achievementTitle',
+    );
+
+    await _saveNotification(
+      title: 'Achievement Unlocked!',
+      body: '$achievementTitle - $achievementDescription',
+      type: 'achievement',
+    );
   }
 
   /// Show a standard notification

@@ -31,14 +31,15 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: const Color(0xFF0D3A39),
       appBar: AppBar(
         title: const Text('Help & Tutorials'),
         backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
         elevation: 0,
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: const Color(0xFF8B4513),
+          indicatorColor: const Color(0xFFFFC107),
           tabs: const [
             Tab(text: 'Tutorials'),
             Tab(text: 'Help'),
@@ -133,6 +134,36 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
               icon = Icons.layers;
               color = Colors.orange;
               break;
+            case 'sensors':
+              title = 'Environmental Sensors';
+              description = 'Connect & monitor M5 StickC';
+              icon = Icons.sensors;
+              color = Colors.teal;
+              break;
+            case 'export':
+              title = 'Exporting Data';
+              description = 'PDF, CSV, GeoJSON & more';
+              icon = Icons.file_download;
+              color = Colors.indigo;
+              break;
+            case 'field_journal':
+              title = 'Field Journal';
+              description = 'Daily excavation logging';
+              icon = Icons.book;
+              color = Colors.brown;
+              break;
+            case 'coins':
+              title = 'Documenting Coins';
+              description = 'Numismatic recording guide';
+              icon = Icons.paid;
+              color = const Color(0xFFB8860B);
+              break;
+            case 'fragments':
+              title = 'Pottery Fragments';
+              description = 'Sherd analysis & recording';
+              icon = Icons.broken_image;
+              color = const Color(0xFFCD853F);
+              break;
             default:
               title = entry.key;
               description = 'Learn more about ${entry.key}';
@@ -154,7 +185,78 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
         // Quick tips
         _buildSectionTitle('Quick Tips'),
         _buildQuickTips(),
+
+        const SizedBox(height: 24),
+
+        // About section
+        _buildSectionTitle('About'),
+        _buildAboutSection(),
+
+        const SizedBox(height: 24),
       ],
+    );
+  }
+
+  Widget _buildAboutSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(13),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withAlpha(26)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFC107).withAlpha(51),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.temple_buddhist, color: Color(0xFFFFC107), size: 28),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AncientVision',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'Version 1.0.0',
+                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'AncientVision is developed for the FIRST LEGO League 2024-2025 "Submerged" season. '
+            'Designed to help archaeologists and researchers document, analyze, and preserve '
+            'underwater and terrestrial archaeological findings.',
+            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+          ),
+          const SizedBox(height: 16),
+          const Divider(color: Colors.white24),
+          const SizedBox(height: 12),
+          const Text(
+            'Created with passion by Team Thodoris',
+            style: TextStyle(color: Color(0xFFFFC107), fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 
@@ -281,6 +383,10 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
       ('Good lighting', 'Even, diffused light works best', Icons.light_mode),
       ('Save often', 'Auto-save keeps your work safe', Icons.save),
       ('Use cloud', 'Cloud processing gives better results', Icons.cloud),
+      ('Include scale', 'Physical scale bar in every photo', Icons.straighten),
+      ('Log daily', 'Write journal entries every session', Icons.edit_note),
+      ('GPS accuracy', 'Wait for high accuracy before saving', Icons.gps_fixed),
+      ('Backup data', 'Regular backups prevent data loss', Icons.backup),
     ];
 
     return Wrap(
@@ -290,12 +396,12 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
         width: (MediaQuery.of(context).size.width - 48) / 2,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF8B4513).withAlpha(51),
+          color: const Color(0xFFFFC107).withAlpha(51),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(tip.$3, color: const Color(0xFF8B4513), size: 20),
+            Icon(tip.$3, color: const Color(0xFFFFC107), size: 20),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -327,7 +433,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          Icon(category.icon, color: const Color(0xFF8B4513), size: 20),
+          Icon(category.icon, color: const Color(0xFFFFC107), size: 20),
           const SizedBox(width: 8),
           Text(
             category.label,
@@ -418,7 +524,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -432,7 +538,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -449,11 +555,11 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
             children: [
               Row(
                 children: [
-                  Icon(article.category.icon, color: const Color(0xFF8B4513)),
+                  Icon(article.category.icon, color: const Color(0xFFFFC107)),
                   const SizedBox(width: 8),
                   Text(
                     article.category.label,
-                    style: const TextStyle(color: Color(0xFF8B4513)),
+                    style: const TextStyle(color: Color(0xFFFFC107)),
                   ),
                 ],
               ),
@@ -521,7 +627,7 @@ class _TutorialViewerState extends State<_TutorialViewer> {
                     margin: const EdgeInsets.symmetric(horizontal: 2),
                     decoration: BoxDecoration(
                       color: index <= _currentStep
-                          ? const Color(0xFF8B4513)
+                          ? const Color(0xFFFFC107)
                           : Colors.white.withAlpha(51),
                       borderRadius: BorderRadius.circular(2),
                     ),
@@ -548,10 +654,10 @@ class _TutorialViewerState extends State<_TutorialViewer> {
                         width: 80,
                         height: 80,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF8B4513).withAlpha(51),
+                          color: const Color(0xFFFFC107).withAlpha(51),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(step.icon, color: const Color(0xFF8B4513), size: 40),
+                        child: Icon(step.icon, color: const Color(0xFFFFC107), size: 40),
                       ),
                       const SizedBox(height: 24),
                       Text(
@@ -615,7 +721,7 @@ class _TutorialViewerState extends State<_TutorialViewer> {
                         }
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF8B4513),
+                        backgroundColor: const Color(0xFFFFC107),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
                         ),

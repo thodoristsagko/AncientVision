@@ -206,6 +206,148 @@ class TutorialService {
         icon: Icons.science,
       ),
     ],
+    'sensors': [
+      TutorialStep(
+        id: 'sensor_setup',
+        title: 'Setting Up Sensors',
+        description: 'Connect M5 StickC Plus 2 sensors to monitor excavation environmental conditions in real-time.',
+        icon: Icons.sensors,
+      ),
+      TutorialStep(
+        id: 'sensor_connect',
+        title: 'Connect via Bluetooth',
+        description: 'Enable Bluetooth on your phone, then scan for nearby sensors. Select your device to connect.',
+        icon: Icons.bluetooth,
+      ),
+      TutorialStep(
+        id: 'sensor_data',
+        title: 'View Real-Time Data',
+        description: 'Monitor temperature, humidity, light, and pressure. Data updates automatically every few seconds.',
+        icon: Icons.show_chart,
+      ),
+      TutorialStep(
+        id: 'sensor_history',
+        title: 'Historical Trends',
+        description: 'View graphs of environmental data over time. Useful for tracking site conditions during excavation.',
+        icon: Icons.history,
+      ),
+    ],
+    'export': [
+      TutorialStep(
+        id: 'export_format',
+        title: 'Choose Export Format',
+        description: 'Select PDF for reports, CSV for spreadsheets, JSON for backup, or GeoJSON/KML for GIS.',
+        icon: Icons.file_present,
+      ),
+      TutorialStep(
+        id: 'export_select',
+        title: 'Select Data',
+        description: 'Choose which findings, contexts, or journal entries to include in your export.',
+        icon: Icons.checklist,
+      ),
+      TutorialStep(
+        id: 'export_share',
+        title: 'Share or Save',
+        description: 'Save to device, share via email, or upload to cloud storage. Your export is ready for use.',
+        icon: Icons.share,
+      ),
+    ],
+    'field_journal': [
+      TutorialStep(
+        id: 'journal_entry',
+        title: 'Create an Entry',
+        description: 'Tap the + button to create a new journal entry. Record your daily observations and thoughts.',
+        icon: Icons.edit_note,
+      ),
+      TutorialStep(
+        id: 'journal_tags',
+        title: 'Add Tags',
+        description: 'Use tags to categorize entries. This makes searching and filtering much easier later.',
+        icon: Icons.label,
+      ),
+      TutorialStep(
+        id: 'journal_search',
+        title: 'Search Entries',
+        description: 'Use the search bar to find entries by date, content, or tags. Filter by time period as needed.',
+        icon: Icons.search,
+      ),
+    ],
+    'coins': [
+      TutorialStep(
+        id: 'coin_intro',
+        title: 'Documenting Coins',
+        description: 'Ancient coins are valuable historical artifacts. Record them with precision using our specialized coin fields.',
+        icon: Icons.paid,
+      ),
+      TutorialStep(
+        id: 'coin_type',
+        title: 'Select Coin Type',
+        description: 'Choose "Coins & Currency" as the artifact type. This unlocks specialized numismatic fields.',
+        icon: Icons.category,
+      ),
+      TutorialStep(
+        id: 'coin_denomination',
+        title: 'Record Denomination',
+        description: 'Enter the coin denomination: Drachma, Obol, Denarius, As, Sestertius, Solidus, etc.',
+        icon: Icons.monetization_on,
+      ),
+      TutorialStep(
+        id: 'coin_mint',
+        title: 'Mint & Authority',
+        description: 'Record where the coin was minted and who issued it (ruler, city, or authority).',
+        icon: Icons.account_balance,
+      ),
+      TutorialStep(
+        id: 'coin_legends',
+        title: 'Record Inscriptions',
+        description: 'Document the obverse (front) and reverse (back) legends. Transcribe any visible text.',
+        icon: Icons.text_fields,
+      ),
+      TutorialStep(
+        id: 'coin_die_axis',
+        title: 'Die Axis',
+        description: 'Record the die axis as a clock position (1-12). Hold the coin with obverse up, flip it - where does the reverse point?',
+        icon: Icons.access_time,
+      ),
+    ],
+    'fragments': [
+      TutorialStep(
+        id: 'fragment_intro',
+        title: 'Recording Pottery Fragments',
+        description: 'Pottery sherds are the most common archaeological finds. Proper documentation reveals vessel types and cultural patterns.',
+        icon: Icons.broken_image,
+      ),
+      TutorialStep(
+        id: 'fragment_type',
+        title: 'Select Fragment Type',
+        description: 'Choose "Pottery Fragments" as the artifact type. This unlocks specialized ceramic analysis fields.',
+        icon: Icons.category,
+      ),
+      TutorialStep(
+        id: 'fragment_part',
+        title: 'Identify Vessel Part',
+        description: 'Determine which part of the vessel the sherd came from: rim, body, base, handle, spout, or foot.',
+        icon: Icons.pie_chart,
+      ),
+      TutorialStep(
+        id: 'fragment_ware',
+        title: 'Classify Ware Type',
+        description: 'Identify the ware: coarse ware, fine ware, cooking ware, storage ware, or tableware.',
+        icon: Icons.layers,
+      ),
+      TutorialStep(
+        id: 'fragment_decoration',
+        title: 'Note Decoration',
+        description: 'Record any decoration: plain, painted, incised, stamped, glazed, burnished, or slipped.',
+        icon: Icons.brush,
+      ),
+      TutorialStep(
+        id: 'fragment_measurements',
+        title: 'Take Measurements',
+        description: 'Measure wall thickness. For rim sherds, estimate the original rim diameter using a diameter chart.',
+        icon: Icons.straighten,
+      ),
+    ],
   };
 
   // ========== HELP ARTICLES ==========
@@ -220,6 +362,7 @@ AncientVision is a comprehensive archaeological field app designed to help you d
 - Record findings with photos and GPS location
 - Create 3D models using photogrammetry
 - Classify artifacts using our archaeological database
+- Connect environmental sensors for site monitoring
 - Generate professional PDF reports
 - Export data in multiple formats
 - Works offline with automatic sync
@@ -233,6 +376,101 @@ AncientVision is a comprehensive archaeological field app designed to help you d
       ''',
       category: HelpCategory.gettingStarted,
       keywords: ['start', 'begin', 'first', 'new', 'account'],
+    ),
+    HelpArticle(
+      id: 'sensor_monitoring',
+      title: 'Environmental Sensor Monitoring',
+      content: '''
+AncientVision supports M5 StickC Plus 2 sensors for environmental monitoring at excavation sites.
+
+**Supported Measurements:**
+- Temperature (°C/°F)
+- Humidity (%)
+- Light levels (lux)
+- Atmospheric pressure (hPa)
+
+**Connecting a Sensor:**
+1. Go to Home tab and scroll to "Environmental Sensors"
+2. Tap "Scan for Devices"
+3. Select your M5 StickC Plus 2 from the list
+4. Wait for connection confirmation
+
+**Data Recording:**
+- Sensor data is recorded automatically
+- Each sensor is linked to its excavation site
+- Historical data is stored for analysis
+- View trends in the sensor graph
+
+**Why Monitor Environment?**
+- Track excavation conditions over time
+- Document preservation environment
+- Correlate finds with environmental factors
+- Professional site documentation
+      ''',
+      category: HelpCategory.fieldwork,
+      keywords: ['sensor', 'm5', 'temperature', 'humidity', 'environmental', 'monitoring'],
+    ),
+    HelpArticle(
+      id: 'field_journal',
+      title: 'Using the Field Journal',
+      content: '''
+The Field Journal is your digital excavation diary for recording daily observations, thoughts, and notes.
+
+**Creating Entries:**
+1. Go to Tools > Field Work > Field Journal
+2. Tap the + button to add a new entry
+3. Write your observations
+4. Add tags for easy searching
+5. Save your entry
+
+**Best Practices:**
+- Record entries at the start and end of each day
+- Note weather conditions and site access
+- Document any unusual findings or events
+- Record interpretations and hypotheses
+- Note team members present
+
+**Entry Types:**
+- Daily summaries
+- Feature descriptions
+- Photo documentation notes
+- Visitor logs
+- Problem/solution records
+
+**Searching:**
+Use the search bar to find entries by date, content, or tags.
+      ''',
+      category: HelpCategory.fieldwork,
+      keywords: ['journal', 'diary', 'notes', 'field', 'daily', 'log'],
+    ),
+    HelpArticle(
+      id: 'quick_capture',
+      title: 'Quick Capture for Rapid Documentation',
+      content: '''
+Quick Capture lets you rapidly photograph and document finds without filling out full forms.
+
+**When to Use:**
+- Initial discovery of artifacts
+- Survey documentation
+- Rapid site photography
+- Bulk photography sessions
+
+**Features:**
+- Fast camera access
+- Auto GPS tagging
+- Auto timestamp
+- Optional voice notes
+- Batch processing later
+
+**Tips:**
+- Use grid overlay for consistent framing
+- Tap to focus on the artifact
+- Include scale bar in frame
+- Capture from multiple angles
+- Add brief voice description
+      ''',
+      category: HelpCategory.findings,
+      keywords: ['quick', 'capture', 'photo', 'fast', 'camera', 'rapid'],
     ),
     HelpArticle(
       id: 'photogrammetry_tips',
@@ -393,6 +631,41 @@ Use the share button to send exports via email, cloud storage, or other apps.
       question: 'How accurate is the GPS location?',
       answer: 'GPS accuracy depends on your device and conditions. Typical accuracy is 3-5 meters outdoors. For precise positioning, consider using an external GPS receiver.',
       category: HelpCategory.fieldwork,
+    ),
+    FAQItem(
+      question: 'How do I connect an M5 StickC Plus 2 sensor?',
+      answer: 'Make sure Bluetooth is enabled on your phone. Go to the Home tab, scroll to Environmental Sensors, and tap "Scan for Devices". Select your sensor from the list to connect.',
+      category: HelpCategory.fieldwork,
+    ),
+    FAQItem(
+      question: 'Why is my sensor not showing up?',
+      answer: 'Ensure the M5 StickC Plus 2 is powered on and running the AncientVision firmware. Make sure Bluetooth is enabled and you are within range (about 10 meters). Try restarting the sensor.',
+      category: HelpCategory.troubleshooting,
+    ),
+    FAQItem(
+      question: 'How do I export my data for GIS software?',
+      answer: 'Go to Tools > Export and select GeoJSON or KML format. GeoJSON works with QGIS and ArcGIS. KML files can be opened in Google Earth for visualization.',
+      category: HelpCategory.dataManagement,
+    ),
+    FAQItem(
+      question: 'Can I use biometric authentication?',
+      answer: 'Yes! Go to Settings > Privacy & Security and enable "Require Authentication". You can use fingerprint or face recognition depending on your device capabilities.',
+      category: HelpCategory.settings,
+    ),
+    FAQItem(
+      question: 'How do I change the measurement units?',
+      answer: 'Go to Settings > Regional and select your preferred measurement system (Metric or Imperial). All measurements throughout the app will update accordingly.',
+      category: HelpCategory.settings,
+    ),
+    FAQItem(
+      question: 'What happens if I run out of storage?',
+      answer: 'Go to Settings > Storage & Cache to see what is using space. You can clear cached images and temporary files. Consider enabling image compression to save space.',
+      category: HelpCategory.troubleshooting,
+    ),
+    FAQItem(
+      question: 'How do I add a scale bar to photos?',
+      answer: 'Place a physical scale bar (ruler or scale stick) in frame when photographing. The app does not add digital scale bars, as physical scales are more accurate for archaeological documentation.',
+      category: HelpCategory.findings,
     ),
   ];
 

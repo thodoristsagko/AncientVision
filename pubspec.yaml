@@ -42,6 +42,11 @@ dependencies:
   path: ^1.8.3  # Path manipulation utilities
   intl: ^0.19.0  # Date/time formatting for reports
   flutter_local_notifications: ^17.0.0  # Local push notifications
+  local_auth: ^2.1.6  # Biometric authentication (fingerprint, face, PIN)
+  flutter_background_service: ^5.0.5  # Background service to keep app running
+  flutter_background_service_android: ^6.2.2  # Android-specific background service
+  fl_chart: ^0.66.0  # Charts for analytics visualization
+  connectivity_plus: ^5.0.2  # Network connectivity monitoring for offline indicator
 
 dev_dependencies:
   flutter_test:

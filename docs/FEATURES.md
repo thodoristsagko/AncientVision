@@ -11,10 +11,13 @@ Complete documentation of all features and capabilities.
 3. [Findings Management](#3-findings-management)
 4. [3D Photogrammetry](#4-3d-photogrammetry)
 5. [Manual Entry Form](#5-manual-entry-form)
-6. [Safety Monitoring](#6-safety-monitoring)
+6. [Environmental Monitoring & Safety](#6-environmental-monitoring--safety)
 7. [Export & Reports](#7-export--reports)
 8. [Tools Menu](#8-tools-menu)
-9. [Offline Support](#9-offline-support)
+9. [Analytics Dashboard](#9-analytics-dashboard)
+10. [Field Journal](#10-field-journal)
+11. [Offline Support](#11-offline-support)
+12. [Settings & Customization](#12-settings--customization)
 
 ---
 
@@ -344,43 +347,58 @@ Comprehensive archaeological documentation form with 25+ fields.
 
 ---
 
-## 6. Safety Monitoring
+## 6. Environmental Monitoring & Safety
 
 ### Hardware Integration
 Connects to M5StickC Plus 2 microcontroller via Bluetooth Low Energy.
 
 ### Sensors Monitored
 
-#### Vibration (IMU)
-| Level | Range | Meaning |
-|-------|-------|---------|
-| Safe | <0.3g | Normal conditions |
-| Warning | 0.3-0.8g | Ground vibration detected |
-| Critical | >0.8g | Earthquake/collapse risk |
+#### Temperature
+| Range | Status | Use Case |
+|-------|--------|----------|
+| 0-15°C | Cool | Preservation optimal |
+| 15-25°C | Normal | Standard conditions |
+| 25-35°C | Warm | Monitor artifacts |
+| >35°C | Hot | Heat damage risk |
 
-#### Soil Moisture
+#### Humidity
 | Level | Range | Meaning |
 |-------|-------|---------|
-| Safe | 30-60% | Optimal conditions |
-| Dry | <30% | Soil cracking risk |
-| Wet | >60% | Saturation warning |
-| Critical | >80% | Collapse risk |
+| Low | <30% | Desiccation risk |
+| Optimal | 30-60% | Preservation ideal |
+| High | 60-80% | Monitor carefully |
+| Critical | >80% | Mold/corrosion risk |
+
+#### Light Levels
+| Level | Lux | Application |
+|-------|-----|-------------|
+| Dark | <50 | Underground/caves |
+| Low | 50-200 | Indoor excavation |
+| Medium | 200-1000 | Shaded outdoor |
+| Bright | >1000 | Direct sunlight |
+
+#### Pressure
+- Atmospheric pressure monitoring
+- Weather change indicators
+- Altitude estimation
 
 ### Display Features
-- **Live Values** - Real-time sensor readings
+- **Live Values** - Real-time sensor readings with units
 - **Status Indicators** - Color-coded safety levels
-- **History Graph** - 1-hour vibration trend
-- **Alert Timeline** - Chronological alert log
+- **History Graph** - Environmental trends over time
+- **Per-Site Recording** - Each sensor linked to excavation site
 
-### Alert System
-- Visual warnings on screen
-- Firebase logging for records
-- Smart insights with pattern analysis
+### Connection Management
+- **Scan** - Discover nearby M5 StickC Plus 2 devices
+- **Connect** - Pair with selected sensor
+- **Disconnect** - Safely disconnect current sensor
+- **Auto-reconnect** - Automatic reconnection on signal loss
 
-### Connection Status
-- BLE device discovery
-- Connection state indicator
-- Reconnection handling
+### Data Storage
+- Real-time data displayed on dashboard
+- Historical data stored in cloud (per site)
+- Export environmental logs with findings
 
 ---
 
@@ -416,24 +434,82 @@ Quick access hub for all features:
 - Shows algorithm badges (RANSAC, Triple Validation)
 - Success rate indicator (85-95%)
 
+### Field Work Section
+- **Field Journal** - Daily excavation logging
+- Voice notes support
+- GPS-tagged entries
+- Searchable archive
+
 ### Capture & Documentation
 - Manual Entry Form
 - Quick Photo Capture
-- Batch Recording Mode
 
 ### AI & Analysis
+- **AI Recognition** - Coming Soon
 - Smart Field Suggestions
-- Artifact Type Detection
 - Quality Assessment
 
 ### Export & Reports
 - PDF Report Generator
-- JSON Data Export
+- JSON/CSV Data Export
+- GeoJSON/KML for GIS
 - 3D Model Export
 
 ---
 
-## 9. Offline Support
+## 9. Analytics Dashboard
+
+Professional statistics and progress tracking for archaeological fieldwork.
+
+### Summary Statistics
+| Metric | Description |
+|--------|-------------|
+| Total Documented | All-time finding count |
+| Today's Findings | Documented in last 24 hours |
+
+### Weekly Activity Chart
+- Bar chart showing findings per day
+- 7-day rolling view
+- Visual trend identification
+
+### Documentation Statistics
+| Stat | Description |
+|------|-------------|
+| Avg. per Day | Daily documentation rate |
+| Most Active Day | Highest productivity day |
+| Time Active | Total documentation hours |
+| Sites Covered | Number of excavation sites |
+
+### Session Summary
+- Current session duration
+- Session statistics
+- Quick actions
+
+---
+
+## 10. Field Journal
+
+Digital excavation diary for daily observations and notes.
+
+### Entry Management
+- Create, edit, delete entries
+- Rich text support
+- Timestamp and date tracking
+
+### Features
+- **Search** - Full-text search across entries
+- **Tags** - Categorize entries for filtering
+- **Export** - Include journal in reports
+
+### Best Practices
+- Daily start/end entries
+- Weather conditions logging
+- Team member documentation
+- Interpretation notes
+
+---
+
+## 11. Offline Support
 
 ### Auto-Save System
 - Form drafts saved every 2 seconds
@@ -462,17 +538,57 @@ Quick access hub for all features:
 
 ---
 
+## 12. Settings & Customization
+
+### Appearance
+- Theme selection (Light/Dark/System)
+- Accent color picker (10 options)
+- Font size adjustment
+- Compact mode toggle
+
+### Regional
+- Measurement units (Metric/Imperial)
+- Date format preferences
+- Language selection
+
+### Data & Sync
+- Auto-sync toggle
+- Offline mode
+- Image compression settings
+- Image quality (1-100)
+
+### Privacy & Security
+- Biometric authentication (fingerprint/face)
+- Analytics opt-in/out
+
+### Field Work Settings
+- Auto-save interval
+- GPS coordinate display
+- Auto weather recording
+
+### 3D & Photogrammetry
+- Cloud vs on-device processing
+- High quality preview
+- Max photos per scan
+
+---
+
 ## Feature Matrix
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | User Authentication | ✅ Complete | Email + Google |
 | Findings CRUD | ✅ Complete | Full management |
-| 3D Reconstruction | ✅ Complete | Real SfM |
+| 3D Reconstruction | ✅ Complete | Real SfM + Cloud |
+| Cloud Processing | ✅ Complete | OpenScan API |
 | Photo Capture | ✅ Complete | Camera + Gallery |
 | PDF Export | ✅ Complete | Professional |
-| Safety Monitoring | ✅ Complete | BLE + Firebase |
+| Environmental Sensors | ✅ Complete | M5 StickC Plus 2 |
 | Offline Support | ✅ Complete | Auto-save + Queue |
+| Cloud Database | ✅ Complete | Firebase Firestore |
+| Field Journal | ✅ Complete | Daily logging |
+| Analytics | ✅ Complete | Professional stats |
 | Voice Commands | ✅ Complete | Speech-to-text |
-| AI Recognition | ⚠️ Optional | Can be enabled |
-| Cloud 3D Processing | 🔄 Future | API integration |
+| Biometric Auth | ✅ Complete | Fingerprint/Face |
+| Settings Sync | ✅ Complete | Cross-device |
+| AI Recognition | 🔄 Coming Soon | In development |

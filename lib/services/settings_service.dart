@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'cloud_database_service.dart';
 
 /// App theme mode
 enum AppThemeMode {
@@ -45,10 +47,10 @@ class AccentColorOption {
   const AccentColorOption(this.name, this.color);
 
   static const List<AccentColorOption> options = [
+    AccentColorOption('Gold', Color(0xFFFFC107)),      // Main app color (default)
     AccentColorOption('Amber', Color(0xFFFFB300)),
-    AccentColorOption('Brown', Color(0xFF8B4513)),
-    AccentColorOption('Blue', Color(0xFF1976D2)),
     AccentColorOption('Teal', Color(0xFF00897B)),
+    AccentColorOption('Blue', Color(0xFF1976D2)),
     AccentColorOption('Green', Color(0xFF388E3C)),
     AccentColorOption('Purple', Color(0xFF7B1FA2)),
     AccentColorOption('Red', Color(0xFFC62828)),
@@ -98,8 +100,8 @@ class AppSettings {
   final int maxPhotosPerScan;
 
   AppSettings({
-    this.themeMode = AppThemeMode.system,
-    this.accentColorIndex = 1, // Brown by default
+    this.themeMode = AppThemeMode.dark,
+    this.accentColorIndex = 0, // Gold by default (main app color)
     this.fontSize = 1.0,
     this.compactMode = false,
     this.measurementSystem = MeasurementSystem.metric,
@@ -127,7 +129,7 @@ class AppSettings {
     if (accentColorIndex >= 0 && accentColorIndex < AccentColorOption.options.length) {
       return AccentColorOption.options[accentColorIndex].color;
     }
-    return AccentColorOption.options[1].color; // Default brown
+    return AccentColorOption.options[0].color; // Default gold
   }
 
   AppSettings copyWith({
@@ -210,9 +212,9 @@ class AppSettings {
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
         themeMode: AppThemeMode.values.firstWhere(
           (m) => m.name == json['themeMode'],
-          orElse: () => AppThemeMode.system,
+          orElse: () => AppThemeMode.dark,
         ),
-        accentColorIndex: json['accentColorIndex'] ?? 1,
+        accentColorIndex: json['accentColorIndex'] ?? 0,
         fontSize: json['fontSize']?.toDouble() ?? 1.0,
         compactMode: json['compactMode'] ?? false,
         measurementSystem: MeasurementSystem.values.firstWhere(
@@ -244,12 +246,17 @@ class AppSettings {
 }
 
 /// Service for managing app settings
+/// Hybrid: Cloud (Firestore) when logged in, local (SharedPreferences) always as cache
 class SettingsService extends ChangeNotifier {
   static final SettingsService _instance = SettingsService._internal();
   factory SettingsService() => _instance;
   SettingsService._internal();
 
-  static const String _settingsKey = 'app_settings';
+  final _cloudDb = CloudDatabaseService();
+  StreamSubscription? _settingsSubscription;
+
+  // SharedPreferences key for local storage
+  static const _settingsKey = 'app_settings';
 
   AppSettings _settings = AppSettings();
   bool _isInitialized = false;
@@ -258,28 +265,62 @@ class SettingsService extends ChangeNotifier {
   bool get isDarkMode => _settings.themeMode == AppThemeMode.dark;
   Color get accentColor => _settings.accentColor;
 
-  /// Initialize settings from storage
+  /// Initialize settings - load from local first, then cloud if logged in
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString(_settingsKey);
+      // Always load local first
+      await _loadSettingsLocal();
 
-      if (json != null) {
-        _settings = AppSettings.fromJson(
-          Map<String, dynamic>.from(
-            Uri.splitQueryString(json).map((k, v) => MapEntry(k, _parseValue(v))),
-          ),
-        );
+      // If logged in, also try to get from cloud
+      if (_cloudDb.useCloud) {
+        final data = await _cloudDb.getSettings();
+        if (data != null) {
+          _settings = AppSettings.fromJson(data);
+          // Update local cache
+          await _saveSettingsLocal();
+        }
+
+        // Listen for real-time updates (cross-device sync)
+        _settingsSubscription = _cloudDb.settingsStream().listen((data) {
+          if (data != null) {
+            _settings = AppSettings.fromJson(data);
+            _saveSettingsLocal(); // Update local cache
+            notifyListeners();
+          }
+        });
       }
     } catch (e) {
       debugPrint('Error loading settings: $e');
-      _settings = AppSettings();
     }
 
     _isInitialized = true;
     notifyListeners();
+  }
+
+  /// Load settings from local SharedPreferences
+  Future<void> _loadSettingsLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString(_settingsKey);
+      if (json != null) {
+        _settings = AppSettings.fromJson(jsonDecode(json));
+      }
+    } catch (e) {
+      debugPrint('Error loading local settings: $e');
+      _settings = AppSettings();
+    }
+  }
+
+  /// Save settings to local SharedPreferences
+  Future<void> _saveSettingsLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_settingsKey, jsonEncode(_settings.toJson()));
+    } catch (e) {
+      debugPrint('Error saving local settings: $e');
+    }
   }
 
   /// Update settings
@@ -370,10 +411,10 @@ class SettingsService extends ChangeNotifier {
           primary: accentColor,
           secondary: accentColor,
         ),
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        cardColor: const Color(0xFF1E1E1E),
-        appBarTheme: AppBarTheme(
-          backgroundColor: const Color(0xFF1E1E1E),
+        scaffoldBackgroundColor: const Color(0xFF0D3A39),  // Main teal background
+        cardColor: const Color(0xFF1C2523),                // Darker teal for cards
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
           foregroundColor: Colors.white,
           elevation: 0,
         ),
@@ -434,27 +475,25 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Save settings to storage
+  /// Save settings - to cloud if logged in, always to local
   Future<void> _saveSettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = _settings.toJson();
-      await prefs.setString(
-        _settingsKey,
-        json.entries.map((e) => '${e.key}=${e.value}').join('&'),
-      );
-    } catch (e) {
-      debugPrint('Error saving settings: $e');
+    // Always save locally
+    await _saveSettingsLocal();
+
+    // Also save to cloud if logged in
+    if (_cloudDb.useCloud) {
+      try {
+        await _cloudDb.saveSettings(_settings.toJson());
+      } catch (e) {
+        debugPrint('Error saving settings to cloud: $e');
+      }
     }
   }
 
-  dynamic _parseValue(String value) {
-    if (value == 'true') return true;
-    if (value == 'false') return false;
-    final intVal = int.tryParse(value);
-    if (intVal != null) return intVal;
-    final doubleVal = double.tryParse(value);
-    if (doubleVal != null) return doubleVal;
-    return value;
+  /// Dispose resources
+  @override
+  void dispose() {
+    _settingsSubscription?.cancel();
+    super.dispose();
   }
 }

@@ -1,9 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import '../models/field_journal.dart';
+import '../services/voice_service.dart';
+import '../services/progress_service.dart';
+import '../services/cloud_database_service.dart';
+import '../services/weather_service.dart';
 
 /// Field Journal Screen for daily documentation
+/// Hybrid: Cloud (Firestore) when logged in, local (SharedPreferences) always as cache
 class FieldJournalScreen extends StatefulWidget {
   const FieldJournalScreen({super.key});
 
@@ -16,46 +21,354 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
   bool _isLoading = true;
   JournalEntryType _selectedFilter = JournalEntryType.daily;
   bool _showAllTypes = true;
+  final _voiceService = VoiceService();
+  final _progressService = ProgressService();
+  final _cloudDb = CloudDatabaseService();
+  final _weatherService = WeatherService();
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
+  WeatherLog? _currentWeather;
+
+  // SharedPreferences key for local storage
+  static const _entriesKey = 'journal_entries';
 
   @override
   void initState() {
     super.initState();
     _loadEntries();
+    _initServices();
+  }
+
+  Future<void> _initServices() async {
+    await _voiceService.initialize();
+    await _progressService.initialize();
+    await _loadCurrentWeather();
+  }
+
+  Future<void> _loadCurrentWeather() async {
+    try {
+      final weather = await _weatherService.getLatestLog();
+      if (weather != null && mounted) {
+        setState(() => _currentWeather = weather);
+      }
+    } catch (e) {
+      debugPrint('Error loading weather: $e');
+    }
+  }
+
+  void _showWeatherDialog() {
+    final weather = _currentWeather;
+    if (weather == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1C2523),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.wb_sunny, color: Color(0xFF87CEEB)),
+            const SizedBox(width: 8),
+            const Text('Current Weather', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildWeatherRow(Icons.thermostat, 'Temperature', weather.temperatureString),
+            _buildWeatherRow(Icons.water_drop, 'Humidity', weather.humidityString),
+            _buildWeatherRow(Icons.speed, 'Pressure', weather.pressureString),
+            if (weather.condition != null)
+              _buildWeatherRow(Icons.cloud, 'Condition', weather.condition!.label),
+            if (weather.windDirection != null)
+              _buildWeatherRow(Icons.air, 'Wind', '${weather.windDirection!.label}${weather.windSpeed != null ? ' ${weather.windSpeed!.toStringAsFixed(0)} km/h' : ''}'),
+            const Divider(color: Colors.white24, height: 24),
+            Text(
+              'Last updated: ${_formatWeatherTime(weather.timestamp)}',
+              style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _logNewWeather();
+            },
+            child: const Text('Log Weather', style: TextStyle(color: Color(0xFFFFC107))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close', style: TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeatherRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white54, size: 18),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 14)),
+          const Spacer(),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  String _formatWeatherTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hours ago';
+    return '${diff.inDays} days ago';
+  }
+
+  Future<void> _logNewWeather() async {
+    // Quick weather log dialog
+    WeatherCondition? selectedCondition;
+    final tempController = TextEditingController();
+    final humidityController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          backgroundColor: const Color(0xFF1C2523),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Log Weather', style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Condition selector
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: WeatherCondition.values.take(8).map((condition) {
+                    final isSelected = selectedCondition == condition;
+                    return GestureDetector(
+                      onTap: () => setModalState(() => selectedCondition = condition),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? const Color(0xFF87CEEB).withAlpha(60) : Colors.white.withAlpha(20),
+                          borderRadius: BorderRadius.circular(16),
+                          border: isSelected ? Border.all(color: const Color(0xFF87CEEB)) : null,
+                        ),
+                        child: Text(
+                          condition.label,
+                          style: TextStyle(
+                            color: isSelected ? const Color(0xFF87CEEB) : Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: tempController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Temperature (°C)',
+                    labelStyle: TextStyle(color: Colors.white.withAlpha(179)),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white.withAlpha(77)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: const BorderSide(color: Color(0xFF87CEEB)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: humidityController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Humidity (%)',
+                    labelStyle: TextStyle(color: Colors.white.withAlpha(179)),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white.withAlpha(77)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: const BorderSide(color: Color(0xFF87CEEB)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final log = await _weatherService.logWeather(
+                  temperature: double.tryParse(tempController.text),
+                  humidity: double.tryParse(humidityController.text),
+                  condition: selectedCondition,
+                );
+                if (log != null && mounted) {
+                  setState(() => _currentWeather = log);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Weather logged successfully'),
+                      backgroundColor: Color(0xFF4CAF50),
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107)),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadEntries() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final entriesJson = prefs.getStringList('journal_entries') ?? [];
-      _entries = entriesJson
-          .map((json) => JournalEntry.fromJson(jsonDecode(json)))
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      // Always load local first
+      await _loadEntriesLocal();
+
+      // If logged in, also try cloud
+      if (_cloudDb.useCloud) {
+        final data = await _cloudDb.getJournalEntries();
+        if (data.isNotEmpty) {
+          _entries = data.map((json) => JournalEntry.fromJson(json)).toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          // Update local cache
+          await _saveEntriesLocal();
+        }
+      }
     } catch (e) {
-      _entries = [];
+      debugPrint('Error loading entries: $e');
     }
     if (mounted) {
       setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _saveEntries() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      'journal_entries',
-      _entries.map((e) => jsonEncode(e.toJson())).toList(),
-    );
+  Future<void> _loadEntriesLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = prefs.getStringList(_entriesKey) ?? [];
+      _entries = jsonList
+          .map((json) => JournalEntry.fromJson(jsonDecode(json)))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } catch (e) {
+      debugPrint('Error loading local entries: $e');
+      _entries = [];
+    }
+  }
+
+  Future<void> _saveEntriesLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = _entries.map((e) => jsonEncode(e.toJson())).toList();
+      await prefs.setStringList(_entriesKey, jsonList);
+    } catch (e) {
+      debugPrint('Error saving local entries: $e');
+    }
+  }
+
+  Future<void> _saveEntry(JournalEntry entry) async {
+    // Always save locally
+    await _saveEntriesLocal();
+
+    // Also save to cloud if logged in
+    if (_cloudDb.useCloud) {
+      await _cloudDb.addJournalEntry(entry.toJson());
+    }
+  }
+
+  Future<void> _updateEntry(JournalEntry entry) async {
+    // Always save locally
+    await _saveEntriesLocal();
+
+    // Also update in cloud if logged in
+    if (_cloudDb.useCloud) {
+      await _cloudDb.updateJournalEntry(entry.id, entry.toJson());
+    }
+  }
+
+  Future<void> _deleteEntry(JournalEntry entry) async {
+    // Always save locally (entry already removed from _entries list)
+    await _saveEntriesLocal();
+
+    // Also delete from cloud if logged in
+    if (_cloudDb.useCloud) {
+      await _cloudDb.deleteJournalEntry(entry.id);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: const Color(0xFF0D3A39),
       appBar: AppBar(
         title: const Text('Field Journal'),
         backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          // Weather indicator
+          if (_currentWeather != null)
+            GestureDetector(
+              onTap: _showWeatherDialog,
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF87CEEB).withAlpha(40),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.wb_sunny, color: Color(0xFF87CEEB), size: 16),
+                    const SizedBox(width: 4),
+                    Text(
+                      _currentWeather!.temperatureString,
+                      style: const TextStyle(
+                        color: Color(0xFF87CEEB),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: _showSearchDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.filter_list),
             onPressed: _showFilterDialog,
@@ -63,13 +376,13 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
           : _entries.isEmpty
               ? _buildEmptyState()
               : _buildJournalList(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showNewEntryDialog(),
-        backgroundColor: const Color(0xFF8B4513),
+        backgroundColor: const Color(0xFFFFC107),
         icon: const Icon(Icons.add),
         label: const Text('New Entry'),
       ),
@@ -108,15 +421,35 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
   }
 
   Widget _buildJournalList() {
-    final filteredEntries = _showAllTypes
+    var filteredEntries = _showAllTypes
         ? _entries
         : _entries.where((e) => e.type == _selectedFilter).toList();
+
+    // Apply search filter
+    if (_searchQuery.isNotEmpty) {
+      filteredEntries = filteredEntries.where((e) {
+        final query = _searchQuery.toLowerCase();
+        return e.title.toLowerCase().contains(query) ||
+            e.content.toLowerCase().contains(query) ||
+            (e.tags?.any((t) => t.toLowerCase().contains(query)) ?? false) ||
+            (e.transcription?.toLowerCase().contains(query) ?? false);
+      }).toList();
+    }
 
     // Group entries by date
     final groupedEntries = <String, List<JournalEntry>>{};
     for (final entry in filteredEntries) {
       final dateKey = _formatDateKey(entry.createdAt);
       groupedEntries.putIfAbsent(dateKey, () => []).add(entry);
+    }
+
+    if (groupedEntries.isEmpty) {
+      return Center(
+        child: Text(
+          'No entries found',
+          style: TextStyle(color: Colors.white.withAlpha(150)),
+        ),
+      );
     }
 
     return ListView.builder(
@@ -204,7 +537,7 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                 ),
                 if (entry.isPinned)
                   const Icon(Icons.push_pin, color: Colors.amber, size: 16),
-                if (entry.hasVoiceNote)
+                if (entry.transcription != null && entry.transcription!.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
                     child: Icon(Icons.mic, color: Colors.red.withAlpha(179), size: 16),
@@ -221,6 +554,75 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
             ),
+            // Show transcription preview if exists
+            if (entry.transcription != null && entry.transcription!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.withAlpha(30),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.record_voice_over, color: Colors.red, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        entry.transcription!,
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(180),
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            // Weather info if available
+            if (entry.weather != null || entry.temperature != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF87CEEB).withAlpha(30),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.wb_sunny, color: Color(0xFF87CEEB), size: 14),
+                    const SizedBox(width: 6),
+                    if (entry.temperature != null)
+                      Text(
+                        '${entry.temperature!.toStringAsFixed(1)}°C',
+                        style: const TextStyle(
+                          color: Color(0xFF87CEEB),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    if (entry.weather != null && entry.temperature != null)
+                      const Text(' • ', style: TextStyle(color: Color(0xFF87CEEB), fontSize: 11)),
+                    if (entry.weather != null)
+                      Flexible(
+                        child: Text(
+                          entry.weather!,
+                          style: TextStyle(
+                            color: Colors.white.withAlpha(180),
+                            fontSize: 11,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
             if (entry.tags != null && entry.tags!.isNotEmpty) ...[
               const SizedBox(height: 12),
               Wrap(
@@ -278,10 +680,62 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
     );
   }
 
+  void _showSearchDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1C2523),
+        title: const Text('Search Entries', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: _searchController,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Search by title, content, or tags...',
+            hintStyle: const TextStyle(color: Colors.white54),
+            prefixIcon: const Icon(Icons.search, color: Colors.white54),
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, color: Colors.white54),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                      Navigator.pop(context);
+                    },
+                  )
+                : null,
+            filled: true,
+            fillColor: Colors.white.withAlpha(26),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          onChanged: (value) => setState(() => _searchQuery = value),
+          onSubmitted: (_) => Navigator.pop(context),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _searchController.clear();
+              setState(() => _searchQuery = '');
+              Navigator.pop(context);
+            },
+            child: const Text('Clear'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Search'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showFilterDialog() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -336,11 +790,13 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
     WorkCondition? selectedCondition;
     List<String> tags = [];
     final tagController = TextEditingController();
+    String? voiceTranscription;
+    bool isRecording = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -357,14 +813,126 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'New Journal Entry',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'New Journal Entry',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    // Voice recording button
+                    Container(
+                      decoration: BoxDecoration(
+                        color: isRecording ? Colors.red : Colors.red.withAlpha(50),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: IconButton(
+                        icon: Icon(
+                          isRecording ? Icons.stop : Icons.mic,
+                          color: isRecording ? Colors.white : Colors.red,
+                        ),
+                        onPressed: () async {
+                          if (isRecording) {
+                            final text = await _voiceService.stopListening();
+                            setModalState(() {
+                              isRecording = false;
+                              if (text.isNotEmpty) {
+                                voiceTranscription = text;
+                                // Append to content
+                                if (contentController.text.isNotEmpty) {
+                                  contentController.text += '\n\n[Voice Note]: $text';
+                                } else {
+                                  contentController.text = text;
+                                }
+                              }
+                            });
+                          } else {
+                            final started = await _voiceService.startListening(
+                              onResult: (text, isFinal) {
+                                setModalState(() {
+                                  voiceTranscription = text;
+                                });
+                              },
+                            );
+                            if (started) {
+                              setModalState(() => isRecording = true);
+                            } else {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Voice recognition not available')),
+                                );
+                              }
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ),
+
+                // Voice recording indicator
+                if (isRecording) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withAlpha(30),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.withAlpha(100)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.graphic_eq, color: Colors.red),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Recording...',
+                                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                              ),
+                              if (voiceTranscription != null && voiceTranscription!.isNotEmpty)
+                                Text(
+                                  voiceTranscription!,
+                                  style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 12),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Show voice transcription result
+                if (!isRecording && voiceTranscription != null && voiceTranscription!.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withAlpha(30),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Voice note captured',
+                          style: TextStyle(color: Colors.green),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 20),
 
                 // Type selection
@@ -420,21 +988,25 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Content
-                TextField(
-                  controller: contentController,
-                  style: const TextStyle(color: Colors.white),
-                  maxLines: 4,
-                  decoration: InputDecoration(
-                    labelText: 'Content',
-                    labelStyle: const TextStyle(color: Colors.white70),
-                    filled: true,
-                    fillColor: Colors.white.withAlpha(26),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
+                // Content with voice input button
+                Stack(
+                  children: [
+                    TextField(
+                      controller: contentController,
+                      style: const TextStyle(color: Colors.white),
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        labelText: 'Content',
+                        labelStyle: const TextStyle(color: Colors.white70),
+                        filled: true,
+                        fillColor: Colors.white.withAlpha(26),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
                 const SizedBox(height: 16),
 
@@ -514,7 +1086,7 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       if (titleController.text.isEmpty || contentController.text.isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Please fill in title and content')),
@@ -529,16 +1101,26 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                         content: contentController.text,
                         workCondition: selectedCondition,
                         tags: tags.isEmpty ? null : tags,
+                        transcription: voiceTranscription,
+                        weather: _currentWeather?.summary,
+                        temperature: _currentWeather?.temperature,
                       );
 
                       setState(() {
                         _entries.insert(0, entry);
                       });
-                      _saveEntries();
-                      Navigator.pop(context);
+                      await _saveEntry(entry);
+
+                      // Record progress and check for achievements
+                      final achievements = await _progressService.recordNote();
+                      if (achievements.isNotEmpty && mounted) {
+                        _showAchievementDialog(achievements.first);
+                      }
+
+                      if (mounted) Navigator.pop(context);
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF8B4513),
+                      backgroundColor: const Color(0xFFFFC107),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -555,11 +1137,64 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
     );
   }
 
+  void _showAchievementDialog(Achievement achievement) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1C2523),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFC107).withAlpha(50),
+                borderRadius: BorderRadius.circular(50),
+              ),
+              child: Icon(
+                achievement.type.icon,
+                color: const Color(0xFFFFC107),
+                size: 48,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Achievement Unlocked!',
+              style: TextStyle(
+                color: Color(0xFFFFC107),
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              achievement.type.title,
+              style: const TextStyle(color: Colors.white, fontSize: 18),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              achievement.type.description,
+              style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Awesome!'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showEntryDetails(JournalEntry entry) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -604,6 +1239,21 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                       ],
                     ),
                   ),
+                  // Read aloud button
+                  IconButton(
+                    icon: Icon(
+                      _voiceService.isSpeaking ? Icons.stop : Icons.volume_up,
+                      color: const Color(0xFFFFC107),
+                    ),
+                    onPressed: () async {
+                      if (_voiceService.isSpeaking) {
+                        await _voiceService.stopSpeaking();
+                      } else {
+                        final textToRead = '${entry.title}. ${entry.content}';
+                        await _voiceService.speak(textToRead);
+                      }
+                    },
+                  ),
                 ],
               ),
               const SizedBox(height: 24),
@@ -611,6 +1261,54 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                 entry.content,
                 style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.5),
               ),
+
+              // Show voice transcription if exists
+              if (entry.transcription != null && entry.transcription!.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withAlpha(30),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withAlpha(100)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.record_voice_over, color: Colors.red, size: 20),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Voice Note Transcription',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.volume_up, color: Colors.red, size: 20),
+                            onPressed: () => _voiceService.speak(entry.transcription!),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        entry.transcription!,
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(200),
+                          fontSize: 14,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               if (entry.workCondition != null) ...[
                 const SizedBox(height: 24),
                 Row(
@@ -650,7 +1348,7 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
   void _showEntryOptions(JournalEntry entry) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -660,6 +1358,14 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.volume_up, color: Color(0xFFFFC107)),
+              title: const Text('Read Aloud', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _voiceService.speak('${entry.title}. ${entry.content}');
+              },
+            ),
+            ListTile(
               leading: Icon(
                 entry.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
                 color: Colors.amber,
@@ -668,22 +1374,23 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                 entry.isPinned ? 'Unpin Entry' : 'Pin Entry',
                 style: const TextStyle(color: Colors.white),
               ),
-              onTap: () {
+              onTap: () async {
+                final updatedEntry = entry.copyWith(isPinned: !entry.isPinned);
                 setState(() {
                   final index = _entries.indexOf(entry);
-                  _entries[index] = entry.copyWith(isPinned: !entry.isPinned);
+                  _entries[index] = updatedEntry;
                 });
-                _saveEntries();
-                Navigator.pop(context);
+                await _updateEntry(updatedEntry);
+                if (mounted) Navigator.pop(context);
               },
             ),
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Delete Entry', style: TextStyle(color: Colors.white)),
-              onTap: () {
+              onTap: () async {
                 setState(() => _entries.remove(entry));
-                _saveEntries();
-                Navigator.pop(context);
+                await _deleteEntry(entry);
+                if (mounted) Navigator.pop(context);
               },
             ),
           ],

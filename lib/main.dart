@@ -38,6 +38,9 @@ import 'screens/quick_capture_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
 import 'services/export_service.dart';
+import 'services/biometric_service.dart';
+import 'services/background_service.dart';
+import 'widgets/offline_indicator.dart';
 
 // ============================================================
 // IMGBB API KEY - Get your free key at https://api.imgbb.com/
@@ -50,6 +53,8 @@ void main() async {
   // Initialize notification service
   await NotificationService().initialize();
   await NotificationService().requestPermissions();
+  // Initialize background service to keep app running
+  await BackgroundServiceManager().initialize();
   runApp(const MyApp());
 }
 
@@ -71,13 +76,273 @@ class MyApp extends StatelessWidget {
               ),
             );
           }
-          // If user is logged in, go to Dashboard
+          // If user is logged in, check for biometric
           if (snapshot.hasData) {
-            return const DashboardScreen();
+            return const _BiometricGate();
           }
           // Otherwise, show login screen
           return const LoginScreen();
         },
+      ),
+    );
+  }
+}
+
+/// Gate that checks if biometric lock should be shown
+class _BiometricGate extends StatefulWidget {
+  const _BiometricGate();
+
+  @override
+  State<_BiometricGate> createState() => _BiometricGateState();
+}
+
+class _BiometricGateState extends State<_BiometricGate> {
+  bool _isChecking = true;
+  bool _showBiometricLock = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometric();
+  }
+
+  Future<void> _checkBiometric() async {
+    final biometricService = BiometricService();
+    final shouldShow = await biometricService.shouldShowBiometricLock();
+
+    if (mounted) {
+      setState(() {
+        _showBiometricLock = shouldShow;
+        _isChecking = false;
+      });
+
+      // If no biometric lock needed, start background service directly
+      if (!shouldShow) {
+        _startBackgroundService();
+      }
+      // If biometric needed, the lock screen will auto-trigger authentication
+    }
+  }
+
+  Future<void> _authenticateWithBiometric() async {
+    final biometricService = BiometricService();
+    final success = await biometricService.authenticate();
+
+    if (mounted) {
+      if (success) {
+        setState(() => _showBiometricLock = false);
+        // Start background service after successful authentication
+        _startBackgroundService();
+      }
+      // If failed, stay on lock screen - user can retry or use password
+    }
+  }
+
+  Future<void> _startBackgroundService() async {
+    await BackgroundServiceManager().startService();
+  }
+
+  void _usePassword() {
+    // Skip biometric lock for this session and go directly to dashboard
+    setState(() => _showBiometricLock = false);
+    _startBackgroundService();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isChecking) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFFFFC107)),
+        ),
+      );
+    }
+
+    if (_showBiometricLock) {
+      return _BiometricLockScreen(
+        onAuthenticate: _authenticateWithBiometric,
+        onUsePassword: _usePassword,
+      );
+    }
+
+    return const DashboardScreen();
+  }
+}
+
+/// Lock screen shown when biometric auth is required
+class _BiometricLockScreen extends StatefulWidget {
+  final VoidCallback onAuthenticate;
+  final VoidCallback onUsePassword;
+
+  const _BiometricLockScreen({
+    required this.onAuthenticate,
+    required this.onUsePassword,
+  });
+
+  @override
+  State<_BiometricLockScreen> createState() => _BiometricLockScreenState();
+}
+
+class _BiometricLockScreenState extends State<_BiometricLockScreen> {
+  String _biometricType = 'Biometric';
+  String? _errorMessage;
+  bool _isAuthenticating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBiometricType();
+    // Auto-trigger authentication when lock screen appears
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleAuthenticate();
+    });
+  }
+
+  Future<void> _loadBiometricType() async {
+    final type = await BiometricService().getBiometricTypeName();
+    if (mounted) {
+      setState(() => _biometricType = type);
+    }
+  }
+
+  Future<void> _handleAuthenticate() async {
+    if (_isAuthenticating) return;
+    setState(() {
+      _isAuthenticating = true;
+      _errorMessage = null;
+    });
+
+    final result = await BiometricService().authenticateWithFeedback();
+
+    if (mounted) {
+      setState(() => _isAuthenticating = false);
+      if (result.success) {
+        // Success - notify parent to hide lock and proceed to dashboard
+        widget.onUsePassword(); // This now just bypasses the lock
+      } else if (result.error != null) {
+        setState(() => _errorMessage = result.error);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF0D3A39),
+              Color(0xFF1C2523),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Spacer(),
+              // Logo
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFC107),
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                child: const Icon(
+                  Icons.account_balance,
+                  size: 50,
+                  color: Color(0xFF0D3A39),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'AncientVision',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Unlock with $_biometricType',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.7),
+                  fontSize: 16,
+                ),
+              ),
+              const Spacer(),
+              // Error message
+              if (_errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withAlpha(50),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red, fontSize: 14),
+                  ),
+                ),
+              ],
+              // Fingerprint button
+              GestureDetector(
+                onTap: _isAuthenticating ? null : _handleAuthenticate,
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(26),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFFFFC107),
+                      width: 2,
+                    ),
+                  ),
+                  child: _isAuthenticating
+                      ? const CircularProgressIndicator(
+                          color: Color(0xFFFFC107),
+                          strokeWidth: 2,
+                        )
+                      : const Icon(
+                          Icons.fingerprint,
+                          size: 48,
+                          color: Color(0xFFFFC107),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _isAuthenticating ? 'Authenticating...' : 'Tap to unlock',
+                style: TextStyle(
+                  color: Colors.white.withAlpha(153),
+                  fontSize: 14,
+                ),
+              ),
+              const Spacer(),
+              // Skip option
+              TextButton(
+                onPressed: widget.onUsePassword,
+                child: const Text(
+                  'Skip for now',
+                  style: TextStyle(
+                    color: Color(0xFFFFC107),
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -109,6 +374,80 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// Navigate to dashboard, optionally prompting for biometric enrollment
+  Future<void> _navigateToDashboard() async {
+    if (!mounted) return;
+
+    final biometricService = BiometricService();
+    final isEnrolled = await biometricService.isEnrolled();
+    final isSupported = await biometricService.isDeviceSupported();
+
+    // If not enrolled and device supports biometrics, show enrollment prompt
+    if (!isEnrolled && isSupported && mounted) {
+      final biometricType = await biometricService.getBiometricTypeName();
+      final shouldEnroll = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF1C2523),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.fingerprint, color: Color(0xFFFFC107), size: 28),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Enable Quick Unlock?',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Use $biometricType to sign in faster next time. Your data stays secure.',
+            style: TextStyle(color: Colors.white.withOpacity(0.8)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                'Not now',
+                style: TextStyle(color: Colors.white.withOpacity(0.6)),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC107),
+                foregroundColor: const Color(0xFF0D3A39),
+              ),
+              child: const Text('Enable'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldEnroll == true && mounted) {
+        final enrolled = await biometricService.enroll();
+        if (enrolled && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Quick unlock enabled!'),
+              backgroundColor: Color(0xFF4CAF50),
+            ),
+          );
+        }
+      }
+    }
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+      );
+    }
+  }
+
   Future<void> _handleLogin() async {
     // Validate
     setState(() {
@@ -127,10 +466,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
-        );
+        await _navigateToDashboard();
       }
     } on FirebaseAuthException catch (e) {
       debugPrint('FirebaseAuthException: ${e.code} - ${e.message}');
@@ -139,10 +475,7 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint('Login error: $e');
       // Check if user is actually logged in despite the error (known firebase_auth bug)
       if (AuthService.currentUser != null && mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
-        );
+        await _navigateToDashboard();
         return;
       }
       _showError('Login failed: ${e.toString()}');
@@ -158,10 +491,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final result = await AuthService.signInWithGoogle();
 
       if (result != null && mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
-        );
+        await _navigateToDashboard();
       }
     } on FirebaseAuthException catch (e) {
       _showError(_getAuthErrorMessage(e.code));
@@ -343,6 +673,80 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  /// Navigate to dashboard, optionally prompting for biometric enrollment
+  Future<void> _navigateToDashboard() async {
+    if (!mounted) return;
+
+    final biometricService = BiometricService();
+    final isEnrolled = await biometricService.isEnrolled();
+    final isSupported = await biometricService.isDeviceSupported();
+
+    // If not enrolled and device supports biometrics, show enrollment prompt
+    if (!isEnrolled && isSupported && mounted) {
+      final biometricType = await biometricService.getBiometricTypeName();
+      final shouldEnroll = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF1C2523),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.fingerprint, color: Color(0xFFFFC107), size: 28),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Enable Quick Unlock?',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Use $biometricType to sign in faster next time. Your data stays secure.',
+            style: TextStyle(color: Colors.white.withOpacity(0.8)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                'Not now',
+                style: TextStyle(color: Colors.white.withOpacity(0.6)),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC107),
+                foregroundColor: const Color(0xFF0D3A39),
+              ),
+              child: const Text('Enable'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldEnroll == true && mounted) {
+        final enrolled = await biometricService.enroll();
+        if (enrolled && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Quick unlock enabled!'),
+              backgroundColor: Color(0xFF4CAF50),
+            ),
+          );
+        }
+      }
+    }
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const DashboardScreen()),
+      );
+    }
+  }
+
   Future<void> _handleRegister() async {
     // Validate all fields
     setState(() {
@@ -372,10 +776,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
-        );
+        await _navigateToDashboard();
       }
     } on FirebaseAuthException catch (e) {
       _showError(_getAuthErrorMessage(e.code));
@@ -791,19 +1192,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true,
-      backgroundColor: Colors.transparent,
-      body: _buildBody(),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: _GlassBottomNavBar(
-          currentIndex: _currentIndex,
-          onItemSelected: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
+    return OfflineIndicator(
+      child: Scaffold(
+        extendBody: true,
+        backgroundColor: Colors.transparent,
+        body: _buildBody(),
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: _GlassBottomNavBar(
+            currentIndex: _currentIndex,
+            onItemSelected: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+          ),
         ),
       ),
     );
@@ -1084,6 +1487,8 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // Offline indicator chip
+                  const OfflineChip(),
                   const _LogoCard(),
                 ],
               ),
@@ -1561,10 +1966,11 @@ class _QuickActionsRow extends StatelessWidget {
           child: _GlassActionButton(
             icon: Icons.auto_awesome_rounded,
             title: 'AI Recognition',
+            subtitle: 'COMING SOON',
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('AI Recognition screen (coming soon)'),
+                  content: Text('AI Recognition - Coming Soon'),
                 ),
               );
             },
@@ -1593,12 +1999,14 @@ class _QuickActionsRow extends StatelessWidget {
 class _GlassActionButton extends StatelessWidget {
   final IconData icon;
   final String title;
+  final String? subtitle;
   final VoidCallback onTap;
 
   const _GlassActionButton({
     required this.icon,
     required this.title,
     required this.onTap,
+    this.subtitle,
     super.key,
   });
 
@@ -1624,18 +2032,40 @@ class _GlassActionButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.35),
-                      width: 1,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.35),
+                          width: 1,
+                        ),
+                      ),
+                      child: Icon(icon, size: 18, color: Colors.white),
                     ),
-                  ),
-                  child: Icon(icon, size: 18, color: Colors.white),
+                    if (subtitle != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFC107).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFFC107).withOpacity(0.5)),
+                        ),
+                        child: Text(
+                          subtitle!,
+                          style: const TextStyle(
+                            color: Color(0xFFFFC107),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -1776,6 +2206,34 @@ class _FindingRow extends StatelessWidget {
 // --------------------- FINDINGS TAB CONTENT ---------------------
 //
 
+/// Source type for findings
+enum FindingSource {
+  manual('Manual Entry', Icons.edit_note, Color(0xFFFFC107)),
+  photo('Photo Capture', Icons.camera_alt, Color(0xFF4CAF50)),
+  quick('Quick Capture', Icons.flash_on, Color(0xFF2196F3));
+
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const FindingSource(this.label, this.icon, this.color);
+
+  static FindingSource fromString(String? source) {
+    switch (source?.toLowerCase()) {
+      case 'photo':
+      case 'photo_capture':
+        return FindingSource.photo;
+      case 'quick':
+      case 'quick_capture':
+        return FindingSource.quick;
+      case 'manual':
+      case 'manual_entry':
+      default:
+        return FindingSource.manual;
+    }
+  }
+}
+
 class _Finding {
   final String id;
   final String name;
@@ -1788,6 +2246,34 @@ class _Finding {
   final String? imageUrl;
   final List<String> photoGallery;
   final String? model3dUrl;
+  final FindingSource source;
+
+  // Coin-specific fields
+  final String? denomination;
+  final String? mint;
+  final String? ruler;
+  final String? obverseLegend;
+  final String? reverseLegend;
+  final int? dieAxis;
+  final String? obverseDescription;
+  final String? reverseDescription;
+
+  // Fragment-specific fields
+  final String? vesselPart;
+  final String? wareType;
+  final String? decorationStyle;
+  final String? fabricColorInt;
+  final String? fabricColorExt;
+  final double? rimDiameter;
+  final double? wallThickness;
+  final String? surfaceTreatment;
+
+  // Context fields
+  final String? locusNumber;
+  final String? soilType;
+  final String? matrixDescription;
+  final String? harrisPosition;
+  final List<String>? associatedFeatures;
 
   const _Finding({
     required this.id,
@@ -1801,7 +2287,38 @@ class _Finding {
     this.imageUrl,
     this.photoGallery = const [],
     this.model3dUrl,
+    this.source = FindingSource.manual,
+    // Coin fields
+    this.denomination,
+    this.mint,
+    this.ruler,
+    this.obverseLegend,
+    this.reverseLegend,
+    this.dieAxis,
+    this.obverseDescription,
+    this.reverseDescription,
+    // Fragment fields
+    this.vesselPart,
+    this.wareType,
+    this.decorationStyle,
+    this.fabricColorInt,
+    this.fabricColorExt,
+    this.rimDiameter,
+    this.wallThickness,
+    this.surfaceTreatment,
+    // Context fields
+    this.locusNumber,
+    this.soilType,
+    this.matrixDescription,
+    this.harrisPosition,
+    this.associatedFeatures,
   });
+
+  /// Check if this is a coin finding
+  bool get isCoin => type.toLowerCase().contains('coin');
+
+  /// Check if this is a fragment/sherd finding
+  bool get isFragment => type.toLowerCase().contains('fragment') || type.toLowerCase().contains('sherd');
 
   // Get color based on finding type for map markers
   static Color getTypeColor(String type) {
@@ -1823,6 +2340,426 @@ class _Finding {
   }
 }
 
+/// Full-screen details page for a finding
+class _FindingDetailsPage extends StatelessWidget {
+  final _Finding finding;
+
+  const _FindingDetailsPage({super.key, required this.finding});
+
+  @override
+  Widget build(BuildContext context) {
+    final typeColor = _Finding.getTypeColor(finding.type);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D3A39),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Text(finding.id, style: const TextStyle(color: Colors.white)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top section: Description (left) and Photo (right)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left: Name and Description
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Finding name with type color
+                      Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: typeColor,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              finding.name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Type badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: typeColor.withAlpha(50),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: typeColor, width: 1),
+                        ),
+                        child: Text(
+                          finding.type,
+                          style: TextStyle(
+                            color: typeColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Description
+                      const Text(
+                        'Description',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(13),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          finding.description.isNotEmpty
+                              ? finding.description
+                              : 'No description available',
+                          style: TextStyle(
+                            color: finding.description.isNotEmpty
+                                ? Colors.white
+                                : Colors.white54,
+                            fontSize: 14,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Right: Photo
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: finding.imageUrl != null && finding.imageUrl!.isNotEmpty
+                            ? Image.network(
+                                finding.imageUrl!,
+                                height: 180,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => Container(
+                                  height: 180,
+                                  color: const Color(0xFF1C2523),
+                                  child: const Center(
+                                    child: Icon(Icons.broken_image, color: Colors.white38, size: 48),
+                                  ),
+                                ),
+                              )
+                            : Container(
+                                height: 180,
+                                color: const Color(0xFF1C2523),
+                                child: const Center(
+                                  child: Icon(Icons.image_not_supported, color: Colors.white38, size: 48),
+                                ),
+                              ),
+                      ),
+                      // Photo gallery thumbnails
+                      if (finding.photoGallery.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 50,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: finding.photoGallery.length,
+                            itemBuilder: (context, index) {
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    finding.photoGallery[index],
+                                    width: 50,
+                                    height: 50,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => Container(
+                                      width: 50,
+                                      height: 50,
+                                      color: const Color(0xFF1C2523),
+                                      child: const Icon(Icons.broken_image, color: Colors.white38, size: 20),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // Bottom section: Details cards
+            // Location card
+            _buildDetailCard(
+              icon: Icons.location_on,
+              title: 'Location',
+              children: [
+                _buildDetailRow('Site', finding.site),
+                _buildDetailRow('Coordinates', '${finding.latitude.toStringAsFixed(6)}, ${finding.longitude.toStringAsFixed(6)}'),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Date & Source card
+            _buildDetailCard(
+              icon: Icons.info_outline,
+              title: 'Information',
+              children: [
+                _buildDetailRow('Date Found', finding.date),
+                _buildDetailRow('Source', finding.source.label),
+                if (finding.model3dUrl != null)
+                  _buildDetailRow('3D Model', 'Available'),
+              ],
+            ),
+
+            // Coin details card (shown only for coins)
+            if (finding.isCoin && _hasCoinData()) ...[
+              const SizedBox(height: 12),
+              _buildDetailCard(
+                icon: Icons.paid,
+                title: 'Coin Details',
+                children: [
+                  if (finding.denomination != null)
+                    _buildDetailRow('Denomination', finding.denomination!),
+                  if (finding.mint != null)
+                    _buildDetailRow('Mint', finding.mint!),
+                  if (finding.ruler != null)
+                    _buildDetailRow('Ruler/Authority', finding.ruler!),
+                  if (finding.obverseLegend != null)
+                    _buildDetailRow('Obverse Legend', finding.obverseLegend!),
+                  if (finding.reverseLegend != null)
+                    _buildDetailRow('Reverse Legend', finding.reverseLegend!),
+                  if (finding.dieAxis != null)
+                    _buildDetailRow('Die Axis', '${finding.dieAxis} o\'clock'),
+                  if (finding.obverseDescription != null)
+                    _buildDetailRow('Obverse Desc.', finding.obverseDescription!),
+                  if (finding.reverseDescription != null)
+                    _buildDetailRow('Reverse Desc.', finding.reverseDescription!),
+                ],
+              ),
+            ],
+
+            // Fragment details card (shown only for fragments)
+            if (finding.isFragment && _hasFragmentData()) ...[
+              const SizedBox(height: 12),
+              _buildDetailCard(
+                icon: Icons.broken_image,
+                title: 'Fragment Details',
+                children: [
+                  if (finding.vesselPart != null)
+                    _buildDetailRow('Vessel Part', finding.vesselPart!),
+                  if (finding.wareType != null)
+                    _buildDetailRow('Ware Type', finding.wareType!),
+                  if (finding.decorationStyle != null)
+                    _buildDetailRow('Decoration', finding.decorationStyle!),
+                  if (finding.rimDiameter != null)
+                    _buildDetailRow('Rim Diameter', '${finding.rimDiameter} mm'),
+                  if (finding.wallThickness != null)
+                    _buildDetailRow('Wall Thickness', '${finding.wallThickness} mm'),
+                  if (finding.fabricColorInt != null)
+                    _buildDetailRow('Interior Color', finding.fabricColorInt!),
+                  if (finding.fabricColorExt != null)
+                    _buildDetailRow('Exterior Color', finding.fabricColorExt!),
+                  if (finding.surfaceTreatment != null)
+                    _buildDetailRow('Surface Treatment', finding.surfaceTreatment!),
+                ],
+              ),
+            ],
+
+            // Context details card (shown if context data exists)
+            if (_hasContextData()) ...[
+              const SizedBox(height: 12),
+              _buildDetailCard(
+                icon: Icons.layers,
+                title: 'Stratigraphic Context',
+                children: [
+                  if (finding.locusNumber != null)
+                    _buildDetailRow('Locus/Context', finding.locusNumber!),
+                  if (finding.soilType != null)
+                    _buildDetailRow('Soil Type', finding.soilType!),
+                  if (finding.matrixDescription != null)
+                    _buildDetailRow('Matrix', finding.matrixDescription!),
+                  if (finding.harrisPosition != null)
+                    _buildDetailRow('Harris Position', finding.harrisPosition!),
+                  if (finding.associatedFeatures != null && finding.associatedFeatures!.isNotEmpty)
+                    _buildDetailRow('Associated', finding.associatedFeatures!.join(', ')),
+                ],
+              ),
+            ],
+
+            const SizedBox(height: 12),
+
+            // 3D Model button if available
+            if (finding.model3dUrl != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7C4DFF).withAlpha(30),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF7C4DFF), width: 1),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.view_in_ar, color: Color(0xFF7C4DFF), size: 32),
+                    const SizedBox(width: 16),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '3D Model Available',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'View the reconstructed 3D model',
+                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios, color: Color(0xFF7C4DFF), size: 20),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailCard({
+    required IconData icon,
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(13),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: const Color(0xFFFFC107), size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Check if finding has any coin-specific data
+  bool _hasCoinData() {
+    return finding.denomination != null ||
+        finding.mint != null ||
+        finding.ruler != null ||
+        finding.obverseLegend != null ||
+        finding.reverseLegend != null ||
+        finding.dieAxis != null ||
+        finding.obverseDescription != null ||
+        finding.reverseDescription != null;
+  }
+
+  /// Check if finding has any fragment-specific data
+  bool _hasFragmentData() {
+    return finding.vesselPart != null ||
+        finding.wareType != null ||
+        finding.decorationStyle != null ||
+        finding.rimDiameter != null ||
+        finding.wallThickness != null ||
+        finding.fabricColorInt != null ||
+        finding.fabricColorExt != null ||
+        finding.surfaceTreatment != null;
+  }
+
+  /// Check if finding has any context/stratigraphic data
+  bool _hasContextData() {
+    return finding.locusNumber != null ||
+        finding.soilType != null ||
+        finding.matrixDescription != null ||
+        finding.harrisPosition != null ||
+        (finding.associatedFeatures != null && finding.associatedFeatures!.isNotEmpty);
+  }
+}
+
 class _FindingsView extends StatefulWidget {
   const _FindingsView({super.key});
 
@@ -1836,6 +2773,12 @@ class _FindingsViewState extends State<_FindingsView> {
   bool _isLoading = true;
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
+  FindingSource? _selectedSource; // null means "All"
+
+  // Batch selection mode
+  bool _isSelectionMode = false;
+  final Set<String> _selectedIds = {};
+  bool _isExporting = false;
 
   @override
   void initState() {
@@ -1851,23 +2794,186 @@ class _FindingsViewState extends State<_FindingsView> {
 
   void _filterFindings(String query) {
     setState(() {
-      if (query.isEmpty) {
-        _filteredFindings = _findings;
-      } else {
-        _filteredFindings = _findings.where((f) {
-          final searchLower = query.toLowerCase();
+      // Start with all findings
+      var filtered = _findings.toList();
+
+      // Filter by source if selected
+      if (_selectedSource != null) {
+        filtered = filtered.where((f) => f.source == _selectedSource).toList();
+      }
+
+      // Filter by search query
+      if (query.isNotEmpty) {
+        final searchLower = query.toLowerCase();
+        filtered = filtered.where((f) {
           return f.name.toLowerCase().contains(searchLower) ||
               f.type.toLowerCase().contains(searchLower) ||
               f.site.toLowerCase().contains(searchLower) ||
               f.id.toLowerCase().contains(searchLower);
         }).toList();
       }
+
+      _filteredFindings = filtered;
       if (_filteredFindings.isNotEmpty && _selectedIndex >= _filteredFindings.length) {
         _selectedIndex = 0;
       }
     });
   }
 
+  void _setSourceFilter(FindingSource? source) {
+    setState(() {
+      _selectedSource = source;
+    });
+    _filterFindings(_searchController.text);
+  }
+
+  // Batch selection methods
+  void _toggleSelectionMode() {
+    setState(() {
+      _isSelectionMode = !_isSelectionMode;
+      if (!_isSelectionMode) {
+        _selectedIds.clear();
+      }
+    });
+  }
+
+  void _toggleSelection(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedIds.addAll(_filteredFindings.map((f) => f.id));
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIds.clear();
+    });
+  }
+
+  Future<void> _showBatchExportDialog() async {
+    if (_selectedIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No findings selected')),
+      );
+      return;
+    }
+
+    final selectedFindings = _filteredFindings
+        .where((f) => _selectedIds.contains(f.id))
+        .toList();
+
+    final format = await showModalBottomSheet<ExportFormat>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _BatchExportSheet(
+        selectedCount: selectedFindings.length,
+      ),
+    );
+
+    if (format == null || !mounted) return;
+
+    setState(() => _isExporting = true);
+
+    try {
+      // Convert findings to export format
+      final findingsData = selectedFindings.map((f) => {
+        'id': f.id,
+        'type': f.type,
+        'site': f.site,
+        'name': f.name,
+        'date': f.date,
+        'latitude': f.latitude,
+        'longitude': f.longitude,
+        'source': f.source.name,
+      }).toList();
+
+      final exportService = ExportService();
+      final file = await exportService.batchExportFindings(
+        findings: findingsData,
+        format: format,
+        includePhotos: true,
+        onProgress: (progress, status) {
+          debugPrint('Export progress: ${(progress * 100).toStringAsFixed(0)}% - $status');
+        },
+      );
+
+      if (file != null && mounted) {
+        // Share the file
+        await exportService.shareFile(file);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${selectedFindings.length} findings'),
+            backgroundColor: const Color(0xFF4CAF50),
+          ),
+        );
+
+        // Exit selection mode
+        _toggleSelectionMode();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isExporting = false);
+      }
+    }
+  }
+
+  Widget _buildSourceChip(FindingSource? source, String label, IconData icon) {
+    final isSelected = _selectedSource == source;
+    final color = source?.color ?? const Color(0xFFFFC107);
+
+    return GestureDetector(
+      onTap: () => _setSourceFilter(source),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? color : Colors.white.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? color : Colors.white.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : Colors.white.withOpacity(0.7),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.white.withOpacity(0.7),
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _loadFindings() async {
     debugPrint('=== _loadFindings called ===');
@@ -1909,6 +3015,33 @@ class _FindingsViewState extends State<_FindingsView> {
           imageUrl: data['imageUrl'],
           photoGallery: gallery,
           model3dUrl: data['model3dUrl'],
+          source: FindingSource.fromString(data['source']),
+          // Coin fields
+          denomination: data['denomination'],
+          mint: data['mint'],
+          ruler: data['ruler'],
+          obverseLegend: data['obverseLegend'],
+          reverseLegend: data['reverseLegend'],
+          dieAxis: data['dieAxis'],
+          obverseDescription: data['obverseDescription'],
+          reverseDescription: data['reverseDescription'],
+          // Fragment fields
+          vesselPart: data['vesselPart'],
+          wareType: data['wareType'],
+          decorationStyle: data['decorationStyle'],
+          fabricColorInt: data['fabricColorInt'],
+          fabricColorExt: data['fabricColorExt'],
+          rimDiameter: data['rimDiameter']?.toDouble(),
+          wallThickness: data['wallThickness']?.toDouble(),
+          surfaceTreatment: data['surfaceTreatment'],
+          // Context fields
+          locusNumber: data['locusNumber'],
+          soilType: data['soilType'],
+          matrixDescription: data['matrixDescription'],
+          harrisPosition: data['harrisPosition'],
+          associatedFeatures: data['associatedFeatures'] != null
+              ? List<String>.from(data['associatedFeatures'])
+              : null,
         );
       }).toList();
 
@@ -2028,6 +3161,22 @@ class _FindingsViewState extends State<_FindingsView> {
                 ),
                 const SizedBox(height: 12),
 
+                // Source filter chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildSourceChip(null, 'All', Icons.list_alt),
+                      const SizedBox(width: 8),
+                      ...FindingSource.values.map((source) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _buildSourceChip(source, source.label, source.icon),
+                      )),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -2035,15 +3184,89 @@ class _FindingsViewState extends State<_FindingsView> {
                       child: Text(
                         _filteredFindings.isEmpty && _searchController.text.isNotEmpty
                             ? 'No results found'
-                            : 'Pull down to refresh',
+                            : '${_filteredFindings.length} findings${_selectedSource != null ? ' (${_selectedSource!.label})' : ''}',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.75),
                           fontSize: 12,
                         ),
                       ),
                     ),
+                  // Batch Export button
+                  if (AuthService.currentUser != null && _filteredFindings.isNotEmpty)
+                    GestureDetector(
+                      onTap: _isSelectionMode ? _showBatchExportDialog : _toggleSelectionMode,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: _isSelectionMode
+                              ? const Color(0xFF4CAF50)
+                              : const Color(0xFF2196F3),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _isSelectionMode ? Icons.file_download : Icons.checklist,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _isSelectionMode
+                                  ? 'Export (${_selectedIds.length})'
+                                  : 'Select',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  // Cancel selection button
+                  if (_isSelectionMode)
+                    GestureDetector(
+                      onTap: _toggleSelectionMode,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.8),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.close, color: Colors.white, size: 16),
+                      ),
+                    ),
+                  // Select All button
+                  if (_isSelectionMode)
+                    GestureDetector(
+                      onTap: _selectedIds.length == _filteredFindings.length
+                          ? _clearSelection
+                          : _selectAll,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Text(
+                          _selectedIds.length == _filteredFindings.length ? 'None' : 'All',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
                   // AI Recognition button
-                  if (AuthService.currentUser != null)
+                  if (AuthService.currentUser != null && !_isSelectionMode)
                     GestureDetector(
                       onTap: () {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -2080,65 +3303,84 @@ class _FindingsViewState extends State<_FindingsView> {
                         ),
                       ),
                     ),
-                  // Manual Entry button
+                  // Action buttons row
                   if (AuthService.currentUser != null)
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ManualEntryFormScreen(),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFC107),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.add_rounded,
-                              color: Color(0xFF3E2723),
-                              size: 18,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'Manual Entry',
-                              style: TextStyle(
-                                color: Color(0xFF3E2723),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Quick Capture button
+                        GestureDetector(
+                          onTap: () async {
+                            final result = await Navigator.push<Map<String, dynamic>>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const QuickCaptureScreen(),
                               ),
+                            );
+                            if (result != null && context.mounted) {
+                              _handleQuickCaptureResult(context, result);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2196F3),
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                          ],
+                            child: const Icon(
+                              Icons.flash_on,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        // Manual Entry button
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ManualEntryFormScreen(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFC107),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.edit_note,
+                              color: Color(0xFF3E2723),
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ],
                     )
                   else
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.white.withAlpha(38),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             Icons.lock_outline_rounded,
-                            color: Colors.white.withOpacity(0.4),
-                            size: 16,
+                            color: Colors.white.withAlpha(102),
+                            size: 14,
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Sign in to add',
+                            'Sign in',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.4),
-                              fontSize: 12,
+                              color: Colors.white.withAlpha(102),
+                              fontSize: 10,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -2394,10 +3636,27 @@ class _FindingsViewState extends State<_FindingsView> {
                                           ),
                                         ),
                                       const SizedBox(width: 8),
-                                      Icon(
-                                        Icons.chevron_right_rounded,
-                                        color: Colors.white.withOpacity(0.3),
-                                        size: 20,
+                                      GestureDetector(
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) => _FindingDetailsPage(finding: f),
+                                            ),
+                                          );
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFFC107).withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(
+                                            Icons.arrow_forward_ios_rounded,
+                                            color: Color(0xFFFFC107),
+                                            size: 16,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -2880,6 +4139,109 @@ class _FindingsMapState extends State<_FindingsMap> {
 // Clear, organized view of ALL app capabilities categorized by function
 // =============================================================================
 
+/// Handle Quick Capture result - save to Firestore with source 'quick'
+Future<void> _handleQuickCaptureResult(BuildContext context, Map<String, dynamic> result) async {
+  try {
+    final photos = result['photos'] as List<dynamic>?;
+    final type = result['type'];
+    final note = result['note'] as String?;
+    final location = result['location'] as Map<String, dynamic>?;
+
+    if (photos == null || photos.isEmpty) return;
+
+    // Generate next ID
+    final snapshot = await FirebaseFirestore.instance
+        .collection('findings')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+
+    String nextId = 'A-001';
+    if (snapshot.docs.isNotEmpty) {
+      final lastId = snapshot.docs.first.id;
+      final match = RegExp(r'A-(\d+)').firstMatch(lastId);
+      if (match != null) {
+        final num = int.parse(match.group(1)!) + 1;
+        nextId = 'A-${num.toString().padLeft(3, '0')}';
+      }
+    }
+
+    // Upload photos to imgbb
+    final List<String> photoUrls = [];
+    for (final photo in photos) {
+      try {
+        final xfile = photo as XFile;
+        final bytes = await xfile.readAsBytes();
+        final base64Image = base64Encode(bytes);
+
+        final response = await http.post(
+          Uri.parse('https://api.imgbb.com/1/upload'),
+          body: {
+            'key': imgbbApiKey,
+            'image': base64Image,
+          },
+        );
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['success'] == true) {
+            photoUrls.add(data['data']['url']);
+          }
+        }
+      } catch (e) {
+        debugPrint('Error uploading photo: $e');
+      }
+    }
+
+    // Get type label
+    String typeLabel = 'Unknown';
+    if (type != null) {
+      try {
+        typeLabel = type.label ?? 'Unknown';
+      } catch (_) {
+        typeLabel = type.toString();
+      }
+    }
+
+    final findingData = {
+      'name': note ?? 'Quick Capture ${DateTime.now().toIso8601String().split('T')[0]}',
+      'type': typeLabel,
+      'site': 'Field Site',
+      'date': DateTime.now().toIso8601String().split('T')[0],
+      'description': note ?? '',
+      'latitude': location?['latitude'] ?? 37.9715,
+      'longitude': location?['longitude'] ?? 23.7267,
+      'imageUrl': photoUrls.isNotEmpty ? photoUrls.first : null,
+      'photoGallery': photoUrls,
+      'createdAt': FieldValue.serverTimestamp(),
+      'source': 'quick',
+    };
+
+    await FirebaseFirestore.instance
+        .collection('findings')
+        .doc(nextId)
+        .set(findingData);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Quick capture saved as $nextId'),
+          backgroundColor: const Color(0xFF4CAF50),
+        ),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving quick capture: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
 class _ToolsView extends StatelessWidget {
   const _ToolsView({super.key});
 
@@ -2937,16 +4299,51 @@ class _ToolsView extends StatelessWidget {
                       _buildHeroFeature(context),
                       const SizedBox(height: 20),
 
+                      // === FIELD WORK ===
+                      _buildCategoryHeader('Field Work'),
+                      const SizedBox(height: 12),
+                      // Field Journal - Big Button (Main feature of Field Work)
+                      _buildBigToolButton(
+                        context,
+                        icon: Icons.book_rounded,
+                        title: 'Field Journal',
+                        description: 'Daily logs, observations, and site notes with voice support',
+                        color: const Color(0xFF795548),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const FieldJournalScreen()),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
                       // === CAPTURE TOOLS ===
                       _buildCategoryHeader('Capture & Documentation'),
                       const SizedBox(height: 12),
+                      // Quick Capture - Big Button
+                      _buildBigToolButton(
+                        context,
+                        icon: Icons.flash_on_rounded,
+                        title: 'Quick Capture',
+                        description: 'Fast documentation - snap photo, add note, save instantly',
+                        color: const Color(0xFF2196F3),
+                        onTap: () async {
+                          final result = await Navigator.push<Map<String, dynamic>>(
+                            context,
+                            MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
+                          );
+                          if (result != null && context.mounted) {
+                            _handleQuickCaptureResult(context, result);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      // Manual Entry & Photo Capture - Grid
                       _buildToolGrid(context, [
                         _ToolCard(
                           icon: Icons.edit_note_rounded,
                           title: 'Manual Entry',
                           description: 'Full archaeological form',
-                          badge: 'Professional',
-                          color: const Color(0xFF2196F3),
+                          color: const Color(0xFFFFC107),
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
@@ -2955,8 +4352,7 @@ class _ToolsView extends StatelessWidget {
                         _ToolCard(
                           icon: Icons.camera_alt_rounded,
                           title: 'Photo Capture',
-                          description: 'High-quality documentation',
-                          badge: 'HDR',
+                          description: 'High-quality photos',
                           color: const Color(0xFF9C27B0),
                           onTap: () => Navigator.push(
                             context,
@@ -2966,57 +4362,18 @@ class _ToolsView extends StatelessWidget {
                       ]),
                       const SizedBox(height: 20),
 
-                      // === ANALYSIS TOOLS ===
+                      // === AI TOOLS ===
                       _buildCategoryHeader('AI & Analysis'),
                       const SizedBox(height: 12),
                       _buildToolGrid(context, [
                         _ToolCard(
                           icon: Icons.auto_awesome_rounded,
                           title: 'AI Recognition',
-                          description: 'Auto-identify artifacts',
-                          badge: 'Smart',
+                          description: 'Identify artifact type and period',
+                          badge: 'Coming Soon',
                           color: const Color(0xFFFF9800),
                           onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('AI Recognition: Analyze photo to identify artifact type, material, and period')),
-                          ),
-                        ),
-                        _ToolCard(
-                          icon: Icons.analytics_rounded,
-                          title: 'Quality Check',
-                          description: 'Real-time validation',
-                          badge: '4 Metrics',
-                          color: const Color(0xFF4CAF50),
-                          onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Quality Analyzer: Sharpness, Exposure, Motion Blur, Noise detection')),
-                          ),
-                        ),
-                      ]),
-                      const SizedBox(height: 20),
-
-                      // === FIELD WORK TOOLS ===
-                      _buildCategoryHeader('Field Work'),
-                      const SizedBox(height: 12),
-                      _buildToolGrid(context, [
-                        _ToolCard(
-                          icon: Icons.book_rounded,
-                          title: 'Field Journal',
-                          description: 'Daily logs & notes',
-                          badge: 'Voice',
-                          color: const Color(0xFF795548),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const FieldJournalScreen()),
-                          ),
-                        ),
-                        _ToolCard(
-                          icon: Icons.flash_on_rounded,
-                          title: 'Quick Capture',
-                          description: 'Rapid documentation',
-                          badge: 'Fast',
-                          color: const Color(0xFFE91E63),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
+                            const SnackBar(content: Text('AI Recognition - Coming Soon')),
                           ),
                         ),
                       ]),
@@ -3029,8 +4386,7 @@ class _ToolsView extends StatelessWidget {
                         _ToolCard(
                           icon: Icons.insights_rounded,
                           title: 'Analytics',
-                          description: 'Stats & achievements',
-                          badge: 'Progress',
+                          description: 'Statistics & activity',
                           color: const Color(0xFF00BCD4),
                           onTap: () => Navigator.push(
                             context,
@@ -3041,7 +4397,6 @@ class _ToolsView extends StatelessWidget {
                           icon: Icons.file_download_rounded,
                           title: 'Export Data',
                           description: 'CSV, JSON, GeoJSON',
-                          badge: 'Backup',
                           color: const Color(0xFF607D8B),
                           onTap: () => _showExportDialog(context),
                         ),
@@ -3056,7 +4411,6 @@ class _ToolsView extends StatelessWidget {
                           icon: Icons.settings_rounded,
                           title: 'Settings',
                           description: 'Theme & preferences',
-                          badge: 'Config',
                           color: const Color(0xFF455A64),
                           onTap: () => Navigator.push(
                             context,
@@ -3067,7 +4421,6 @@ class _ToolsView extends StatelessWidget {
                           icon: Icons.help_outline_rounded,
                           title: 'Help & Guide',
                           description: 'Tutorials & FAQ',
-                          badge: 'Learn',
                           color: const Color(0xFF3F51B5),
                           onTap: () => Navigator.push(
                             context,
@@ -3263,6 +4616,65 @@ class _ToolsView extends StatelessWidget {
     );
   }
 
+  Widget _buildBigToolButton(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String description,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withAlpha(30),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withAlpha(100), width: 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withAlpha(50),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(179),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: color, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildLockedFeaturePreview(BuildContext context) {
     return Column(
       children: [
@@ -3331,7 +4743,7 @@ class _ToolsView extends StatelessWidget {
   void _showExportDialog(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF2a2a3e),
+      backgroundColor: const Color(0xFF1C2523),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3501,7 +4913,7 @@ class _ToolCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String description;
-  final String badge;
+  final String? badge;
   final Color color;
   final VoidCallback onTap;
 
@@ -3509,7 +4921,7 @@ class _ToolCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.description,
-    required this.badge,
+    this.badge,
     required this.color,
     required this.onTap,
   });
@@ -3521,10 +4933,10 @@ class _ToolCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.08),
+          color: Colors.white.withAlpha(20),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: color.withOpacity(0.3),
+            color: color.withAlpha(77),
             width: 1,
           ),
         ),
@@ -3535,21 +4947,22 @@ class _ToolCard extends StatelessWidget {
               children: [
                 Icon(icon, color: color, size: 24),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    badge,
-                    style: TextStyle(
-                      color: color,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
+                if (badge != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withAlpha(51),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      badge!,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -3565,7 +4978,7 @@ class _ToolCard extends StatelessWidget {
             Text(
               description,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.60),
+                color: Colors.white.withAlpha(153),
                 fontSize: 11,
               ),
             ),
@@ -3760,6 +5173,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   final _nameController = TextEditingController();
   final _typeController = TextEditingController();
   final _siteController = TextEditingController();
+  final _descriptionController = TextEditingController();
   final _dateController = TextEditingController();
   final _latController = TextEditingController();
   final _lngController = TextEditingController();
@@ -3773,6 +5187,21 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   bool _isSaving = false;
   bool _isGettingLocation = false;
   bool _isPhotogrammetryMode = false;
+
+  // ========== COIN-SPECIFIC FIELDS ==========
+  final _denominationController = TextEditingController();
+  final _mintController = TextEditingController();
+  final _rulerController = TextEditingController();
+  final _obverseLegendController = TextEditingController();
+  final _reverseLegendController = TextEditingController();
+  final _dieAxisController = TextEditingController();
+
+  // ========== FRAGMENT-SPECIFIC FIELDS ==========
+  String? _selectedVesselPart;
+  String? _selectedWareType;
+  String? _selectedDecoration;
+  final _rimDiameterController = TextEditingController();
+  final _wallThicknessController = TextEditingController();
 
   // Auto-save functionality
   Timer? _autoSaveTimer;
@@ -3827,7 +5256,13 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     // Add listeners to controllers for auto-save
     _nameController.addListener(_scheduleAutoSave);
     _typeController.addListener(_scheduleAutoSave);
+    _typeController.addListener(_onTypeChanged); // Trigger rebuild for conditional fields
     _siteController.addListener(_scheduleAutoSave);
+  }
+
+  void _onTypeChanged() {
+    // Trigger rebuild to show/hide coin/fragment fields
+    if (mounted) setState(() {});
   }
 
   void _scheduleAutoSave() {
@@ -3849,9 +5284,23 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         'name': _nameController.text,
         'type': _typeController.text,
         'site': _siteController.text,
+        'description': _descriptionController.text,
         'date': _dateController.text,
         'latitude': _latController.text,
         'longitude': _lngController.text,
+        // Coin fields
+        'denomination': _denominationController.text,
+        'mint': _mintController.text,
+        'ruler': _rulerController.text,
+        'obverseLegend': _obverseLegendController.text,
+        'reverseLegend': _reverseLegendController.text,
+        'dieAxis': _dieAxisController.text,
+        // Fragment fields
+        'vesselPart': _selectedVesselPart,
+        'wareType': _selectedWareType,
+        'decorationStyle': _selectedDecoration,
+        'rimDiameter': _rimDiameterController.text,
+        'wallThickness': _wallThicknessController.text,
       },
     );
   }
@@ -3864,11 +5313,25 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         _nameController.text = draft['name'] ?? '';
         _typeController.text = draft['type'] ?? '';
         _siteController.text = draft['site'] ?? '';
+        _descriptionController.text = draft['description'] ?? '';
         if (draft['date'] != null && (draft['date'] as String).isNotEmpty) {
           _dateController.text = draft['date'];
         }
         _latController.text = draft['latitude'] ?? '';
         _lngController.text = draft['longitude'] ?? '';
+        // Coin fields
+        _denominationController.text = draft['denomination'] ?? '';
+        _mintController.text = draft['mint'] ?? '';
+        _rulerController.text = draft['ruler'] ?? '';
+        _obverseLegendController.text = draft['obverseLegend'] ?? '';
+        _reverseLegendController.text = draft['reverseLegend'] ?? '';
+        _dieAxisController.text = draft['dieAxis'] ?? '';
+        // Fragment fields
+        _selectedVesselPart = draft['vesselPart'];
+        _selectedWareType = draft['wareType'];
+        _selectedDecoration = draft['decorationStyle'];
+        _rimDiameterController.text = draft['rimDiameter'] ?? '';
+        _wallThicknessController.text = draft['wallThickness'] ?? '';
       });
 
       // Show notification
@@ -4263,12 +5726,17 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         };
       }
 
+      // Determine source based on how the form was opened
+      final source = widget.photoGallery != null || widget.reconstructionResult != null
+          ? 'photo'
+          : 'manual';
+
       final findingData = {
         'name': _nameController.text,
         'type': _typeController.text,
         'site': _siteController.text,
         'date': _dateController.text,
-        'description': '',
+        'description': _descriptionController.text,
         'latitude': lat,
         'longitude': lng,
         'imageUrl': imageUrl,
@@ -4276,6 +5744,20 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         'model3dUrl': model3dUrl,
         'reconstructionData': reconstructionData,
         'createdAt': FieldValue.serverTimestamp(),
+        'source': source,
+        // Coin-specific fields (saved if populated)
+        if (_denominationController.text.isNotEmpty) 'denomination': _denominationController.text,
+        if (_mintController.text.isNotEmpty) 'mint': _mintController.text,
+        if (_rulerController.text.isNotEmpty) 'ruler': _rulerController.text,
+        if (_obverseLegendController.text.isNotEmpty) 'obverseLegend': _obverseLegendController.text,
+        if (_reverseLegendController.text.isNotEmpty) 'reverseLegend': _reverseLegendController.text,
+        if (_dieAxisController.text.isNotEmpty) 'dieAxis': int.tryParse(_dieAxisController.text),
+        // Fragment-specific fields (saved if populated)
+        if (_selectedVesselPart != null) 'vesselPart': _selectedVesselPart,
+        if (_selectedWareType != null) 'wareType': _selectedWareType,
+        if (_selectedDecoration != null) 'decorationStyle': _selectedDecoration,
+        if (_rimDiameterController.text.isNotEmpty) 'rimDiameter': double.tryParse(_rimDiameterController.text),
+        if (_wallThicknessController.text.isNotEmpty) 'wallThickness': double.tryParse(_wallThicknessController.text),
       };
 
       try {
@@ -4326,10 +5808,24 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
           'type': _typeController.text,
           'site': _siteController.text,
           'date': _dateController.text,
-          'description': '',
+          'description': _descriptionController.text,
           'latitude': lat,
           'longitude': lng,
           'createdAt': DateTime.now().toIso8601String(),
+          'source': 'manual',
+          // Coin-specific fields (saved if populated)
+          if (_denominationController.text.isNotEmpty) 'denomination': _denominationController.text,
+          if (_mintController.text.isNotEmpty) 'mint': _mintController.text,
+          if (_rulerController.text.isNotEmpty) 'ruler': _rulerController.text,
+          if (_obverseLegendController.text.isNotEmpty) 'obverseLegend': _obverseLegendController.text,
+          if (_reverseLegendController.text.isNotEmpty) 'reverseLegend': _reverseLegendController.text,
+          if (_dieAxisController.text.isNotEmpty) 'dieAxis': int.tryParse(_dieAxisController.text),
+          // Fragment-specific fields (saved if populated)
+          if (_selectedVesselPart != null) 'vesselPart': _selectedVesselPart,
+          if (_selectedWareType != null) 'wareType': _selectedWareType,
+          if (_selectedDecoration != null) 'decorationStyle': _selectedDecoration,
+          if (_rimDiameterController.text.isNotEmpty) 'rimDiameter': double.tryParse(_rimDiameterController.text),
+          if (_wallThicknessController.text.isNotEmpty) 'wallThickness': double.tryParse(_wallThicknessController.text),
         };
         await storage.queueForUpload(findingId: _nextId, data: findingData);
 
@@ -4366,6 +5862,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     _nameController.dispose();
     _typeController.dispose();
     _siteController.dispose();
+    _descriptionController.dispose();
     _dateController.dispose();
     _latController.dispose();
     _lngController.dispose();
@@ -4616,12 +6113,31 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                     hint: _typeHint,
                     icon: Icons.category_outlined,
                   ),
+
+                  // ========== COIN-SPECIFIC FIELDS ==========
+                  if (_typeController.text.toLowerCase().contains('coin'))
+                    _buildCoinFields(),
+
+                  // ========== FRAGMENT-SPECIFIC FIELDS ==========
+                  if (_typeController.text.toLowerCase().contains('fragment') ||
+                      _typeController.text.toLowerCase().contains('sherd'))
+                    _buildFragmentFields(),
+
                   const SizedBox(height: 16),
                   _buildFormField(
                     controller: _siteController,
                     label: 'Site',
                     hint: _siteHint,
                     icon: Icons.location_on_outlined,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildFormField(
+                    controller: _descriptionController,
+                    label: 'Description',
+                    hint: 'e.g., Fragment with geometric patterns',
+                    icon: Icons.description_outlined,
+                    maxLines: 3,
+                    isRequired: false,
                   ),
                   const SizedBox(height: 16),
                   _buildFormField(
@@ -5272,6 +6788,8 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     required String label,
     required String hint,
     required IconData icon,
+    int maxLines = 1,
+    bool isRequired = true,
   }) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -5318,6 +6836,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                       const SizedBox(height: 4),
                       TextFormField(
                         controller: controller,
+                        maxLines: maxLines,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -5325,19 +6844,259 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                         decoration: InputDecoration(
                           hintText: hint,
                           hintStyle: TextStyle(
-                            color: Colors.white.withOpacity(0.4),
+                            color: Colors.white.withAlpha(102),
                             fontSize: 16,
                           ),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.zero,
                         ),
-                        validator: (value) {
+                        validator: isRequired ? (value) {
                           if (value == null || value.isEmpty) {
                             return 'Please enter $label';
                           }
                           return null;
-                        },
+                        } : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ========== COIN-SPECIFIC FIELDS SECTION ==========
+  Widget _buildCoinFields() {
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        // Section header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFB8860B).withAlpha(51),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.paid, color: Color(0xFFB8860B), size: 18),
+              SizedBox(width: 8),
+              Text(
+                'COIN DETAILS',
+                style: TextStyle(
+                  color: Color(0xFFB8860B),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Denomination
+        _buildFormField(
+          controller: _denominationController,
+          label: 'Denomination',
+          hint: 'e.g., Drachma, Denarius, Obol',
+          icon: Icons.monetization_on_outlined,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Mint
+        _buildFormField(
+          controller: _mintController,
+          label: 'Mint Location',
+          hint: 'e.g., Athens, Rome, Alexandria',
+          icon: Icons.factory_outlined,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Ruler/Authority
+        _buildFormField(
+          controller: _rulerController,
+          label: 'Ruler/Authority',
+          hint: 'e.g., Alexander III, Augustus',
+          icon: Icons.account_balance_outlined,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Obverse Legend
+        _buildFormField(
+          controller: _obverseLegendController,
+          label: 'Obverse (Front) Legend',
+          hint: 'Inscription on front side',
+          icon: Icons.text_fields,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Reverse Legend
+        _buildFormField(
+          controller: _reverseLegendController,
+          label: 'Reverse (Back) Legend',
+          hint: 'Inscription on back side',
+          icon: Icons.text_fields,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Die Axis
+        _buildFormField(
+          controller: _dieAxisController,
+          label: 'Die Axis (Clock Position)',
+          hint: 'e.g., 12, 6, 3 (o\'clock)',
+          icon: Icons.access_time,
+          isRequired: false,
+        ),
+      ],
+    );
+  }
+
+  // ========== FRAGMENT-SPECIFIC FIELDS SECTION ==========
+  Widget _buildFragmentFields() {
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        // Section header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFCD853F).withAlpha(51),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.broken_image, color: Color(0xFFCD853F), size: 18),
+              SizedBox(width: 8),
+              Text(
+                'FRAGMENT DETAILS',
+                style: TextStyle(
+                  color: Color(0xFFCD853F),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Vessel Part Selector
+        _buildDropdownField(
+          label: 'Vessel Part',
+          icon: Icons.pie_chart_outline,
+          value: _selectedVesselPart,
+          items: const ['Rim', 'Body', 'Base', 'Handle', 'Spout', 'Lid', 'Foot', 'Neck', 'Shoulder'],
+          onChanged: (val) => setState(() => _selectedVesselPart = val),
+        ),
+        const SizedBox(height: 12),
+        // Ware Type Selector
+        _buildDropdownField(
+          label: 'Ware Type',
+          icon: Icons.layers_outlined,
+          value: _selectedWareType,
+          items: const ['Coarse Ware', 'Fine Ware', 'Cooking Ware', 'Storage Ware', 'Tableware', 'Transport', 'Unknown'],
+          onChanged: (val) => setState(() => _selectedWareType = val),
+        ),
+        const SizedBox(height: 12),
+        // Decoration Style Selector
+        _buildDropdownField(
+          label: 'Decoration',
+          icon: Icons.brush_outlined,
+          value: _selectedDecoration,
+          items: const ['Plain', 'Painted', 'Incised', 'Stamped', 'Glazed', 'Relief', 'Burnished', 'Slipped'],
+          onChanged: (val) => setState(() => _selectedDecoration = val),
+        ),
+        const SizedBox(height: 12),
+        // Rim Diameter
+        _buildFormField(
+          controller: _rimDiameterController,
+          label: 'Rim Diameter (mm)',
+          hint: 'Estimated diameter if rim sherd',
+          icon: Icons.radio_button_unchecked,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Wall Thickness
+        _buildFormField(
+          controller: _wallThicknessController,
+          label: 'Wall Thickness (mm)',
+          hint: 'Sherd thickness',
+          icon: Icons.straighten,
+          isRequired: false,
+        ),
+      ],
+    );
+  }
+
+  // Dropdown field builder for fragment selectors
+  Widget _buildDropdownField({
+    required String label,
+    required IconData icon,
+    required String? value,
+    required List<String> items,
+    required Function(String?) onChanged,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.35),
+              width: 1,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: const Color(0xFFFFC107), size: 20),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      DropdownButtonFormField<String>(
+                        value: value,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        dropdownColor: const Color(0xFF1C2523),
+                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                        hint: Text(
+                          'Select $label',
+                          style: TextStyle(color: Colors.white.withAlpha(102)),
+                        ),
+                        items: items.map((item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(item),
+                        )).toList(),
+                        onChanged: onChanged,
                       ),
                     ],
                   ),
@@ -5500,6 +7259,40 @@ class _SafetyViewState extends State<_SafetyView> {
         setState(() {
           _isConnecting = false;
           _connectionStatus = 'Connection failed';
+        });
+      }
+    }
+  }
+
+  Future<void> _disconnectDevice() async {
+    if (_connectedDevice == null) return;
+
+    try {
+      // Cancel characteristic subscriptions
+      for (final sub in _charSubscriptions) {
+        await sub.cancel();
+      }
+      _charSubscriptions.clear();
+
+      // Cancel connection subscription
+      await _connectionSubscription?.cancel();
+      _connectionSubscription = null;
+
+      // Disconnect the device
+      await _connectedDevice!.disconnect();
+
+      if (mounted) {
+        setState(() {
+          _connectedDevice = null;
+          _connectionStatus = 'Disconnected';
+        });
+      }
+    } catch (e) {
+      debugPrint('Disconnect error: $e');
+      if (mounted) {
+        setState(() {
+          _connectedDevice = null;
+          _connectionStatus = 'Disconnected';
         });
       }
     }
@@ -5794,40 +7587,56 @@ class _SafetyViewState extends State<_SafetyView> {
               ),
               const SizedBox(height: 8),
 
-              // Connection status / Scan button
+              // Connection status and action buttons
               Row(
                 children: [
                   Expanded(
-                    child: GestureDetector(
-                      onTap: (isConnected || _isSimulating) ? null : _startScan,
-                      child: Text(
-                        _isSimulating
-                          ? 'Simulation Mode Active'
-                          : isConnected
-                            ? 'Connected to M5StickC Plus 2'
-                            : '$_connectionStatus ${_isConnecting ? '' : '- Tap to scan'}',
-                        style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 13),
+                    child: Text(
+                      isConnected
+                        ? 'Connected to M5StickC Plus 2'
+                        : _isConnecting
+                          ? 'Scanning for devices...'
+                          : _connectionStatus,
+                      style: TextStyle(color: Colors.white.withAlpha(190), fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Rescan button - enabled when not connected
+                  GestureDetector(
+                    onTap: isConnected ? null : _startScan,
+                    child: AnimatedOpacity(
+                      opacity: isConnected ? 0.3 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFC107),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Scan',
+                          style: TextStyle(color: Color(0xFF0D3A39), fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // Disconnect button - enabled when connected
                   GestureDetector(
-                    onTap: () {
-                      if (_isSimulating) {
-                        _stopSimulation();
-                      } else if (!isConnected) {
-                        _startSimulation();
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: _isSimulating ? Colors.orange : Colors.teal,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        _isSimulating ? 'Stop' : 'Simulate',
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                    onTap: isConnected ? _disconnectDevice : null,
+                    child: AnimatedOpacity(
+                      opacity: isConnected ? 1.0 : 0.3,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withAlpha(200),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Disconnect',
+                          style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ),
@@ -6173,6 +7982,27 @@ class _SensorHistoryGraphCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text('Updates every 10 seconds from Firebase', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11)),
               const SizedBox(height: 12),
+              // Legend row - outside the graph
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(width: 12, height: 3, color: Colors.blue),
+                      const SizedBox(width: 6),
+                      const Text('Moisture %', style: TextStyle(color: Colors.blue, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Container(width: 12, height: 3, color: Colors.red),
+                      const SizedBox(width: 6),
+                      const Text('Vibration g', style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               if (sensorHistory.isEmpty)
                 Center(
                   child: Padding(
@@ -6182,9 +8012,9 @@ class _SensorHistoryGraphCard extends StatelessWidget {
                 )
               else
                 SizedBox(
-                  height: 180,
+                  height: 140,
                   child: CustomPaint(
-                    size: const Size(double.infinity, 180),
+                    size: const Size(double.infinity, 140),
                     painter: _SensorGraphPainter(sensorHistory),
                   ),
                 ),
@@ -6205,6 +8035,10 @@ class _SensorGraphPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
 
+    // Add padding so lines don't touch elements above
+    const double topPadding = 12.0;
+    final double graphHeight = size.height - topPadding;
+
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
@@ -6214,9 +8048,9 @@ class _SensorGraphPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
-    // Draw grid lines
+    // Draw grid lines (within padded area)
     for (int i = 0; i <= 4; i++) {
-      final y = size.height * i / 4;
+      final y = topPadding + (graphHeight * i / 4);
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
 
@@ -6224,13 +8058,13 @@ class _SensorGraphPainter extends CustomPainter {
     double maxVibration = 1.0; // Max 1g
     double maxMoisture = 100.0; // Max 100%
 
-    // Draw moisture line (blue)
+    // Draw moisture line (blue) - with top padding
     paint.color = Colors.blue;
     final moisturePath = ui.Path();
     for (int i = 0; i < data.length; i++) {
       final x = size.width * i / (data.length - 1);
       final moisture = (data[i]['moisture'] as num?)?.toDouble() ?? 0.0;
-      final y = size.height - (size.height * moisture / maxMoisture);
+      final y = topPadding + graphHeight - (graphHeight * moisture / maxMoisture);
       if (i == 0) {
         moisturePath.moveTo(x, y);
       } else {
@@ -6239,13 +8073,13 @@ class _SensorGraphPainter extends CustomPainter {
     }
     canvas.drawPath(moisturePath, paint);
 
-    // Draw vibration line (red)
+    // Draw vibration line (red) - with top padding
     paint.color = Colors.red;
     final vibrationPath = ui.Path();
     for (int i = 0; i < data.length; i++) {
       final x = size.width * i / (data.length - 1);
       final vibration = (data[i]['vibration'] as num?)?.toDouble() ?? 0.0;
-      final y = size.height - (size.height * vibration / maxVibration);
+      final y = topPadding + graphHeight - (graphHeight * vibration / maxVibration);
       if (i == 0) {
         vibrationPath.moveTo(x, y);
       } else {
@@ -6253,27 +8087,6 @@ class _SensorGraphPainter extends CustomPainter {
       }
     }
     canvas.drawPath(vibrationPath, paint);
-
-    // Draw legend
-    final textPainter = TextPainter(
-      textDirection: TextDirection.ltr,
-    );
-
-    // Moisture legend
-    textPainter.text = const TextSpan(
-      text: 'Moisture %',
-      style: TextStyle(color: Colors.blue, fontSize: 10, fontWeight: FontWeight.w600),
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, const Offset(10, 10));
-
-    // Vibration legend
-    textPainter.text = const TextSpan(
-      text: 'Vibration g',
-      style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.w600),
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(size.width - 80, 10));
   }
 
   @override
@@ -7359,7 +9172,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
           context: context,
           barrierDismissible: false,
           builder: (context) => AlertDialog(
-            backgroundColor: const Color(0xFF1E1E1E),
+            backgroundColor: const Color(0xFF1C2523),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -8320,6 +10133,12 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       }
 
       if (result.isComplete && mounted) {
+        // Send success notification
+        await NotificationService().showProcessingComplete(
+          projectName: 'On-Device Model',
+          pointCount: result.pointCount,
+        );
+
         // Go directly to 3D viewer - user can save from there
         Navigator.push(
           context,
@@ -8342,6 +10161,12 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
           ),
         );
       } else if (result.hasFailed && mounted) {
+        // Send failure notification
+        await NotificationService().showProcessingFailed(
+          projectName: 'On-Device Model',
+          errorMessage: result.errorMessage,
+        );
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('3D reconstruction failed: ${result.errorMessage}'),
@@ -8353,6 +10178,12 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       setState(() {
         _isReconstructing = false;
       });
+
+      // Send error notification
+      await NotificationService().showProcessingFailed(
+        projectName: 'On-Device Model',
+        errorMessage: e.toString(),
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -8403,6 +10234,11 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       });
 
       if (result.success && mounted) {
+        // Send success notification
+        await NotificationService().showProcessingComplete(
+          projectName: 'Cloud Model',
+        );
+
         // Cloud model ready - go directly to save finding form
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -10110,5 +11946,187 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         ),
       );
     }
+  }
+}
+
+/// Batch export format selection sheet
+class _BatchExportSheet extends StatelessWidget {
+  final int selectedCount;
+
+  const _BatchExportSheet({required this.selectedCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C2523),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Title
+          Row(
+            children: [
+              const Icon(Icons.file_download, color: Color(0xFFFFC107), size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Batch Export',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '$selectedCount findings selected',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Format options
+          const Text(
+            'Select export format:',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+
+          // JSON option
+          _buildFormatOption(
+            context,
+            ExportFormat.json,
+            Icons.code,
+            'JSON',
+            'Full data with all fields',
+          ),
+          const SizedBox(height: 8),
+
+          // CSV option
+          _buildFormatOption(
+            context,
+            ExportFormat.csv,
+            Icons.table_chart,
+            'CSV',
+            'Spreadsheet compatible',
+          ),
+          const SizedBox(height: 8),
+
+          // GeoJSON option
+          _buildFormatOption(
+            context,
+            ExportFormat.geojson,
+            Icons.map,
+            'GeoJSON',
+            'For mapping applications',
+          ),
+          const SizedBox(height: 8),
+
+          // KML option
+          _buildFormatOption(
+            context,
+            ExportFormat.kml,
+            Icons.public,
+            'KML',
+            'For Google Earth',
+          ),
+
+          const SizedBox(height: 16),
+          SafeArea(
+            child: Container(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormatOption(
+    BuildContext context,
+    ExportFormat format,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => Navigator.pop(context, format),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFC107).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: const Color(0xFFFFC107), size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.white.withValues(alpha: 0.4),
+                size: 16,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
