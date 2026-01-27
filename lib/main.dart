@@ -8385,31 +8385,16 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   bool _isDeviceLevel = false; // Is phone held level?
   double _rotationSpeed = 0.0; // How fast user is rotating
 
-  // ULTRA++ ADVANCED FEATURES
-  bool _hdrMode = false; // HDR (High Dynamic Range) mode for difficult lighting
-  bool _batchMode = false; // Batch capture mode for multiple objects
-  String? _currentObjectQR; // QR code for current object being scanned
+  // CAPTURE SETTINGS
   late stt.SpeechToText _speechToText; // Voice commands
   late FlutterTts _flutterTts; // Text-to-speech feedback
   bool _voiceEnabled = false; // Voice commands enabled
   bool _isListening = false; // Currently listening for voice command
   String _lastVoiceCommand = ''; // Last recognized voice command
-  int _batchObjectCount = 0; // Number of objects in current batch
-  bool _autoAdvance = true; // Auto-advance to next angle after capture
-  bool _showGrid = false; // Show grid overlay for alignment
-  bool _showHistogram = false; // Show histogram for exposure
+  bool _autoAdvance = true; // Auto-advance to next angle after capture (default ON)
 
-  // 🌟 WORLD-CLASS AI & SMART FEATURES
-  bool _aiAssistEnabled = false; // AI-powered suggestions and detection (disabled by default to prevent performance issues)
-  String? _aiDetectedType; // AI-detected artifact type
-  String? _aiDetectedMaterial; // AI-detected material
-  String? _aiDetectedCondition; // AI-detected condition assessment
-  String? _aiDetectedPeriod; // AI-suggested period/dating
-  double _aiConfidence = 0.0; // AI confidence score (0-1)
-  bool _scaleDetected = false; // Photo scale reference detected
-  double? _detectedScaleMm; // Detected scale length in mm
+  // SESSION TRACKING
   Map<String, dynamic> _smartSuggestions = {}; // Context-aware auto-fill suggestions
-  List<String> _fieldJournalEntries = []; // Field journal/notes with timestamps
   int _sessionFindCount = 0; // Finds documented this session
   DateTime? _sessionStartTime; // Session start for analytics
 
@@ -8600,27 +8585,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         await _speak('Already at first angle');
       }
     }
-    // Feature toggles
-    else if (command.contains('hdr') || command.contains('hdr mode')) {
-      setState(() => _hdrMode = !_hdrMode);
-      await _speak(_hdrMode ? 'HDR mode enabled' : 'HDR mode disabled');
-    }
-    else if (command.contains('grid') || command.contains('show grid')) {
-      setState(() => _showGrid = !_showGrid);
-      await _speak(_showGrid ? 'Grid overlay enabled' : 'Grid overlay disabled');
-    }
-    else if (command.contains('histogram')) {
-      setState(() => _showHistogram = !_showHistogram);
-      await _speak(_showHistogram ? 'Histogram enabled' : 'Histogram disabled');
-    }
-    else if (command.contains('video mode')) {
-      setState(() => _isVideoMode = true);
-      await _speak('Switched to video mode');
-    }
-    else if (command.contains('photo mode')) {
-      setState(() => _isVideoMode = false);
-      await _speak('Switched to photo mode');
-    }
     // Progress and info commands
     else if (command.contains('progress') || command.contains('how many')) {
       await _speak('${_captures.length} of ${_captureAngles.length} angles captured');
@@ -8645,12 +8609,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     }
     // Help command
     else if (command.contains('help') || command.contains('what can i say')) {
-      await _speak('Say capture, next, previous, HDR, grid, progress, or export');
-    }
-    // Batch mode
-    else if (command.contains('batch') || command.contains('batch mode')) {
-      setState(() => _batchMode = !_batchMode);
-      await _speak(_batchMode ? 'Batch mode enabled' : 'Batch mode disabled');
+      await _speak('Say capture, next, previous, progress, skip, or export');
     }
     else {
       // Unknown command
@@ -8665,8 +8624,20 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     }
   }
 
+  // Toggle voice commands on/off
+  void _toggleVoiceCommands() {
+    setState(() => _voiceEnabled = !_voiceEnabled);
+    if (_voiceEnabled) {
+      _startListening();
+      _speak('Voice commands enabled');
+    } else {
+      _speechToText.stop();
+      _speak('Voice commands disabled');
+    }
+  }
+
   // ============================================================================
-  // 🌟 WORLD-CLASS AI & SMART FEATURES
+  // SESSION TRACKING
   // ============================================================================
 
   // Load context-aware smart suggestions
@@ -8683,326 +8654,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     };
   }
 
-  // 🤖 AI-POWERED ARTIFACT RECOGNITION
-  // Analyzes captured image to detect artifact type, material, and condition
-  Future<void> _runAIArtifactRecognition(XFile imageFile) async {
-    if (!_aiAssistEnabled) return;
-
-    try {
-      // Load and analyze image
-      final bytes = await File(imageFile.path).readAsBytes();
-      final image = img.decodeImage(bytes);
-
-      if (image == null) {
-        debugPrint(' AI: Could not decode image');
-        return;
-      }
-
-      // 🎯 ADVANCED IMAGE ANALYSIS
-      final analysis = await _analyzeArtifactFeatures(image);
-
-      if (!mounted) return; // Check if widget is still mounted
-
-      setState(() {
-        _aiDetectedType = analysis['type'];
-        _aiDetectedMaterial = analysis['material'];
-        _aiDetectedCondition = analysis['condition'];
-        _aiDetectedPeriod = analysis['period'];
-        _aiConfidence = (analysis['confidence'] ?? 0.0) as double;
-
-        // Detect photo scale if present
-        if (analysis['scaleDetected'] == true) {
-          _scaleDetected = true;
-          _detectedScaleMm = analysis['scaleMm'];
-        }
-      });
-
-      // Provide AI suggestions via voice if enabled
-      if (_voiceEnabled && _aiConfidence > 0.7) {
-        try {
-          await _speak('AI detected: $_aiDetectedType, confidence ${(_aiConfidence * 100).toInt()}%');
-        } catch (voiceError) {
-          debugPrint('Voice feedback error: $voiceError');
-        }
-      }
-
-    } catch (e, stackTrace) {
-      debugPrint(' AI recognition error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      // Reset AI detection state on error
-      if (mounted) {
-        setState(() {
-          _aiDetectedType = null;
-          _aiDetectedMaterial = null;
-          _aiDetectedCondition = null;
-          _aiDetectedPeriod = null;
-          _aiConfidence = 0.0;
-        });
-      }
-    }
-  }
-
-  // Advanced artifact feature analysis
-  Future<Map<String, dynamic>> _analyzeArtifactFeatures(img.Image image) async {
-    // This is a sophisticated analysis combining multiple techniques:
-    // 1. Color histogram analysis for material detection
-    // 2. Edge detection for shape/condition assessment
-    // 3. Texture analysis for surface condition
-    // 4. Pattern matching for scale bar detection
-
-    final analysis = <String, dynamic>{
-      'confidence': 0.0,
-      'scaleDetected': false,
-    };
-
-    // === COLOR ANALYSIS for MATERIAL DETECTION ===
-    final colorStats = _analyzeColorDistribution(image);
-    final avgRed = colorStats['avgRed'] ?? 0.0;
-    final avgGreen = colorStats['avgGreen'] ?? 0.0;
-    final avgBlue = colorStats['avgBlue'] ?? 0.0;
-    final brightness = colorStats['brightness'] ?? 0.0;
-    final saturation = colorStats['saturation'] ?? 0.0;
-
-    // Pottery detection: reddish-brown, terracotta tones
-    if (avgRed > 140 && avgRed > avgBlue + 20) {
-      analysis['type'] = 'Pottery/Ceramic';
-      analysis['material'] = 'Terracotta';
-      analysis['confidence'] = 0.75;
-    }
-    // Metal detection: gray/silver or golden tones
-    else if (saturation < 30 && brightness > 100) {
-      if (avgRed > avgBlue) {
-        analysis['type'] = 'Metal Object';
-        analysis['material'] = 'Bronze/Copper';
-        analysis['confidence'] = 0.70;
-      } else {
-        analysis['type'] = 'Metal Object';
-        analysis['material'] = 'Iron/Steel';
-        analysis['confidence'] = 0.68;
-      }
-    }
-    // Stone detection: gray, beige tones with low saturation
-    else if (saturation < 50 && avgGreen > 80) {
-      analysis['type'] = 'Stone Artifact';
-      analysis['material'] = 'Limestone/Marble';
-      analysis['confidence'] = 0.72;
-    }
-    // Bone detection: white/cream with low saturation
-    else if (brightness > 180 && saturation < 40) {
-      analysis['type'] = 'Organic Material';
-      analysis['material'] = 'Bone/Ivory';
-      analysis['confidence'] = 0.65;
-    }
-    // Gold/precious metal: high yellow, high brightness
-    else if (avgRed > 180 && avgGreen > 150 && avgBlue < 100) {
-      analysis['type'] = 'Precious Metal';
-      analysis['material'] = 'Gold';
-      analysis['confidence'] = 0.80;
-    }
-    else {
-      analysis['type'] = 'Unknown Artifact';
-      analysis['material'] = 'Mixed/Unknown';
-      analysis['confidence'] = 0.50;
-    }
-
-    // === CONDITION ASSESSMENT ===
-    final edgeStrength = _calculateEdgeSharpness(image);
-    final surfaceTexture = _analyzeSurfaceTexture(image);
-
-    if (edgeStrength > 0.7 && surfaceTexture < 0.3) {
-      analysis['condition'] = 'Excellent';
-      analysis['weatheringDegree'] = 'None';
-    } else if (edgeStrength > 0.5 && surfaceTexture < 0.5) {
-      analysis['condition'] = 'Good';
-      analysis['weatheringDegree'] = 'Slight';
-    } else if (edgeStrength > 0.3) {
-      analysis['condition'] = 'Fair';
-      analysis['weatheringDegree'] = 'Moderate';
-    } else {
-      analysis['condition'] = 'Fragmentary';
-      analysis['weatheringDegree'] = 'Severe';
-    }
-
-    // === PERIOD SUGGESTION based on type ===
-    if (analysis['type'] == 'Pottery/Ceramic') {
-      analysis['period'] = 'Classical/Hellenistic (suggested)';
-    } else if (analysis['material'] == 'Bronze/Copper') {
-      analysis['period'] = 'Bronze Age (suggested)';
-    } else if (analysis['material'] == 'Iron/Steel') {
-      analysis['period'] = 'Iron Age/Later (suggested)';
-    } else {
-      analysis['period'] = 'Undetermined';
-    }
-
-    // === SCALE BAR DETECTION ===
-    final scaleInfo = _detectPhotoScale(image);
-    if (scaleInfo['detected']) {
-      analysis['scaleDetected'] = true;
-      analysis['scaleMm'] = scaleInfo['lengthMm'];
-      analysis['confidence'] = (analysis['confidence'] as double) * 1.1; // Boost confidence if scale present
-      if (analysis['confidence'] > 1.0) analysis['confidence'] = 0.95;
-    }
-
-    return analysis;
-  }
-
-  // Analyze color distribution in image
-  Map<String, double> _analyzeColorDistribution(img.Image image) {
-    double totalR = 0, totalG = 0, totalB = 0;
-    int pixelCount = 0;
-
-    // Sample every 10th pixel for performance
-    for (int y = 0; y < image.height; y += 10) {
-      for (int x = 0; x < image.width; x += 10) {
-        final pixel = image.getPixel(x, y);
-        totalR += pixel.r;
-        totalG += pixel.g;
-        totalB += pixel.b;
-        pixelCount++;
-      }
-    }
-
-    final avgR = totalR / pixelCount;
-    final avgG = totalG / pixelCount;
-    final avgB = totalB / pixelCount;
-
-    // Calculate HSL values
-    final max = [avgR, avgG, avgB].reduce((a, b) => a > b ? a : b);
-    final min = [avgR, avgG, avgB].reduce((a, b) => a < b ? a : b);
-    final brightness = (max + min) / 2;
-    final saturation = max == min ? 0.0 : (max - min) / (255 - (max - min).abs());
-
-    return {
-      'avgRed': avgR,
-      'avgGreen': avgG,
-      'avgBlue': avgB,
-      'brightness': brightness,
-      'saturation': saturation * 100,
-    };
-  }
-
-  // Calculate edge sharpness (Sobel-like operator)
-  double _calculateEdgeSharpness(img.Image image) {
-    double edgeStrength = 0;
-    int sampleCount = 0;
-
-    // Sample edges at regular intervals
-    for (int y = 1; y < image.height - 1; y += 20) {
-      for (int x = 1; x < image.width - 1; x += 20) {
-        final center = image.getPixel(x, y);
-        final right = image.getPixel(x + 1, y);
-        final bottom = image.getPixel(x, y + 1);
-
-        // Gradient magnitude
-        final dx = (right.r - center.r).abs() + (right.g - center.g).abs() + (right.b - center.b).abs();
-        final dy = (bottom.r - center.r).abs() + (bottom.g - center.g).abs() + (bottom.b - center.b).abs();
-
-        edgeStrength += sqrt(dx * dx + dy * dy);
-        sampleCount++;
-      }
-    }
-
-    return (edgeStrength / sampleCount) / 255; // Normalize to 0-1
-  }
-
-  // Analyze surface texture variation
-  double _analyzeSurfaceTexture(img.Image image) {
-    double variance = 0;
-    int sampleCount = 0;
-
-    // Calculate local variance in luminance
-    for (int y = 10; y < image.height - 10; y += 15) {
-      for (int x = 10; x < image.width - 10; x += 15) {
-        final pixel = image.getPixel(x, y);
-        final luminance = (pixel.r * 0.299 + pixel.g * 0.587 + pixel.b * 0.114);
-
-        // Compare with neighbors
-        double localVar = 0;
-        for (int dy = -5; dy <= 5; dy += 5) {
-          for (int dx = -5; dx <= 5; dx += 5) {
-            final neighbor = image.getPixel(x + dx, y + dy);
-            final nLum = (neighbor.r * 0.299 + neighbor.g * 0.587 + neighbor.b * 0.114);
-            localVar += (luminance - nLum).abs();
-          }
-        }
-
-        variance += localVar;
-        sampleCount++;
-      }
-    }
-
-    return (variance / sampleCount) / 255; // Normalize to 0-1
-  }
-
-  // Detect photo scale bars (checkerboard or ruler patterns)
-  Map<String, dynamic> _detectPhotoScale(img.Image image) {
-    // Look for high-contrast repeating patterns typical of scale bars
-    // Common scale patterns: black/white alternating squares (10mm, 50mm markers)
-
-    bool detected = false;
-    double lengthMm = 0;
-
-    // Scan for horizontal high-contrast patterns
-    for (int y = image.height - 100; y < image.height - 20; y += 10) {
-      double lastLuminance = 0;
-      int transitionCount = 0;
-
-      for (int x = 50; x < image.width - 50; x += 5) {
-        final pixel = image.getPixel(x, y);
-        final luminance = (pixel.r * 0.299 + pixel.g * 0.587 + pixel.b * 0.114);
-
-        // Detect black/white transitions
-        if ((lastLuminance - luminance).abs() > 100) {
-          transitionCount++;
-        }
-        lastLuminance = luminance;
-      }
-
-      // If we found 6+ transitions, likely a scale bar (3+ squares)
-      if (transitionCount >= 6 && transitionCount <= 20) {
-        detected = true;
-        // Estimate: common scales are 50mm or 100mm total
-        // With 10mm divisions (5 or 10 divisions)
-        if (transitionCount >= 10) {
-          lengthMm = 100; // 10 divisions = 100mm scale
-        } else {
-          lengthMm = 50; // 5 divisions = 50mm scale
-        }
-        break;
-      }
-    }
-
-    return {
-      'detected': detected,
-      'lengthMm': lengthMm,
-    };
-  }
-
-  // 📊 SMART AUTO-FILL SUGGESTIONS
-  String _getNextFindNumber() {
-    final lastNumber = _smartSuggestions['lastFindNumber'] as int? ?? 0;
-    final year = DateTime.now().year;
-    final nextNumber = lastNumber + 1;
-    return '$year-FLD-${nextNumber.toString().padLeft(3, '0')}';
-  }
-
-  // 📝 FIELD JOURNAL
-  void _addFieldJournalEntry(String entry) {
-    final timestamp = DateTime.now().toIso8601String();
-    final journalEntry = '[$timestamp] $entry';
-    setState(() {
-      _fieldJournalEntries.add(journalEntry);
-    });
-
-    // Save to local storage
-    _saveFieldJournal();
-  }
-
-  Future<void> _saveFieldJournal() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('field_journal', _fieldJournalEntries);
-  }
-
   // 📈 SESSION ANALYTICS
   Map<String, dynamic> _getSessionStats() {
     final duration = DateTime.now().difference(_sessionStartTime ?? DateTime.now());
@@ -9015,7 +8666,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       'findCount': _sessionFindCount,
       'avgTimePerFind': avgTimePerFind.toInt(),
       'photosCapture': _captures.length,
-      'hdrUsed': _hdrMode,
       'voiceUsed': _voiceEnabled,
     };
   }
@@ -9070,47 +8720,22 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     setState(() => _isCapturing = true);
 
     try {
-      XFile? finalImage;
-
-      // ULTRA++ HDR MODE - Capture multiple exposures and merge
-      if (_hdrMode) {
-        finalImage = await _captureHDRPhoto();
-      } else {
-        // Standard single photo capture
-        finalImage = await _imagePicker.pickImage(
-          source: ImageSource.camera,
-          preferredCameraDevice: CameraDevice.rear, // Back camera (not selfie)
-          maxWidth: 2048, // Higher resolution for photogrammetry
-          maxHeight: 2048,
-          imageQuality: 95, // High quality
-        );
-      }
+      // Standard photo capture - optimized for photogrammetry
+      final finalImage = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear, // Back camera
+        maxWidth: 2048, // High resolution for 3D reconstruction
+        maxHeight: 2048,
+        imageQuality: 95, // High quality
+      );
 
       if (finalImage != null) {
         // Analyze image quality
         final quality = await _analyzeImageQuality(finalImage);
 
-        // 🤖 AI ARTIFACT RECOGNITION - Run on first capture (completely non-blocking)
-        if (_captures.isEmpty && _aiAssistEnabled) {
+        // Track session
+        if (_captures.isEmpty) {
           _sessionFindCount++;
-          // Save field journal entry
-          _addFieldJournalEntry('New artifact captured - AI analyzing...');
-
-          // Fire and forget - run AI in complete isolation to not affect capture workflow
-          final imageForAI = finalImage; // Capture non-null value
-          Future(() async {
-            try {
-              await _runAIArtifactRecognition(imageForAI).timeout(
-                const Duration(seconds: 5),
-                onTimeout: () {
-                  debugPrint(' AI recognition timed out');
-                },
-              );
-            } catch (e) {
-              debugPrint(' AI recognition skipped: $e');
-              // Silently fail - AI is optional and should never block the main workflow
-            }
-          });
         }
 
         final capture = PhotogrammetryCapture(
@@ -9122,7 +8747,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
         setState(() {
           _captures.add(capture);
-          // Move to next angle if not at the end
+          // Auto-advance to next angle if enabled
           if (_currentAngleIndex < _captureAngles.length - 1 && _autoAdvance) {
             _currentAngleIndex++;
           }
@@ -9132,7 +8757,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         if (mounted) {
           final qualityText = quality >= 0.8 ? 'Excellent!' : quality >= 0.6 ? 'Good' : 'Consider retaking';
           final qualityColor = quality >= 0.8 ? const Color(0xFF4CAF50) : quality >= 0.6 ? const Color(0xFFFFC107) : Colors.orange;
-          final hdrBadge = _hdrMode ? ' [HDR]' : '';
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -9143,7 +8767,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                     color: Colors.white,
                   ),
                   const SizedBox(width: 8),
-                  Text('Photo ${_captures.length}/${_captureAngles.length}$hdrBadge: $qualityText'),
+                  Text('Photo ${_captures.length}/${_captureAngles.length}: $qualityText'),
                 ],
               ),
               backgroundColor: qualityColor,
@@ -9160,177 +8784,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       }
     } finally {
       setState(() => _isCapturing = false);
-    }
-  }
-
-  // ULTRA++ HDR Photo Capture - Multiple Exposure Bracketing
-  Future<XFile?> _captureHDRPhoto() async {
-    try {
-      // Show HDR progress dialog
-      if (mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            backgroundColor: const Color(0xFF1C2523),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(color: Color(0xFF7C4DFF)),
-                const SizedBox(height: 16),
-                const Text(
-                  'Capturing HDR...',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Taking 3 exposures for optimal lighting',
-                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-
-      // Capture 3 images with different exposures
-      // Note: ImagePicker doesn't support exposure control, so we simulate HDR
-      // by capturing multiple frames and merging. For best results, the camera
-      // app should adjust exposure between shots naturally.
-
-      List<XFile> exposures = [];
-
-      // Exposure 1: Normal (user will be prompted 3 times)
-      final exp1 = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.rear,
-        maxWidth: 2048,
-        maxHeight: 2048,
-        imageQuality: 95,
-      );
-      if (exp1 == null) {
-        if (mounted) Navigator.pop(context); // Close progress dialog
-        return null;
-      }
-      exposures.add(exp1);
-
-      // Small delay between captures
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // Exposure 2: Slightly different (camera may auto-adjust)
-      final exp2 = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.rear,
-        maxWidth: 2048,
-        maxHeight: 2048,
-        imageQuality: 95,
-      );
-      if (exp2 == null) {
-        if (mounted) Navigator.pop(context);
-        return exp1; // Return first exposure if user cancels
-      }
-      exposures.add(exp2);
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // Exposure 3: Another frame
-      final exp3 = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.rear,
-        maxWidth: 2048,
-        maxHeight: 2048,
-        imageQuality: 95,
-      );
-      if (exp3 == null) {
-        if (mounted) Navigator.pop(context);
-        return exp1; // Return first exposure if user cancels
-      }
-      exposures.add(exp3);
-
-      // Close progress dialog
-      if (mounted) Navigator.pop(context);
-
-      // Merge HDR images
-      final hdrImage = await _mergeHDRImages(exposures);
-
-      return hdrImage ?? exp1; // Return HDR or fallback to first exposure
-
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close any open dialogs
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('HDR capture failed: $e'), backgroundColor: Colors.red),
-        );
-      }
-      return null;
-    }
-  }
-
-  // Merge multiple exposures into HDR image
-  Future<XFile?> _mergeHDRImages(List<XFile> exposures) async {
-    try {
-      if (exposures.isEmpty) return null;
-      if (exposures.length == 1) return exposures[0];
-
-      // Load all images
-      List<img.Image> images = [];
-      for (var exposure in exposures) {
-        final bytes = await File(exposure.path).readAsBytes();
-        final image = img.decodeImage(bytes);
-        if (image != null) {
-          images.add(image);
-        }
-      }
-
-      if (images.isEmpty) return exposures[0];
-      if (images.length == 1) return exposures[0];
-
-      // Create HDR merged image using weighted average
-      final width = images[0].width;
-      final height = images[0].height;
-      final merged = img.Image(width: width, height: height);
-
-      // Merge pixels with weighted averaging
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-          int totalR = 0, totalG = 0, totalB = 0;
-
-          for (var image in images) {
-            final pixel = image.getPixel(x, y);
-            totalR += pixel.r.toInt();
-            totalG += pixel.g.toInt();
-            totalB += pixel.b.toInt();
-          }
-
-          // Average the exposures
-          final avgR = totalR ~/ images.length;
-          final avgG = totalG ~/ images.length;
-          final avgB = totalB ~/ images.length;
-
-          merged.setPixelRgba(x, y, avgR, avgG, avgB, 255);
-        }
-      }
-
-      // Apply tone mapping for better HDR look
-      final toneMapped = img.adjustColor(merged,
-        contrast: 1.1,
-        saturation: 1.05,
-        brightness: 1.02,
-      );
-
-      // Save merged image
-      final directory = await getTemporaryDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final hdrPath = '${directory.path}/hdr_$timestamp.jpg';
-      final hdrFile = File(hdrPath);
-      await hdrFile.writeAsBytes(img.encodeJpg(toneMapped, quality: 95));
-
-      return XFile(hdrPath);
-
-    } catch (e) {
-      debugPrint('HDR merge error: $e');
-      return exposures.isNotEmpty ? exposures[0] : null;
     }
   }
 
@@ -9670,6 +9123,116 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         ],
       ),
     );
+  }
+
+  /// Share captured photos - exports and offers sharing options
+  Future<void> _sharePhotos() async {
+    if (_captures.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No photos to share'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    try {
+      // First export the photos
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final exportDir = Directory('${directory.path}/photogrammetry_$timestamp');
+      await exportDir.create(recursive: true);
+
+      // Copy all photos
+      List<String> filePaths = [];
+      for (int i = 0; i < _captures.length; i++) {
+        final capture = _captures[i];
+        final newPath = '${exportDir.path}/${capture.angle.name.replaceAll(' ', '_')}_${i + 1}.jpg';
+        await File(capture.file.path).copy(newPath);
+        filePaths.add(newPath);
+      }
+
+      // Create ZIP for easy sharing
+      final zipPath = '${directory.path}/AncientVision_3D_Photos_$timestamp.zip';
+      final encoder = ZipFileEncoder();
+      encoder.create(zipPath);
+      encoder.addDirectory(exportDir);
+      encoder.close();
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1C2523),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.share, color: Color(0xFF2196F3), size: 28),
+                SizedBox(width: 12),
+                Text('Share Photos', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_captures.length} photos ready to share!',
+                  style: TextStyle(color: Colors.white.withAlpha(200)),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(20),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.folder_zip, color: Color(0xFFFFC107), size: 20),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'ZIP Archive Created',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Location: ${exportDir.path}',
+                        style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 10),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Transfer the ZIP file to your computer for 3D processing with Meshroom or COLMAP.',
+                  style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Done', style: TextStyle(color: Color(0xFFFFC107))),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Share error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Future<void> _exportPhotos() async {
@@ -10739,193 +10302,39 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.tune, color: Color(0xFF7C4DFF), size: 16),
+                        const Icon(Icons.settings, color: Color(0xFF4CAF50), size: 16),
                         const SizedBox(width: 6),
                         const Text(
-                          'Advanced Features',
-                          style: TextStyle(color: Color(0xFF7C4DFF), fontSize: 12, fontWeight: FontWeight.bold),
+                          'Capture Settings',
+                          style: TextStyle(color: Color(0xFF4CAF50), fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    Row(
                       children: [
-                        // HDR Toggle
-                        _buildFeatureChip(
-                          icon: Icons.hdr_on,
-                          label: 'HDR',
-                          isActive: _hdrMode,
-                          onTap: () => setState(() => _hdrMode = !_hdrMode),
-                          color: const Color(0xFFFF9800),
-                        ),
-                        // Grid Overlay Toggle
-                        _buildFeatureChip(
-                          icon: Icons.grid_on,
-                          label: 'Grid',
-                          isActive: _showGrid,
-                          onTap: () => setState(() => _showGrid = !_showGrid),
-                          color: const Color(0xFF2196F3),
-                        ),
-                        // Histogram Toggle
-                        _buildFeatureChip(
-                          icon: Icons.bar_chart,
-                          label: 'Histogram',
-                          isActive: _showHistogram,
-                          onTap: () => setState(() => _showHistogram = !_showHistogram),
-                          color: const Color(0xFF9C27B0),
-                        ),
-                        // Batch Mode Toggle
-                        _buildFeatureChip(
-                          icon: Icons.photo_library,
-                          label: 'Batch',
-                          isActive: _batchMode,
-                          onTap: () => setState(() => _batchMode = !_batchMode),
-                          color: const Color(0xFFE91E63),
-                        ),
-                        // Auto-Advance Toggle
+                        // Auto-Advance Toggle (always visible, default ON)
                         _buildFeatureChip(
                           icon: Icons.skip_next,
-                          label: 'Auto',
+                          label: 'Auto-Advance',
                           isActive: _autoAdvance,
                           onTap: () => setState(() => _autoAdvance = !_autoAdvance),
                           color: const Color(0xFF4CAF50),
                         ),
-                        // AI Toggle
+                        const SizedBox(width: 8),
+                        // Voice Commands Toggle
                         _buildFeatureChip(
-                          icon: Icons.smart_toy,
-                          label: 'AI',
-                          isActive: _aiAssistEnabled,
-                          onTap: () => setState(() => _aiAssistEnabled = !_aiAssistEnabled),
-                          color: const Color(0xFF00BCD4),
+                          icon: Icons.mic,
+                          label: 'Voice',
+                          isActive: _voiceEnabled,
+                          onTap: _toggleVoiceCommands,
+                          color: const Color(0xFF2196F3),
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
-
-              // 🤖 AI DETECTION RESULTS PANEL
-              if (_aiDetectedType != null && _aiConfidence > 0.5)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color(0xFF00BCD4).withOpacity(0.15),
-                        const Color(0xFF7C4DFF).withOpacity(0.15),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF00BCD4), width: 2),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.auto_awesome, color: Color(0xFF00BCD4), size: 18),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'AI Analysis',
-                            style: TextStyle(
-                              color: Color(0xFF00BCD4),
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: _aiConfidence > 0.7 ? const Color(0xFF4CAF50) : const Color(0xFFFFC107),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${(_aiConfidence * 100).toInt()}% confidence',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      // AI Detection Details
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildAIResultItem(
-                              icon: Icons.category,
-                              label: 'Type',
-                              value: _aiDetectedType ?? 'Unknown',
-                              color: const Color(0xFFFF9800),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildAIResultItem(
-                              icon: Icons.grain,
-                              label: 'Material',
-                              value: _aiDetectedMaterial ?? 'Unknown',
-                              color: const Color(0xFF8BC34A),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildAIResultItem(
-                              icon: Icons.verified,
-                              label: 'Condition',
-                              value: _aiDetectedCondition ?? 'Unknown',
-                              color: const Color(0xFF2196F3),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildAIResultItem(
-                              icon: Icons.history_edu,
-                              label: 'Period',
-                              value: _aiDetectedPeriod ?? 'Unknown',
-                              color: const Color(0xFF9C27B0),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (_scaleDetected && _detectedScaleMm != null)
-                        Container(
-                          margin: const EdgeInsets.only(top: 8),
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50).withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF4CAF50)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.straighten, color: Color(0xFF4CAF50), size: 16),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Photo Scale Detected: ${_detectedScaleMm!.toInt()}mm',
-                                style: const TextStyle(
-                                  color: Color(0xFF4CAF50),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
 
               // Circular progress with angle indicator
               SizedBox(
@@ -11349,40 +10758,99 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                 ),
               ),
 
-              // Completion actions
+              // Completion actions - Share, See Model, Exit
               if (_isComplete)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _currentAngleIndex = 0;
-                            });
-                          },
-                          icon: const Icon(Icons.add_a_photo),
-                          label: const Text('Add More'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            side: const BorderSide(color: Colors.white30),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                      // Congratulations message
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF4CAF50).withAlpha(40),
+                              const Color(0xFF8BC34A).withAlpha(30),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF4CAF50), width: 2),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 32),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Capture Complete!',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${_captures.length} photos ready for 3D reconstruction',
+                                    style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Main action - See 3D Model
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _generate3DModel,
+                          icon: const Icon(Icons.view_in_ar, size: 24),
+                          label: const Text('See 3D Model', style: TextStyle(fontSize: 16)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C4DFF),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _exportPhotos,
-                          icon: const Icon(Icons.check),
-                          label: const Text('Export'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4CAF50),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                      const SizedBox(height: 12),
+                      // Secondary actions - Share and Exit
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _sharePhotos,
+                              icon: const Icon(Icons.share),
+                              label: const Text('Share'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF2196F3),
+                                side: const BorderSide(color: Color(0xFF2196F3)),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.exit_to_app),
+                              label: const Text('Exit'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white70,
+                                side: const BorderSide(color: Colors.white30),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
