@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
 import '../services/backup_service.dart';
-import '../services/notification_service.dart';
 import '../services/biometric_service.dart';
+import '../utils/app_styles.dart';
 
-/// Settings Screen with comprehensive app configuration
+/// Settings Screen - Simplified for essential features
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -15,7 +15,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _settingsService = SettingsService();
   final _backupService = BackupService();
-  final _notificationService = NotificationService();
   final _biometricService = BiometricService();
   bool _isLoading = true;
   bool _biometricSupported = false;
@@ -47,149 +46,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D3A39),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text('Settings', style: AppTextStyles.h3),
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
+        foregroundColor: AppColors.textPrimary,
         elevation: 0,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _buildSection(
-                  'Appearance',
-                  Icons.palette,
-                  [
-                    _buildThemeSelector(),
-                    _buildColorSelector(),
-                    _buildFontSizeSlider(),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                _buildSection(
-                  'Data & Storage',
-                  Icons.storage,
-                  [
-                    _buildSwitchTile(
-                      'Auto Sync',
-                      'Automatically sync data when online',
-                      _settingsService.settings.autoSync,
-                      (value) => _updateSetting('autoSync', value),
-                    ),
-                    _buildSwitchTile(
-                      'Compress Images',
-                      'Reduce image size to save storage',
-                      _settingsService.settings.compressImages,
-                      (value) => _updateSetting('compressImages', value),
-                    ),
-                    _buildBackupTile(),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                _buildSection(
-                  'Notifications',
-                  Icons.notifications,
-                  [
-                    _buildSwitchTile(
-                      'Enable Notifications',
-                      'Receive alerts for processing status',
-                      _settingsService.settings.notificationsEnabled,
-                      (value) async {
-                        if (value) {
-                          await _notificationService.requestPermissions();
-                        }
-                        await _updateSetting('notificationsEnabled', value);
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Security section - only show if biometrics supported
-                if (_biometricSupported) ...[
-                  _buildSection(
-                    'Security',
-                    Icons.security,
-                    [
-                      _buildBiometricTile(),
+      body: Container(
+        decoration: AppDecorations.screenBackground,
+        child: SafeArea(
+          child: _isLoading
+              ? AppWidgets.loading()
+              : ListView(
+                  padding: AppSpacing.screenPadding,
+                  children: [
+                    // === SECURITY (Most Important) ===
+                    if (_biometricSupported) ...[
+                      _buildSection('Security', Icons.security, [_buildBiometricTile()]),
+                      const SizedBox(height: AppSpacing.xxl),
                     ],
-                  ),
-                  const SizedBox(height: 24),
-                ],
 
-                _buildSection(
-                  '3D & Photogrammetry',
-                  Icons.view_in_ar,
-                  [
-                    _buildSwitchTile(
-                      'Use Cloud Processing',
-                      'Better results but requires internet',
-                      _settingsService.settings.useCloudProcessing,
-                      (value) => _updateSetting('useCloudProcessing', value),
-                    ),
-                    _buildSwitchTile(
-                      'High Quality Preview',
-                      'Better 3D preview (uses more memory)',
-                      _settingsService.settings.highQualityPreview,
-                      (value) => _updateSetting('highQualityPreview', value),
-                    ),
-                    _buildSliderTile(
-                      'Max Photos per Scan',
-                      _settingsService.settings.maxPhotosPerScan.toDouble(),
-                      16,
-                      100,
-                      (value) => _updateSetting('maxPhotosPerScan', value.toInt()),
-                    ),
+                    // === DATA & SYNC ===
+                    _buildSection('Data & Sync', Icons.cloud_sync, [
+                      _buildSwitchTile(
+                        'Auto Sync',
+                        'Sync data automatically when online',
+                        _settingsService.settings.autoSync,
+                        Icons.sync,
+                        (value) => _updateSetting('autoSync', value),
+                      ),
+                      _buildSwitchTile(
+                        'Compress Images',
+                        'Reduce storage usage',
+                        _settingsService.settings.compressImages,
+                        Icons.photo_size_select_large,
+                        (value) => _updateSetting('compressImages', value),
+                      ),
+                      _buildBackupTile(),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
+                    // === 3D CAPTURE ===
+                    _buildSection('3D Capture', Icons.view_in_ar, [
+                      _buildSwitchTile(
+                        'Cloud Processing',
+                        'Better 3D models (requires internet)',
+                        _settingsService.settings.useCloudProcessing,
+                        Icons.cloud,
+                        (value) => _updateSetting('useCloudProcessing', value),
+                      ),
+                      _buildSliderTile(
+                        'Max Photos per Scan',
+                        _settingsService.settings.maxPhotosPerScan.toDouble(),
+                        16,
+                        100,
+                        Icons.camera_alt,
+                        (value) => _updateSetting('maxPhotosPerScan', value.toInt()),
+                      ),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
+                    // === DISPLAY ===
+                    _buildSection('Display', Icons.display_settings, [
+                      _buildSwitchTile(
+                        'Show GPS Coordinates',
+                        'Display location on findings',
+                        _settingsService.settings.showGpsCoordinates,
+                        Icons.location_on,
+                        (value) => _updateSetting('showGpsCoordinates', value),
+                      ),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxxl),
+
+                    // === ACTIONS ===
+                    _buildResetButton(),
+                    const SizedBox(height: AppSpacing.xxl),
+
+                    // === APP INFO ===
+                    _buildAppInfo(),
+                    const SizedBox(height: 80),
                   ],
                 ),
-                const SizedBox(height: 24),
-
-                _buildSection(
-                  'Field Work',
-                  Icons.landscape,
-                  [
-                    _buildSwitchTile(
-                      'Auto Save',
-                      'Automatically save form drafts',
-                      _settingsService.settings.autoSaveEnabled,
-                      (value) => _updateSetting('autoSaveEnabled', value),
-                    ),
-                    _buildSwitchTile(
-                      'Show GPS Coordinates',
-                      'Display coordinates on findings',
-                      _settingsService.settings.showGpsCoordinates,
-                      (value) => _updateSetting('showGpsCoordinates', value),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                _buildSection(
-                  'Units & Format',
-                  Icons.straighten,
-                  [
-                    _buildMeasurementSelector(),
-                    _buildDateFormatSelector(),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Reset button
-                _buildResetButton(),
-                const SizedBox(height: 16),
-                _buildBackToDashboardButton(),
-
-                const SizedBox(height: 24),
-
-                // App info
-                _buildAppInfo(),
-              ],
-            ),
+        ),
+      ),
     );
   }
 
@@ -197,123 +137,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(icon, color: const Color(0xFFFFC107), size: 20),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
+        AppWidgets.sectionHeader(title, icon),
+        const SizedBox(height: AppSpacing.md),
         Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(13),
-            borderRadius: BorderRadius.circular(12),
-          ),
+          decoration: AppDecorations.card,
           child: Column(children: children),
         ),
       ],
-    );
-  }
-
-  Widget _buildThemeSelector() {
-    return ListTile(
-      title: const Text('Theme', style: TextStyle(color: Colors.white)),
-      subtitle: Text(
-        _settingsService.settings.themeMode.label,
-        style: const TextStyle(color: Colors.white54),
-      ),
-      trailing: SegmentedButton<AppThemeMode>(
-        selected: {_settingsService.settings.themeMode},
-        onSelectionChanged: (Set<AppThemeMode> selection) {
-          _updateSetting('themeMode', selection.first);
-        },
-        segments: AppThemeMode.values.map((mode) => ButtonSegment(
-          value: mode,
-          icon: Icon(mode.icon, size: 18),
-        )).toList(),
-        style: ButtonStyle(
-          iconColor: WidgetStateProperty.all(Colors.white),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildColorSelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Accent Color', style: TextStyle(color: Colors.white)),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: List.generate(
-              AccentColorOption.options.length,
-              (index) {
-                final option = AccentColorOption.options[index];
-                final isSelected = _settingsService.settings.accentColorIndex == index;
-                return GestureDetector(
-                  onTap: () => _updateSetting('accentColorIndex', index),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: option.color,
-                          shape: BoxShape.circle,
-                          border: isSelected
-                              ? Border.all(color: Colors.white, width: 3)
-                              : null,
-                          boxShadow: isSelected
-                              ? [BoxShadow(color: option.color.withAlpha(128), blurRadius: 8)]
-                              : null,
-                        ),
-                        child: isSelected
-                            ? const Icon(Icons.check, color: Colors.white, size: 20)
-                            : null,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        option.name,
-                        style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.white54,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFontSizeSlider() {
-    return ListTile(
-      title: const Text('Font Size', style: TextStyle(color: Colors.white)),
-      subtitle: Slider(
-        value: _settingsService.settings.fontSize,
-        min: 0.8,
-        max: 1.4,
-        divisions: 6,
-        label: '${(_settingsService.settings.fontSize * 100).toInt()}%',
-        activeColor: const Color(0xFFFFC107),
-        onChanged: (value) => _updateSetting('fontSize', value),
-      ),
     );
   }
 
@@ -321,14 +151,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String title,
     String subtitle,
     bool value,
+    IconData icon,
     Function(bool) onChanged,
   ) {
-    return SwitchListTile(
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-      value: value,
-      activeColor: const Color(0xFFFFC107),
-      onChanged: onChanged,
+    return ListTile(
+      leading: Icon(icon, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: Text(title, style: AppTextStyles.body),
+      subtitle: Text(subtitle, style: AppTextStyles.subtitleSmall),
+      trailing: Switch(
+        value: value,
+        activeColor: AppColors.accent,
+        onChanged: onChanged,
+      ),
     );
   }
 
@@ -337,10 +171,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     double value,
     double min,
     double max,
+    IconData icon,
     Function(double) onChanged,
   ) {
     return ListTile(
-      title: Text(title, style: const TextStyle(color: Colors.white)),
+      leading: Icon(icon, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: Text(title, style: AppTextStyles.body),
       subtitle: Row(
         children: [
           Expanded(
@@ -349,14 +185,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               min: min,
               max: max,
               divisions: (max - min).toInt(),
-              label: value.toInt().toString(),
-              activeColor: const Color(0xFFFFC107),
+              activeColor: AppColors.accent,
+              inactiveColor: AppColors.cardBorder,
               onChanged: onChanged,
             ),
           ),
-          Text(
-            '${value.toInt()}',
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.accent,
+              borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
+            ),
+            child: Text(
+              '${value.toInt()}',
+              style: AppTextStyles.buttonSmall.copyWith(color: AppColors.primary),
+            ),
           ),
         ],
       ),
@@ -365,65 +208,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildBackupTile() {
     return ListTile(
-      title: const Text('Backup & Restore', style: TextStyle(color: Colors.white)),
-      subtitle: const Text('Create or restore data backups', style: TextStyle(color: Colors.white54, fontSize: 12)),
-      trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+      leading: Icon(Icons.backup, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: Text('Backup & Restore', style: AppTextStyles.body),
+      subtitle: Text('Save or restore your data', style: AppTextStyles.subtitleSmall),
+      trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary),
       onTap: _showBackupDialog,
     );
   }
 
   Widget _buildBiometricTile() {
     if (!_biometricEnrolled) {
-      // Not enrolled - show setup option
-      return ListTile(
-        leading: const Icon(Icons.fingerprint, color: Color(0xFFFFC107)),
-        title: Text('Set up $_biometricType', style: const TextStyle(color: Colors.white)),
-        subtitle: const Text('Quick unlock for faster access', style: TextStyle(color: Colors.white54, fontSize: 12)),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white54),
-        onTap: () async {
-          final success = await _biometricService.enroll();
-          if (success && mounted) {
-            await _loadBiometricState();
-            setState(() {});
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Quick unlock enabled!'),
-                backgroundColor: Color(0xFF4CAF50),
-              ),
-            );
-          }
-        },
+      return Container(
+        margin: const EdgeInsets.all(AppSpacing.md),
+        decoration: AppDecorations.highlightCard,
+        child: ListTile(
+          leading: Icon(Icons.fingerprint, color: AppColors.accent, size: AppSizes.iconLarge),
+          title: Text('Enable $_biometricType', style: AppTextStyles.body.copyWith(fontWeight: FontWeight.bold)),
+          subtitle: Text('Quick unlock for faster access', style: AppTextStyles.subtitleSmall),
+          trailing: ElevatedButton(
+            onPressed: () async {
+              final success = await _biometricService.enroll();
+              if (success && mounted) {
+                await _loadBiometricState();
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Quick unlock enabled!', style: AppTextStyles.body),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              foregroundColor: AppColors.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+            child: Text('Setup', style: AppTextStyles.buttonSmall.copyWith(color: AppColors.primary)),
+          ),
+        ),
       );
     }
 
-    // Enrolled - show toggle
     return Column(
       children: [
-        SwitchListTile(
-          secondary: const Icon(Icons.fingerprint, color: Color(0xFFFFC107)),
-          title: Text('$_biometricType Unlock', style: const TextStyle(color: Colors.white)),
-          subtitle: Text(
-            _biometricEnabled ? 'Enabled - unlock with $_biometricType' : 'Disabled',
-            style: const TextStyle(color: Colors.white54, fontSize: 12),
-          ),
-          value: _biometricEnabled,
-          activeColor: const Color(0xFFFFC107),
-          onChanged: (value) async {
-            if (value) {
-              await _biometricService.enable();
-            } else {
-              await _biometricService.disable();
-            }
-            await _loadBiometricState();
-            if (mounted) setState(() {});
-          },
-        ),
         ListTile(
-          leading: const SizedBox(width: 24),
-          title: Text('Remove $_biometricType', style: const TextStyle(color: Colors.red)),
-          dense: true,
-          onTap: () => _showRemoveBiometricConfirmation(),
+          leading: Icon(Icons.fingerprint, color: AppColors.accent, size: AppSizes.iconMedium),
+          title: Text('$_biometricType Unlock', style: AppTextStyles.body),
+          subtitle: Text(
+            _biometricEnabled ? 'Enabled' : 'Disabled',
+            style: AppTextStyles.subtitleSmall.copyWith(
+              color: _biometricEnabled ? AppColors.success : AppColors.textSecondary,
+            ),
+          ),
+          trailing: Switch(
+            value: _biometricEnabled,
+            activeColor: AppColors.accent,
+            onChanged: (value) async {
+              if (value) {
+                await _biometricService.enable();
+              } else {
+                await _biometricService.disable();
+              }
+              await _loadBiometricState();
+              if (mounted) setState(() {});
+            },
+          ),
         ),
+        if (_biometricEnabled)
+          Padding(
+            padding: const EdgeInsets.only(left: 56, right: 16, bottom: 12),
+            child: GestureDetector(
+              onTap: _showRemoveBiometricConfirmation,
+              child: Text('Remove quick unlock', style: AppTextStyles.subtitleSmall.copyWith(color: AppColors.error)),
+            ),
+          ),
       ],
     );
   }
@@ -432,16 +291,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C2523),
-        title: const Text('Remove Quick Unlock?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'You will need to use your password to sign in. You can set up $_biometricType again later.',
-          style: const TextStyle(color: Colors.white70),
-        ),
+        backgroundColor: AppColors.primaryDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
+        title: Text('Remove Quick Unlock?', style: AppTextStyles.h3),
+        content: Text('You will need to sign in with your password next time.', style: AppTextStyles.subtitle),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: AppTextStyles.button.copyWith(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () async {
@@ -451,74 +308,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (mounted) {
                 setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Quick unlock removed')),
+                  SnackBar(content: Text('Quick unlock removed', style: AppTextStyles.body)),
                 );
               }
             },
-            child: const Text('Remove', style: TextStyle(color: Colors.red)),
+            child: Text('Remove', style: AppTextStyles.button.copyWith(color: AppColors.error)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMeasurementSelector() {
-    return ListTile(
-      title: const Text('Measurement System', style: TextStyle(color: Colors.white)),
-      trailing: DropdownButton<MeasurementSystem>(
-        value: _settingsService.settings.measurementSystem,
-        dropdownColor: const Color(0xFF1C2523),
-        style: const TextStyle(color: Colors.white),
-        underline: const SizedBox(),
-        items: MeasurementSystem.values.map((system) => DropdownMenuItem(
-          value: system,
-          child: Text('${system.label} (${system.examples})'),
-        )).toList(),
-        onChanged: (value) {
-          if (value != null) _updateSetting('measurementSystem', value);
-        },
-      ),
-    );
-  }
-
-  Widget _buildDateFormatSelector() {
-    return ListTile(
-      title: const Text('Date Format', style: TextStyle(color: Colors.white)),
-      trailing: DropdownButton<DateFormatPreference>(
-        value: _settingsService.settings.dateFormat,
-        dropdownColor: const Color(0xFF1C2523),
-        style: const TextStyle(color: Colors.white),
-        underline: const SizedBox(),
-        items: DateFormatPreference.values.map((format) => DropdownMenuItem(
-          value: format,
-          child: Text(format.example),
-        )).toList(),
-        onChanged: (value) {
-          if (value != null) _updateSetting('dateFormat', value);
-        },
-      ),
-    );
-  }
-
   Widget _buildResetButton() {
     return Center(
-      child: TextButton.icon(
+      child: OutlinedButton.icon(
         onPressed: _showResetConfirmation,
-        icon: const Icon(Icons.restore, color: Colors.red),
-        label: const Text('Reset to Defaults', style: TextStyle(color: Colors.red)),
-      ),
-    );
-  }
-
-  Widget _buildBackToDashboardButton() {
-    return Center(
-      child: ElevatedButton.icon(
-        onPressed: () => Navigator.pop(context),
-        icon: const Icon(Icons.arrow_back),
-        label: const Text('Return'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFFC107),
-          foregroundColor: Colors.white,
+        icon: Icon(Icons.restore, color: AppColors.warning, size: AppSizes.iconSmall),
+        label: Text('Reset All Settings', style: AppTextStyles.button.copyWith(color: AppColors.warning)),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: AppColors.warning),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         ),
       ),
@@ -527,38 +335,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildAppInfo() {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(13),
-        borderRadius: BorderRadius.circular(12),
-      ),
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      decoration: AppDecorations.section,
       child: Column(
         children: [
-          const Icon(Icons.explore, color: Color(0xFFFFC107), size: 40),
-          const SizedBox(height: 8),
-          const Text(
-            'AncientVision',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: AppDecorations.circleBadge(AppColors.accent),
+            child: Icon(Icons.explore, color: AppColors.accent, size: AppSizes.iconXLarge),
           ),
-          const Text(
-            'Version 1.0.0',
-            style: TextStyle(color: Colors.white54),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Archaeological Field Documentation App',
-            style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 12),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Made for FLL Competition',
-            style: TextStyle(color: Colors.amber.withAlpha(179), fontSize: 12),
-          ),
+          const SizedBox(height: AppSpacing.md),
+          Text('AncientVision', style: AppTextStyles.h3),
+          Text('Version 1.0.0', style: AppTextStyles.subtitleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          Text('Archaeological Field Documentation', style: AppTextStyles.caption),
+          const SizedBox(height: AppSpacing.xs),
+          Text('FLL Competition 2024', style: AppTextStyles.accentText.copyWith(fontSize: 11)),
         ],
       ),
     );
@@ -572,19 +364,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showBackupDialog() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1C2523),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: AppDecorations.bottomSheet,
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.cardBorder,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
             ListTile(
-              leading: const Icon(Icons.backup, color: Colors.green),
-              title: const Text('Create Backup', style: TextStyle(color: Colors.white)),
-              subtitle: const Text('Save all data to a file', style: TextStyle(color: Colors.white54)),
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: AppDecorations.iconContainer(AppColors.success),
+                child: Icon(Icons.backup, color: AppColors.success),
+              ),
+              title: Text('Create Backup', style: AppTextStyles.body),
+              subtitle: Text('Save all your data', style: AppTextStyles.subtitleSmall),
               onTap: () async {
                 Navigator.pop(context);
                 final backup = await _backupService.createBackup(data: {
@@ -592,22 +395,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 });
                 if (backup != null && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Backup created: ${backup.filename}')),
+                    SnackBar(
+                      content: Text('Backup created: ${backup.filename}', style: AppTextStyles.body),
+                      backgroundColor: AppColors.success,
+                    ),
                   );
                 }
               },
             ),
+            const SizedBox(height: AppSpacing.sm),
             ListTile(
-              leading: const Icon(Icons.restore, color: Colors.blue),
-              title: const Text('Restore Backup', style: TextStyle(color: Colors.white)),
-              subtitle: const Text('Load data from a backup file', style: TextStyle(color: Colors.white54)),
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: AppDecorations.iconContainer(AppColors.info),
+                child: Icon(Icons.restore, color: AppColors.info),
+              ),
+              title: Text('Restore Backup', style: AppTextStyles.body),
+              subtitle: Text('Load from a backup file', style: AppTextStyles.subtitleSmall),
               onTap: () async {
                 Navigator.pop(context);
                 final backups = await _backupService.listBackups();
                 if (backups.isEmpty) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('No backups found')),
+                      SnackBar(content: Text('No backups found', style: AppTextStyles.body)),
                     );
                   }
                 } else {
@@ -615,6 +426,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 }
               },
             ),
+            const SizedBox(height: AppSpacing.xl),
           ],
         ),
       ),
@@ -624,30 +436,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showBackupList(List<BackupInfo> backups) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1C2523),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: AppDecorations.bottomSheet,
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Select Backup',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
+            Text('Select Backup', style: AppTextStyles.h3),
+            const SizedBox(height: AppSpacing.lg),
             ...backups.take(5).map((backup) => ListTile(
-              title: Text(backup.filename, style: const TextStyle(color: Colors.white)),
-              subtitle: Text('${backup.dateString} - ${backup.sizeString}', style: const TextStyle(color: Colors.white54)),
+              leading: Icon(Icons.folder, color: AppColors.accent),
+              title: Text(backup.filename, style: AppTextStyles.body),
+              subtitle: Text('${backup.dateString} - ${backup.sizeString}', style: AppTextStyles.subtitleSmall),
               onTap: () async {
                 Navigator.pop(context);
                 final data = await _backupService.restoreBackup(backup.path);
                 if (data != null && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Backup restored successfully')),
+                    SnackBar(
+                      content: Text('Backup restored successfully', style: AppTextStyles.body),
+                      backgroundColor: AppColors.success,
+                    ),
                   );
                 }
               },
@@ -662,28 +473,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C2523),
-        title: const Text('Reset Settings?', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'This will reset all settings to their default values. This cannot be undone.',
-          style: TextStyle(color: Colors.white70),
-        ),
+        backgroundColor: AppColors.primaryDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
+        title: Text('Reset Settings?', style: AppTextStyles.h3),
+        content: Text('All settings will return to their default values.', style: AppTextStyles.subtitle),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: AppTextStyles.button.copyWith(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
               await _settingsService.resetToDefaults();
-              if (mounted) setState(() {});
+              if (mounted) {
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Settings reset to defaults', style: AppTextStyles.body)),
+                );
+              }
             },
-            child: const Text('Reset', style: TextStyle(color: Colors.red)),
+            child: Text('Reset', style: AppTextStyles.button.copyWith(color: AppColors.warning)),
           ),
         ],
       ),
     );
   }
-
 }

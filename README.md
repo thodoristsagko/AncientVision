@@ -22,12 +22,29 @@ Developed in the context of FIRST LEGO League (FLL), the project focuses on solv
 
 ## 🎯 Features
 
-- **User Authentication**: Login and registration system
-- **Dashboard**: Real-time statistics and insights
+### Core Documentation
 - **Findings Database**: Track and manage archaeological discoveries
-- **Safety Monitoring**: Real-time trench safety with IoT sensors
+- **Quick Capture**: Simplified single-photo documentation with GPS
+- **Manual Entry Form**: Comprehensive 25+ field documentation
+- **Photo Register**: Professional photo cataloging system
+
+### Professional Tools
+- **Finds Register**: Museum-standard artifact cataloging (SF/BF/SA/SP)
+- **Harris Matrix**: Interactive stratigraphic relationship visualization
+- **Context Sheets**: Full stratigraphic documentation
+- **Field Journal**: Daily excavation logging with voice notes
+
+### 3D & Analysis
+- **Photogrammetry**: Real SfM 3D reconstruction (16 angles)
+- **Cloud Processing**: FREE via OpenScan API
+- **Analytics Dashboard**: Statistics and progress tracking
+- **Data Validation**: Automatic quality checks
+
+### Safety & Integration
+- **Safety Monitoring**: Real-time trench safety with M5StickC Plus 2
+- **Offline Support**: Full functionality without internet
+- **Export**: PDF, JSON, CSV, GeoJSON, KML, PLY, OBJ, GLB
 - **AI Recognition**: Artifact identification (coming soon)
-- **Photogrammetry**: 3D documentation (coming soon)
 
 ## 📱 How to Run
 

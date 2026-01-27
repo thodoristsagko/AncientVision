@@ -8,10 +8,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../models/artifact_classification.dart';
 import '../services/progress_service.dart';
-import '../widgets/photogrammetry_capture_overlay.dart';
-import '../utils/quality_analyzer.dart';
+import '../utils/app_styles.dart';
 
-/// Quick Capture Mode for rapid artifact documentation
+/// Quick Capture Mode - Simple single photo documentation
+/// For multi-photo 3D scanning, use PhotogrammetryScreen instead
 class QuickCaptureScreen extends StatefulWidget {
   const QuickCaptureScreen({super.key});
 
@@ -23,29 +23,19 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
   CameraController? _cameraController;
   bool _isInitialized = false;
   bool _isCapturing = false;
-  List<XFile> _capturedPhotos = [];
+  XFile? _capturedPhoto;
   ArtifactType? _selectedType;
-  String? _quickNote;
+  String _description = '';
   Position? _currentPosition;
   final _progressService = ProgressService();
 
-  // Camera enhancements
+  // Camera controls
   double _currentZoom = 1.0;
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
   double _baseZoom = 1.0;
   bool _showGrid = false;
-  double _exposureOffset = 0.0;
-  double _minExposure = -2.0;
-  double _maxExposure = 2.0;
-  bool _showExposureSlider = false;
   FlashMode _currentFlashMode = FlashMode.auto;
-
-  // Photogrammetry overlay enhancements
-  bool _showQualityOverlay = true;
-  final List<double> _capturedAngles = [];
-  QualityMetrics? _currentQuality;
-  bool _isAnalyzingQuality = false;
 
   @override
   void initState() {
@@ -68,14 +58,9 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
 
       await _cameraController!.initialize();
 
-      // Get zoom limits
       _minZoom = await _cameraController!.getMinZoomLevel();
       _maxZoom = await _cameraController!.getMaxZoomLevel();
       _currentZoom = _minZoom;
-
-      // Get exposure limits
-      _minExposure = await _cameraController!.getMinExposureOffset();
-      _maxExposure = await _cameraController!.getMaxExposureOffset();
 
       if (mounted) {
         setState(() => _isInitialized = true);
@@ -107,23 +92,24 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Show captured photo review screen
+    if (_capturedPhoto != null) {
+      return _buildReviewScreen();
+    }
+
+    // Show camera capture screen
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Stack(
           children: [
-            // Camera preview with zoom gesture
+            // Camera preview
             if (_isInitialized && _cameraController != null)
               Positioned.fill(
                 child: GestureDetector(
-                  onScaleStart: (details) {
-                    _baseZoom = _currentZoom;
-                  },
-                  onScaleUpdate: (details) {
-                    _setZoom(_baseZoom * details.scale);
-                  },
+                  onScaleStart: (details) => _baseZoom = _currentZoom,
+                  onScaleUpdate: (details) => _setZoom(_baseZoom * details.scale),
                   onDoubleTap: () {
-                    // Double tap to toggle between 1x and 2x zoom
                     if (_currentZoom > _minZoom) {
                       _setZoom(_minZoom);
                     } else {
@@ -133,26 +119,16 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                   child: Stack(
                     children: [
                       CameraPreview(_cameraController!),
-                      // Grid overlay
                       if (_showGrid) _buildGridOverlay(),
-                      // Photogrammetry quality overlay
-                      if (_showQualityOverlay)
-                        PhotogrammetryCaptureOverlay(
-                          cameraController: _cameraController,
-                          capturedCount: _capturedPhotos.length,
-                          targetCount: 16,
-                          capturedAngles: _capturedAngles,
-                          isAnalyzing: _isAnalyzingQuality,
-                          currentQuality: _currentQuality,
-                          onCapture: _capturePhoto,
-                        ),
+                      // Simple center crosshair
+                      Center(child: _buildCrosshair()),
                     ],
                   ),
                 ),
               )
             else
-              const Center(
-                child: CircularProgressIndicator(color: Colors.white),
+              Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
               ),
 
             // Top bar
@@ -161,18 +137,33 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
             // Zoom indicator
             if (_currentZoom > _minZoom) _buildZoomIndicator(),
 
-            // Photo counter
-            if (_capturedPhotos.isNotEmpty) _buildPhotoCounter(),
-
-            // Quick type selector
-            _buildTypeSelector(),
-
-            // Exposure slider
-            if (_showExposureSlider) _buildExposureSlider(),
+            // Type selector chip
+            _buildTypeChip(),
 
             // Bottom controls
             _buildBottomControls(),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCrosshair() {
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white.withAlpha(150), width: 2),
+      ),
+      child: Center(
+        child: Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(200),
+            shape: BoxShape.circle,
+          ),
         ),
       ),
     );
@@ -187,7 +178,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
 
   Widget _buildZoomIndicator() {
     return Positioned(
-      top: 140,
+      top: 100,
       left: 0,
       right: 0,
       child: Center(
@@ -199,52 +190,11 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
           ),
           child: Text(
             '${_currentZoom.toStringAsFixed(1)}x',
-            style: const TextStyle(
+            style: AppTextStyles.body.copyWith(
               color: Colors.white,
-              fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExposureSlider() {
-    return Positioned(
-      right: 20,
-      top: 150,
-      bottom: 200,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.black.withAlpha(150),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.wb_sunny, color: Colors.yellow, size: 20),
-            Expanded(
-              child: RotatedBox(
-                quarterTurns: 3,
-                child: Slider(
-                  value: _exposureOffset,
-                  min: _minExposure,
-                  max: _maxExposure,
-                  activeColor: const Color(0xFFFFC107),
-                  onChanged: (value) async {
-                    setState(() => _exposureOffset = value);
-                    await _cameraController?.setExposureOffset(value);
-                  },
-                ),
-              ),
-            ),
-            Text(
-              _exposureOffset.toStringAsFixed(1),
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ],
         ),
       ),
     );
@@ -262,7 +212,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Colors.black.withAlpha(179),
+              Colors.black.withAlpha(200),
               Colors.transparent,
             ],
           ),
@@ -272,65 +222,45 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
           children: [
             IconButton(
               icon: const Icon(Icons.close, color: Colors.white, size: 28),
-              onPressed: () => _showExitConfirmation(),
+              onPressed: () => Navigator.pop(context),
             ),
             Column(
               children: [
-                const Text(
+                Text(
                   'QUICK CAPTURE',
-                  style: TextStyle(
+                  style: AppTextStyles.h4.copyWith(
                     color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
                     letterSpacing: 2,
                   ),
                 ),
                 if (_currentPosition != null)
-                  Text(
-                    'GPS: ${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}',
-                    style: TextStyle(
-                      color: Colors.white.withAlpha(179),
-                      fontSize: 10,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.gps_fixed, color: AppColors.success, size: 12),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}',
+                        style: AppTextStyles.caption.copyWith(
+                          color: Colors.white.withAlpha(180),
+                        ),
+                      ),
+                    ],
                   ),
               ],
             ),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Quality overlay toggle
-                IconButton(
-                  icon: Icon(
-                    _showQualityOverlay ? Icons.analytics : Icons.analytics_outlined,
-                    color: _showQualityOverlay ? const Color(0xFF7C4DFF) : Colors.white,
-                    size: 24,
-                  ),
-                  onPressed: () {
-                    setState(() => _showQualityOverlay = !_showQualityOverlay);
-                    HapticFeedback.selectionClick();
-                  },
-                ),
                 // Grid toggle
                 IconButton(
                   icon: Icon(
                     _showGrid ? Icons.grid_on : Icons.grid_off,
-                    color: _showGrid ? const Color(0xFFFFC107) : Colors.white,
+                    color: _showGrid ? AppColors.accent : Colors.white,
                     size: 24,
                   ),
                   onPressed: () {
                     setState(() => _showGrid = !_showGrid);
-                    HapticFeedback.selectionClick();
-                  },
-                ),
-                // Exposure toggle
-                IconButton(
-                  icon: Icon(
-                    Icons.exposure,
-                    color: _showExposureSlider ? const Color(0xFFFFC107) : Colors.white,
-                    size: 24,
-                  ),
-                  onPressed: () {
-                    setState(() => _showExposureSlider = !_showExposureSlider);
                     HapticFeedback.selectionClick();
                   },
                 ),
@@ -339,7 +269,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                   icon: Icon(
                     _getFlashIcon(),
                     color: _currentFlashMode != FlashMode.off
-                        ? const Color(0xFFFFC107)
+                        ? AppColors.accent
                         : Colors.white,
                     size: 28,
                   ),
@@ -366,39 +296,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     }
   }
 
-  Widget _buildPhotoCounter() {
-    return Positioned(
-      top: 80,
-      right: 16,
-      child: GestureDetector(
-        onTap: _showCapturedPhotos,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFC107),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.photo_library, color: Colors.white, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                '${_capturedPhotos.length}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTypeSelector() {
+  Widget _buildTypeChip() {
     return Positioned(
       top: 80,
       left: 16,
@@ -421,10 +319,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
               const SizedBox(width: 8),
               Text(
                 _selectedType?.name.split(' ').first ?? 'Type',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                ),
+                style: AppTextStyles.body.copyWith(color: Colors.white),
               ),
               const Icon(Icons.arrow_drop_down, color: Colors.white),
             ],
@@ -446,7 +341,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
             begin: Alignment.bottomCenter,
             end: Alignment.topCenter,
             colors: [
-              Colors.black.withAlpha(204),
+              Colors.black.withAlpha(230),
               Colors.transparent,
             ],
           ),
@@ -457,7 +352,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
             // Zoom slider
             if (_maxZoom > _minZoom)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.only(bottom: 16),
                 child: Row(
                   children: [
                     const Icon(Icons.zoom_out, color: Colors.white54, size: 20),
@@ -466,7 +361,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                         value: _currentZoom,
                         min: _minZoom,
                         max: _maxZoom,
-                        activeColor: const Color(0xFFFFC107),
+                        activeColor: AppColors.accent,
                         inactiveColor: Colors.white24,
                         onChanged: _setZoom,
                       ),
@@ -476,84 +371,62 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                 ),
               ),
 
-            // Quick note input
+            // Simple tip
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                color: Colors.white.withAlpha(26),
-                borderRadius: BorderRadius.circular(25),
+                color: Colors.black.withAlpha(100),
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: TextField(
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  hintText: 'Quick note (optional)...',
-                  hintStyle: TextStyle(color: Colors.white54),
-                  border: InputBorder.none,
-                  icon: Icon(Icons.note, color: Colors.white54),
-                ),
-                onChanged: (value) => _quickNote = value,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lightbulb_outline, color: AppColors.accent, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Take one clear photo of the artifact',
+                    style: AppTextStyles.caption.copyWith(color: Colors.white70),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
 
-            // Capture buttons
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                // Gallery button
-                _buildControlButton(
-                  icon: Icons.photo_library,
-                  label: 'Gallery',
-                  onTap: _capturedPhotos.isEmpty ? null : _showCapturedPhotos,
-                  isEnabled: _capturedPhotos.isNotEmpty,
+            // Capture button
+            GestureDetector(
+              onTap: _isCapturing ? null : _capturePhoto,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 4),
+                  color: _isCapturing ? Colors.grey : Colors.transparent,
                 ),
-
-                // Main capture button
-                GestureDetector(
-                  onTap: _isCapturing ? null : _capturePhoto,
+                child: Center(
                   child: Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
+                    width: 64,
+                    height: 64,
+                    decoration: const BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                      color: _isCapturing ? Colors.grey : Colors.transparent,
+                      color: Colors.white,
                     ),
-                    child: Center(
-                      child: Container(
-                        width: 64,
-                        height: 64,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                        ),
-                        child: _isCapturing
-                            ? const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 3,
-                                  color: Color(0xFFFFC107),
-                                ),
-                              )
-                            : const Icon(
-                                Icons.camera_alt,
-                                color: Color(0xFFFFC107),
-                                size: 32,
-                              ),
-                      ),
-                    ),
+                    child: _isCapturing
+                        ? Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color: AppColors.accent,
+                            ),
+                          )
+                        : Icon(
+                            Icons.camera_alt,
+                            color: AppColors.accent,
+                            size: 32,
+                          ),
                   ),
                 ),
-
-                // Save button
-                _buildControlButton(
-                  icon: Icons.check_circle,
-                  label: 'Save',
-                  onTap: _capturedPhotos.isEmpty ? null : _saveFinding,
-                  isEnabled: _capturedPhotos.isNotEmpty,
-                  color: Colors.green,
-                ),
-              ],
+              ),
             ),
           ],
         ),
@@ -561,43 +434,147 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     );
   }
 
-  Widget _buildControlButton({
-    required IconData icon,
-    required String label,
-    VoidCallback? onTap,
-    bool isEnabled = true,
-    Color? color,
-  }) {
-    return GestureDetector(
-      onTap: isEnabled ? onTap : null,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isEnabled
-                  ? (color ?? Colors.white).withAlpha(51)
-                  : Colors.white.withAlpha(26),
-            ),
-            child: Icon(
-              icon,
-              color: isEnabled ? (color ?? Colors.white) : Colors.white.withAlpha(77),
-              size: 24,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: isEnabled ? Colors.white : Colors.white.withAlpha(77),
-              fontSize: 12,
+  /// Review screen after photo is captured
+  Widget _buildReviewScreen() {
+    return Scaffold(
+      backgroundColor: AppColors.primaryDark,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          onPressed: () {
+            setState(() => _capturedPhoto = null);
+          },
+        ),
+        title: Text(
+          'Review & Save',
+          style: AppTextStyles.h3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: _saveFinding,
+            child: Text(
+              'SAVE',
+              style: AppTextStyles.button.copyWith(
+                color: AppColors.success,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
       ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Photo preview
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+              child: AspectRatio(
+                aspectRatio: 4 / 3,
+                child: Image.file(
+                  File(_capturedPhoto!.path),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // Type selector
+            Text('Artifact Type', style: AppTextStyles.h4),
+            const SizedBox(height: AppSpacing.sm),
+            _buildTypeGrid(),
+            const SizedBox(height: AppSpacing.xl),
+
+            // Description
+            Text('Description', style: AppTextStyles.h4),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              maxLines: 3,
+              style: AppTextStyles.body,
+              decoration: InputDecoration(
+                hintText: 'Describe the artifact (optional)...',
+                hintStyle: AppTextStyles.subtitleSmall,
+                filled: true,
+                fillColor: AppColors.cardBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onChanged: (value) => _description = value,
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // GPS info
+            if (_currentPosition != null)
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: AppDecorations.card,
+                child: Row(
+                  children: [
+                    Icon(Icons.gps_fixed, color: AppColors.success, size: 24),
+                    const SizedBox(width: AppSpacing.md),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('GPS Location', style: AppTextStyles.subtitle),
+                        Text(
+                          '${_currentPosition!.latitude.toStringAsFixed(6)}, ${_currentPosition!.longitude.toStringAsFixed(6)}',
+                          style: AppTextStyles.caption,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: AppSpacing.xxl),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTypeGrid() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: ArtifactClassification.artifactTypes.take(10).map((type) {
+        final isSelected = _selectedType == type;
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => _selectedType = type);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected ? type.color : AppColors.cardBackground,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isSelected ? type.color : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(type.icon, size: 18, color: isSelected ? Colors.white : type.color),
+                const SizedBox(width: 6),
+                Text(
+                  type.name.split(' ').first,
+                  style: AppTextStyles.caption.copyWith(
+                    color: isSelected ? Colors.white : AppColors.textSecondary,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -610,44 +587,21 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
   Future<void> _capturePhoto() async {
     if (_cameraController == null || _isCapturing) return;
 
-    setState(() {
-      _isCapturing = true;
-      _isAnalyzingQuality = true;
-    });
+    setState(() => _isCapturing = true);
 
     try {
-      // Haptic feedback on capture start
       HapticFeedback.mediumImpact();
-
       final photo = await _cameraController!.takePicture();
-
-      // Haptic feedback on capture complete
       HapticFeedback.lightImpact();
 
-      // Calculate simulated angle based on capture count (360° / 16 angles)
-      final captureAngle = (_capturedPhotos.length * 22.5) % 360;
-
       setState(() {
-        _capturedPhotos.add(photo);
-        _capturedAngles.add(captureAngle);
+        _capturedPhoto = photo;
         _isCapturing = false;
-        _isAnalyzingQuality = false;
       });
-
-      // Show brief feedback with angle info
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Photo ${_capturedPhotos.length} captured at ${captureAngle.toInt()}°'),
-            duration: const Duration(milliseconds: 800),
-            backgroundColor: const Color(0xFF4CAF50),
-          ),
-        );
-      }
     } catch (e) {
       debugPrint('Error capturing photo: $e');
       setState(() => _isCapturing = false);
-      HapticFeedback.heavyImpact(); // Error feedback
+      HapticFeedback.heavyImpact();
     }
   }
 
@@ -684,96 +638,22 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     HapticFeedback.selectionClick();
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1C2523),
+      backgroundColor: AppColors.cardBackground,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      isScrollControlled: true,
       builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Select Artifact Type',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Priority types header
-            const Text(
-              'MOST COMMON',
-              style: TextStyle(
-                color: Color(0xFFFFC107),
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Priority: Coins & Fragments (first 2 types - larger buttons)
-            Row(
-              children: ArtifactClassification.artifactTypes.take(2).map((type) {
-                final isSelected = _selectedType == type;
-                return Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      setState(() => _selectedType = type);
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: isSelected ? type.color : type.color.withAlpha(51),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: type.color,
-                          width: isSelected ? 2 : 1,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(type.icon, size: 28, color: isSelected ? Colors.white : type.color),
-                          const SizedBox(height: 6),
-                          Text(
-                            type.name,
-                            style: TextStyle(
-                              color: isSelected ? Colors.white : Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-            // Other types header
-            const Text(
-              'OTHER TYPES',
-              style: TextStyle(
-                color: Colors.white54,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Other types (skip first 2)
+            Text('Select Artifact Type', style: AppTextStyles.h3),
+            const SizedBox(height: AppSpacing.lg),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: ArtifactClassification.artifactTypes.skip(2).take(8).map((type) {
+              children: ArtifactClassification.artifactTypes.take(10).map((type) {
                 final isSelected = _selectedType == type;
                 return GestureDetector(
                   onTap: () {
@@ -784,7 +664,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: isSelected ? type.color : Colors.white.withAlpha(26),
+                      color: isSelected ? type.color : AppColors.primaryDark,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -794,9 +674,8 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                         const SizedBox(width: 6),
                         Text(
                           type.name.split(' ').first,
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : Colors.white70,
-                            fontSize: 13,
+                          style: AppTextStyles.caption.copyWith(
+                            color: isSelected ? Colors.white : AppColors.textSecondary,
                           ),
                         ),
                       ],
@@ -805,117 +684,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showCapturedPhotos() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1C2523),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Captured Photos (${_capturedPhotos.length})',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    setState(() => _capturedPhotos.clear());
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Clear All', style: TextStyle(color: Colors.red)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 100,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _capturedPhotos.length,
-                itemBuilder: (context, index) {
-                  return Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    width: 100,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.white.withAlpha(26),
-                    ),
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(
-                            File(_capturedPhotos[index].path),
-                            fit: BoxFit.cover,
-                            width: 100,
-                            height: 100,
-                            errorBuilder: (_, __, ___) => const Center(
-                              child: Icon(Icons.image, color: Colors.white54),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() => _capturedPhotos.removeAt(index));
-                              Navigator.pop(context);
-                              if (_capturedPhotos.isNotEmpty) {
-                                _showCapturedPhotos();
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.close, color: Colors.white, size: 12),
-                            ),
-                          ),
-                        ),
-                        // Photo number indicator
-                        Positioned(
-                          bottom: 4,
-                          left: 4,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${index + 1}',
-                              style: const TextStyle(color: Colors.white, fontSize: 10),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
+            const SizedBox(height: AppSpacing.lg),
           ],
         ),
       ),
@@ -923,12 +692,12 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
   }
 
   void _saveFinding() async {
-    if (_capturedPhotos.isEmpty) return;
+    if (_capturedPhoto == null) return;
 
     HapticFeedback.mediumImpact();
 
-    // Persist photos to permanent storage before returning
-    final List<String> persistedPaths = [];
+    // Persist photo to permanent storage
+    String persistedPath = _capturedPhoto!.path;
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final photosDir = Directory('${appDir.path}/quick_captures');
@@ -937,39 +706,29 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
       }
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      for (int i = 0; i < _capturedPhotos.length; i++) {
-        final originalFile = File(_capturedPhotos[i].path);
-        final extension = path.extension(_capturedPhotos[i].path);
-        final newPath = '${photosDir.path}/quick_${timestamp}_$i$extension';
-        await originalFile.copy(newPath);
-        persistedPaths.add(newPath);
-      }
+      final extension = path.extension(_capturedPhoto!.path);
+      persistedPath = '${photosDir.path}/quick_$timestamp$extension';
+      await File(_capturedPhoto!.path).copy(persistedPath);
     } catch (e) {
-      debugPrint('Error persisting photos: $e');
-      // Fall back to original paths if persistence fails
-      for (var photo in _capturedPhotos) {
-        persistedPaths.add(photo.path);
-      }
+      debugPrint('Error persisting photo: $e');
     }
 
     // Record finding in progress service
     final achievements = await _progressService.recordFinding();
-
-    // Also record photo count
-    await _progressService.recordPhotos(_capturedPhotos.length);
+    await _progressService.recordPhotos(1);
 
     // Show achievement if earned
     if (achievements.isNotEmpty && mounted) {
       _showAchievementDialog(achievements.first);
     }
 
-    // Return data to parent screen with persisted paths
+    // Return data to parent screen
     if (mounted) {
       Navigator.pop(context, {
-        'photos': _capturedPhotos,
-        'persistedPaths': persistedPaths,
+        'photo': _capturedPhoto,
+        'persistedPath': persistedPath,
         'type': _selectedType,
-        'note': _quickNote,
+        'description': _description,
         'location': _currentPosition != null
             ? {
                 'latitude': _currentPosition!.latitude,
@@ -984,7 +743,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C2523),
+        backgroundColor: AppColors.cardBackground,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -992,67 +751,31 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFC107).withAlpha(50),
+                color: AppColors.accent.withAlpha(50),
                 borderRadius: BorderRadius.circular(50),
               ),
               child: Icon(
                 achievement.type.icon,
-                color: const Color(0xFFFFC107),
+                color: AppColors.accent,
                 size: 48,
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Achievement Unlocked!',
-              style: TextStyle(
-                color: Color(0xFFFFC107),
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: AppTextStyles.h3.copyWith(color: AppColors.accent),
             ),
             const SizedBox(height: 8),
             Text(
               achievement.type.title,
-              style: const TextStyle(color: Colors.white, fontSize: 18),
+              style: AppTextStyles.body,
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Awesome!'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showExitConfirmation() {
-    if (_capturedPhotos.isEmpty) {
-      Navigator.pop(context);
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C2523),
-        title: const Text('Discard Photos?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'You have ${_capturedPhotos.length} unsaved photos. Are you sure you want to exit?',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('Discard', style: TextStyle(color: Colors.red)),
+            child: Text('Awesome!', style: TextStyle(color: AppColors.accent)),
           ),
         ],
       ),
@@ -1092,7 +815,7 @@ class _GridPainter extends CustomPainter {
       paint,
     );
 
-    // Intersection points (stronger)
+    // Intersection points
     final dotPaint = Paint()
       ..color = Colors.white.withAlpha(150)
       ..style = PaintingStyle.fill;

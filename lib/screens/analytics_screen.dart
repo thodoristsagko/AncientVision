@@ -52,13 +52,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D3A39),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFFFC107)))
-          : CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF0D3A39),
+              Color(0xFF1C2523),
+            ],
+          ),
+        ),
+        child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+            : CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
                 // Custom App Bar with Stats Overview
                 _buildSliverAppBar(),
 
@@ -91,16 +101,28 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                           _buildCategoryBreakdown(),
                           const SizedBox(height: 24),
 
+                          // Material Analysis
+                          _buildSectionHeader('Material Analysis', Icons.category),
+                          const SizedBox(height: 12),
+                          _buildMaterialAnalysis(),
+                          const SizedBox(height: 24),
+
+                          // Period Distribution
+                          _buildSectionHeader('Historical Periods', Icons.history),
+                          const SizedBox(height: 12),
+                          _buildPeriodDistribution(),
+                          const SizedBox(height: 24),
+
+                          // Data Quality Overview
+                          _buildSectionHeader('Data Quality', Icons.verified),
+                          const SizedBox(height: 12),
+                          _buildDataQuality(),
+                          const SizedBox(height: 24),
+
                           // Detailed Stats Grid
                           _buildSectionHeader('Detailed Statistics', Icons.analytics),
                           const SizedBox(height: 12),
                           _buildDetailedStatsGrid(),
-                          const SizedBox(height: 24),
-
-                          // Productivity Insights
-                          _buildSectionHeader('Insights', Icons.lightbulb_outline),
-                          const SizedBox(height: 12),
-                          _buildInsightsCard(),
                           const SizedBox(height: 24),
 
                           // Session Summary
@@ -115,6 +137,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                 ),
               ],
             ),
+      ),
     );
   }
 
@@ -762,72 +785,200 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     );
   }
 
-  Widget _buildInsightsCard() {
-    final progress = _progressService.progress;
-    final weekTotal = _weeklyStats.fold<int>(0, (sum, s) => sum + s.totalActions);
-    final avgPerDay = _weeklyStats.isNotEmpty
-        ? (weekTotal / _weeklyStats.length).round()
-        : 0;
+  Widget _buildMaterialAnalysis() {
+    // Sample material distribution data
+    final materials = [
+      _MaterialData('Ceramic', 45, const Color(0xFFE57373)),
+      _MaterialData('Stone', 28, const Color(0xFF64B5F6)),
+      _MaterialData('Metal', 15, const Color(0xFFFFD54F)),
+      _MaterialData('Bone', 8, const Color(0xFFAED581)),
+      _MaterialData('Glass', 4, const Color(0xFFBA68C8)),
+    ];
 
-    // Calculate most productive day
-    String mostProductiveDay = 'N/A';
-    int maxActions = 0;
-    final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    for (final stat in _weeklyStats) {
-      if (stat.totalActions > maxActions) {
-        maxActions = stat.totalActions;
-        mostProductiveDay = days[stat.date.weekday - 1];
-      }
-    }
-
-    // Calculate streak status
-    String streakStatus = progress.currentStreak > 0
-        ? '${progress.currentStreak} day streak!'
-        : 'Start a new streak today';
-
-    // Productivity score (0-100)
-    final productivityScore = _calculateProductivityScore();
+    final total = materials.fold(0, (sum, m) => sum + m.count);
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            const Color(0xFFFFC107).withAlpha(30),
-            const Color(0xFFFF9800).withAlpha(20),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white.withAlpha(20),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFFC107).withAlpha(50)),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Column(
+        children: materials.map((m) {
+          final percentage = total > 0 ? (m.count / total) : 0.0;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: m.color,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          m.name,
+                          style: TextStyle(
+                            color: Colors.white.withAlpha(200),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '${m.count} (${(percentage * 100).round()}%)',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: percentage,
+                    backgroundColor: Colors.white.withAlpha(30),
+                    valueColor: AlwaysStoppedAnimation<Color>(m.color),
+                    minHeight: 8,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildPeriodDistribution() {
+    // Sample period distribution data
+    final periods = [
+      _PeriodData('Hellenistic', 32, const Color(0xFF7986CB)),
+      _PeriodData('Roman', 28, const Color(0xFFE57373)),
+      _PeriodData('Byzantine', 18, const Color(0xFF4DB6AC)),
+      _PeriodData('Classical', 15, const Color(0xFFFFB74D)),
+      _PeriodData('Other', 7, const Color(0xFF90A4AE)),
+    ];
+
+    final total = periods.fold(0, (sum, p) => sum + p.count);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
       ),
       child: Column(
         children: [
-          // Productivity Score
-          Row(
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      _getScoreColor(productivityScore),
-                      _getScoreColor(productivityScore).withAlpha(150),
-                    ],
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    '$productivityScore',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+          // Horizontal bar chart
+          SizedBox(
+            height: 40,
+            child: Row(
+              children: periods.map((p) {
+                final width = total > 0 ? (p.count / total) : 0.0;
+                return Expanded(
+                  flex: (width * 100).round().clamp(1, 100),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 1),
+                    decoration: BoxDecoration(
+                      color: p.color,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Legend
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: periods.map((p) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: p.color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${p.name}: ${p.count}',
+                  style: TextStyle(
+                    color: Colors.white.withAlpha(180),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            )).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDataQuality() {
+    // Data quality metrics
+    final quality = [
+      _QualityMetric('GPS Accuracy', 0.85, 'High precision coordinates', const Color(0xFF4CAF50)),
+      _QualityMetric('Photo Coverage', 0.72, 'Photos per finding', const Color(0xFF2196F3)),
+      _QualityMetric('Field Completeness', 0.68, 'Required fields filled', const Color(0xFFFF9800)),
+      _QualityMetric('3D Model Quality', 0.90, 'Reconstruction success', const Color(0xFF9C27B0)),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Column(
+        children: quality.map((q) => Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Row(
+            children: [
+              // Circular progress
+              SizedBox(
+                width: 50,
+                height: 50,
+                child: Stack(
+                  children: [
+                    CircularProgressIndicator(
+                      value: q.score,
+                      strokeWidth: 5,
+                      backgroundColor: Colors.white.withAlpha(30),
+                      valueColor: AlwaysStoppedAnimation<Color>(q.color),
+                    ),
+                    Center(
+                      child: Text(
+                        '${(q.score * 100).round()}%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 16),
@@ -835,122 +986,45 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Productivity Score',
-                      style: TextStyle(
+                    Text(
+                      q.name,
+                      style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
-                      _getScoreMessage(productivityScore),
+                      q.description,
                       style: TextStyle(
-                        color: Colors.white.withAlpha(180),
-                        fontSize: 12,
+                        color: Colors.white.withAlpha(150),
+                        fontSize: 11,
                       ),
                     ),
                   ],
                 ),
               ),
+              // Quality indicator
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: q.color.withAlpha(30),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  q.score >= 0.8 ? 'Excellent' : q.score >= 0.6 ? 'Good' : 'Needs Work',
+                  style: TextStyle(
+                    color: q.color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 16),
-          const Divider(color: Colors.white24),
-          const SizedBox(height: 12),
-          // Insights
-          _buildInsightRow(
-            Icons.local_fire_department,
-            'Current Streak',
-            streakStatus,
-            progress.currentStreak > 0 ? Colors.orange : Colors.grey,
-          ),
-          const SizedBox(height: 10),
-          _buildInsightRow(
-            Icons.star,
-            'Best Day',
-            '$mostProductiveDay ($maxActions actions)',
-            const Color(0xFFFFC107),
-          ),
-          const SizedBox(height: 10),
-          _buildInsightRow(
-            Icons.speed,
-            'Daily Average',
-            '$avgPerDay actions per day',
-            const Color(0xFF4CAF50),
-          ),
-          const SizedBox(height: 10),
-          _buildInsightRow(
-            Icons.emoji_events,
-            'Best Streak',
-            '${progress.longestStreak} days',
-            const Color(0xFF9C27B0),
-          ),
-        ],
+        )).toList(),
       ),
-    );
-  }
-
-  int _calculateProductivityScore() {
-    final today = _progressService.todayStats;
-    final progress = _progressService.progress;
-
-    // Base score from today's activity (0-40)
-    final todayScore = (today.totalActions * 8).clamp(0, 40);
-
-    // Streak bonus (0-30)
-    final streakScore = (progress.currentStreak * 4).clamp(0, 30);
-
-    // Consistency bonus from weekly average (0-30)
-    final weekAvg = _weeklyStats.isNotEmpty
-        ? _weeklyStats.fold<int>(0, (sum, s) => sum + s.totalActions) /
-            _weeklyStats.length
-        : 0;
-    final consistencyScore = (weekAvg * 6).clamp(0, 30).round();
-
-    return (todayScore + streakScore + consistencyScore).clamp(0, 100);
-  }
-
-  Color _getScoreColor(int score) {
-    if (score >= 80) return const Color(0xFF4CAF50);
-    if (score >= 60) return const Color(0xFF8BC34A);
-    if (score >= 40) return const Color(0xFFFFC107);
-    if (score >= 20) return const Color(0xFFFF9800);
-    return const Color(0xFFF44336);
-  }
-
-  String _getScoreMessage(int score) {
-    if (score >= 80) return 'Outstanding work! Keep it up!';
-    if (score >= 60) return 'Great progress this week!';
-    if (score >= 40) return 'Good effort, room to improve';
-    if (score >= 20) return 'Getting started, stay consistent';
-    return 'Time to document some findings!';
-  }
-
-  Widget _buildInsightRow(
-      IconData icon, String label, String value, Color color) {
-    return Row(
-      children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withAlpha(180),
-              fontSize: 13,
-            ),
-          ),
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
     );
   }
 
@@ -1065,4 +1139,29 @@ class _StatItem {
   final String description;
 
   _StatItem(this.label, this.value, this.icon, this.color, this.description);
+}
+
+class _MaterialData {
+  final String name;
+  final int count;
+  final Color color;
+
+  _MaterialData(this.name, this.count, this.color);
+}
+
+class _PeriodData {
+  final String name;
+  final int count;
+  final Color color;
+
+  _PeriodData(this.name, this.count, this.color);
+}
+
+class _QualityMetric {
+  final String name;
+  final double score;
+  final String description;
+  final Color color;
+
+  _QualityMetric(this.name, this.score, this.description, this.color);
 }

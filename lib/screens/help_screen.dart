@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/tutorial_service.dart';
+import '../utils/app_styles.dart';
 
 /// Help and Tutorial Screen
 class HelpScreen extends StatefulWidget {
@@ -31,15 +32,17 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D3A39),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Help & Tutorials'),
+        title: Text('Help & Tutorials', style: AppTextStyles.h3),
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
+        foregroundColor: AppColors.textPrimary,
         elevation: 0,
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: const Color(0xFFFFC107),
+          indicatorColor: AppColors.accent,
+          labelStyle: AppTextStyles.body,
+          unselectedLabelStyle: AppTextStyles.subtitle,
           tabs: const [
             Tab(text: 'Tutorials'),
             Tab(text: 'Help'),
@@ -47,50 +50,55 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
-      body: Column(
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Search help topics...',
-                hintStyle: const TextStyle(color: Colors.white54),
-                prefixIcon: const Icon(Icons.search, color: Colors.white54),
-                filled: true,
-                fillColor: Colors.white.withAlpha(26),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+      body: Container(
+        decoration: AppDecorations.screenBackground,
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Search bar
+              Padding(
+                padding: AppSpacing.screenPadding,
+                child: TextField(
+                  controller: _searchController,
+                  style: AppTextStyles.body,
+                  decoration: InputDecoration(
+                    hintText: 'Search help topics...',
+                    hintStyle: AppTextStyles.subtitle,
+                    prefixIcon: Icon(Icons.search, color: AppColors.textSecondary),
+                    filled: true,
+                    fillColor: AppColors.cardBackground,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+                      borderSide: BorderSide.none,
+                    ),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.clear, color: AppColors.textSecondary),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (value) => setState(() => _searchQuery = value),
                 ),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white54),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                    : null,
               ),
-              onChanged: (value) => setState(() => _searchQuery = value),
-            ),
-          ),
 
-          // Tab content
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildTutorialsTab(),
-                _buildHelpTab(),
-                _buildFAQTab(),
-              ],
-            ),
+              // Tab content
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildTutorialsTab(),
+                    _buildHelpTab(),
+                    _buildFAQTab(),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -199,12 +207,8 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
 
   Widget _buildAboutSection() {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(13),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withAlpha(26)),
-      ),
+      padding: AppSpacing.cardPadding,
+      decoration: AppDecorations.card,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -213,48 +217,32 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
               Container(
                 width: 48,
                 height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFC107).withAlpha(51),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.temple_buddhist, color: Color(0xFFFFC107), size: 28),
+                decoration: AppDecorations.iconContainer(AppColors.accent),
+                child: Icon(Icons.temple_buddhist, color: AppColors.accent, size: AppSizes.iconLarge),
               ),
-              const SizedBox(width: 12),
-              const Expanded(
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'AncientVision',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'Version 1.0.0',
-                      style: TextStyle(color: Colors.white54, fontSize: 13),
-                    ),
+                    Text('AncientVision', style: AppTextStyles.h3),
+                    Text('Version 1.0.0', style: AppTextStyles.subtitleSmall),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          const Text(
+          const SizedBox(height: AppSpacing.lg),
+          Text(
             'AncientVision is developed for the FIRST LEGO League 2024-2025 "Submerged" season. '
             'Designed to help archaeologists and researchers document, analyze, and preserve '
             'underwater and terrestrial archaeological findings.',
-            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+            style: AppTextStyles.subtitle.copyWith(height: 1.5),
           ),
-          const SizedBox(height: 16),
-          const Divider(color: Colors.white24),
-          const SizedBox(height: 12),
-          const Text(
-            'Created with passion by Team Thodoris',
-            style: TextStyle(color: Color(0xFFFFC107), fontSize: 12),
-          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppWidgets.divider(),
+          const SizedBox(height: AppSpacing.md),
+          Text('Created with passion by Team Thodoris', style: AppTextStyles.accentText.copyWith(fontSize: 12)),
         ],
       ),
     );
@@ -312,14 +300,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Text(
-        title,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+      child: Text(title, style: AppTextStyles.h3),
     );
   }
 
@@ -333,44 +314,28 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white.withAlpha(26),
-          borderRadius: BorderRadius.circular(12),
-        ),
+        margin: const EdgeInsets.only(bottom: AppSpacing.md),
+        padding: AppSpacing.cardPadding,
+        decoration: AppDecorations.card,
         child: Row(
           children: [
             Container(
               width: 50,
               height: 50,
-              decoration: BoxDecoration(
-                color: color.withAlpha(51),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 28),
+              decoration: AppDecorations.iconContainer(color),
+              child: Icon(icon, color: color, size: AppSizes.iconLarge),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: AppSpacing.lg),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    description,
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
+                  Text(title, style: AppTextStyles.h4),
+                  Text(description, style: AppTextStyles.subtitleSmall),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: Colors.white54),
+            Icon(Icons.chevron_right, color: AppColors.textSecondary),
           ],
         ),
       ),
@@ -390,35 +355,22 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
     ];
 
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
       children: tips.map((tip) => Container(
         width: (MediaQuery.of(context).size.width - 48) / 2,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFC107).withAlpha(51),
-          borderRadius: BorderRadius.circular(12),
-        ),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: AppDecorations.highlightCard,
         child: Row(
           children: [
-            Icon(tip.$3, color: const Color(0xFFFFC107), size: 20),
-            const SizedBox(width: 8),
+            Icon(tip.$3, color: AppColors.accent, size: AppSizes.iconMedium),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    tip.$1,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    tip.$2,
-                    style: const TextStyle(color: Colors.white54, fontSize: 10),
-                  ),
+                  Text(tip.$1, style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.bold)),
+                  Text(tip.$2, style: AppTextStyles.caption),
                 ],
               ),
             ),
@@ -430,19 +382,12 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
 
   Widget _buildCategoryHeader(HelpCategory category) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       child: Row(
         children: [
-          Icon(category.icon, color: const Color(0xFFFFC107), size: 20),
-          const SizedBox(width: 8),
-          Text(
-            category.label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Icon(category.icon, color: AppColors.accent, size: AppSizes.iconMedium),
+          const SizedBox(width: AppSpacing.sm),
+          Text(category.label, style: AppTextStyles.h4),
         ],
       ),
     );
@@ -452,21 +397,13 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
     return GestureDetector(
       onTap: () => _showArticle(article),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white.withAlpha(13),
-          borderRadius: BorderRadius.circular(12),
-        ),
+        margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+        padding: AppSpacing.cardPadding,
+        decoration: AppDecorations.section,
         child: Row(
           children: [
-            Expanded(
-              child: Text(
-                article.title,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: Colors.white54, size: 20),
+            Expanded(child: Text(article.title, style: AppTextStyles.body)),
+            Icon(Icons.chevron_right, color: AppColors.textSecondary, size: AppSizes.iconMedium),
           ],
         ),
       ),
@@ -475,25 +412,16 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
 
   Widget _buildFAQCard(FAQItem faq) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(26),
-        borderRadius: BorderRadius.circular(12),
-      ),
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      decoration: AppDecorations.card,
       child: ExpansionTile(
-        title: Text(
-          faq.question,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
-        ),
-        iconColor: Colors.white54,
-        collapsedIconColor: Colors.white54,
+        title: Text(faq.question, style: AppTextStyles.body),
+        iconColor: AppColors.textSecondary,
+        collapsedIconColor: AppColors.textSecondary,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              faq.answer,
-              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
-            ),
+            padding: AppSpacing.cardPadding,
+            child: Text(faq.answer, style: AppTextStyles.subtitle.copyWith(height: 1.5)),
           ),
         ],
       ),
@@ -501,30 +429,14 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
   }
 
   Widget _buildEmptySearch() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.search_off, size: 60, color: Colors.white.withAlpha(77)),
-          const SizedBox(height: 16),
-          Text(
-            'No results found',
-            style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 16),
-          ),
-          Text(
-            'Try a different search term',
-            style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 14),
-          ),
-        ],
-      ),
-    );
+    return AppWidgets.emptyState(Icons.search_off, 'No results found\nTry a different search term');
   }
 
   void _showTutorial(List<TutorialStep> steps) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1C2523),
+      backgroundColor: AppColors.primaryDark,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -538,7 +450,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1C2523),
+      backgroundColor: AppColors.primaryDark,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -549,38 +461,21 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
         expand: false,
         builder: (context, scrollController) => SingleChildScrollView(
           controller: scrollController,
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(AppSpacing.xl),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(article.category.icon, color: const Color(0xFFFFC107)),
-                  const SizedBox(width: 8),
-                  Text(
-                    article.category.label,
-                    style: const TextStyle(color: Color(0xFFFFC107)),
-                  ),
+                  Icon(article.category.icon, color: AppColors.accent),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(article.category.label, style: AppTextStyles.accentText),
                 ],
               ),
-              const SizedBox(height: 12),
-              Text(
-                article.title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                article.content,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  height: 1.6,
-                ),
-              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(article.title, style: AppTextStyles.h2),
+              const SizedBox(height: AppSpacing.xl),
+              Text(article.content, style: AppTextStyles.bodyLarge.copyWith(height: 1.6)),
             ],
           ),
         ),
@@ -617,7 +512,7 @@ class _TutorialViewerState extends State<_TutorialViewer> {
         children: [
           // Progress indicator
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Row(
               children: List.generate(
                 widget.steps.length,
@@ -626,9 +521,7 @@ class _TutorialViewerState extends State<_TutorialViewer> {
                     height: 4,
                     margin: const EdgeInsets.symmetric(horizontal: 2),
                     decoration: BoxDecoration(
-                      color: index <= _currentStep
-                          ? const Color(0xFFFFC107)
-                          : Colors.white.withAlpha(51),
+                      color: index <= _currentStep ? AppColors.accent : AppColors.cardBorder,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -646,37 +539,22 @@ class _TutorialViewerState extends State<_TutorialViewer> {
               itemBuilder: (context, index) {
                 final step = widget.steps[index];
                 return Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(AppSpacing.xxl),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
                         width: 80,
                         height: 80,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFC107).withAlpha(51),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(step.icon, color: const Color(0xFFFFC107), size: 40),
+                        decoration: AppDecorations.circleBadge(AppColors.accent),
+                        child: Icon(step.icon, color: AppColors.accent, size: AppSizes.iconXLarge),
                       ),
-                      const SizedBox(height: 24),
-                      Text(
-                        step.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppSpacing.xxl),
+                      Text(step.title, style: AppTextStyles.h2, textAlign: TextAlign.center),
+                      const SizedBox(height: AppSpacing.md),
                       Text(
                         step.description,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 15,
-                          height: 1.5,
-                        ),
+                        style: AppTextStyles.subtitle.copyWith(height: 1.5),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -688,19 +566,19 @@ class _TutorialViewerState extends State<_TutorialViewer> {
 
           // Navigation
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Skip'),
+                  child: Text('Skip', style: AppTextStyles.button.copyWith(color: AppColors.textSecondary)),
                 ),
                 Row(
                   children: [
                     if (_currentStep > 0)
                       IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
                         onPressed: () {
                           _pageController.previousPage(
                             duration: const Duration(milliseconds: 300),
@@ -708,7 +586,7 @@ class _TutorialViewerState extends State<_TutorialViewer> {
                           );
                         },
                       ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: AppSpacing.sm),
                     ElevatedButton(
                       onPressed: () {
                         if (_currentStep < widget.steps.length - 1) {
@@ -721,14 +599,13 @@ class _TutorialViewerState extends State<_TutorialViewer> {
                         }
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFC107),
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: AppColors.primary,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
                         ),
                       ),
-                      child: Text(
-                        _currentStep < widget.steps.length - 1 ? 'Next' : 'Done',
-                      ),
+                      child: Text(_currentStep < widget.steps.length - 1 ? 'Next' : 'Done'),
                     ),
                   ],
                 ),

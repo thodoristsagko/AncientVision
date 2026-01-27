@@ -6,6 +6,7 @@ import '../services/voice_service.dart';
 import '../services/progress_service.dart';
 import '../services/cloud_database_service.dart';
 import '../services/weather_service.dart';
+import '../utils/app_styles.dart';
 
 /// Field Journal Screen for daily documentation
 /// Hybrid: Cloud (Firestore) when logged in, local (SharedPreferences) always as cache
@@ -330,11 +331,11 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D3A39),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Field Journal'),
+        title: Text('Field Journal', style: AppTextStyles.h3),
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
+        foregroundColor: AppColors.textPrimary,
         elevation: 0,
         actions: [
           // Weather indicator
@@ -345,19 +346,18 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF87CEEB).withAlpha(40),
+                  color: AppColors.info.withAlpha(40),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.wb_sunny, color: Color(0xFF87CEEB), size: 16),
+                    Icon(Icons.wb_sunny, color: AppColors.info, size: 16),
                     const SizedBox(width: 4),
                     Text(
                       _currentWeather!.temperatureString,
-                      style: const TextStyle(
-                        color: Color(0xFF87CEEB),
-                        fontSize: 12,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.info,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -375,16 +375,22 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
-          : _entries.isEmpty
-              ? _buildEmptyState()
-              : _buildJournalList(),
+      body: Container(
+        decoration: AppDecorations.screenBackground,
+        child: SafeArea(
+          child: _isLoading
+              ? AppWidgets.loading()
+              : _entries.isEmpty
+                  ? _buildEmptyState()
+                  : _buildJournalList(),
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showNewEntryDialog(),
-        backgroundColor: const Color(0xFFFFC107),
+        backgroundColor: AppColors.accent,
+        foregroundColor: AppColors.primary,
         icon: const Icon(Icons.add),
-        label: const Text('New Entry'),
+        label: Text('New Entry', style: AppTextStyles.button.copyWith(color: AppColors.primary)),
       ),
     );
   }
@@ -394,24 +400,14 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.book_outlined,
-            size: 80,
-            color: Colors.white.withAlpha(77),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No journal entries yet',
-            style: TextStyle(
-              color: Colors.white.withAlpha(179),
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 8),
+          Icon(Icons.book_outlined, size: 80, color: AppColors.textHint),
+          const SizedBox(height: AppSpacing.lg),
+          Text('No journal entries yet', style: AppTextStyles.h3.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             'Start documenting your fieldwork',
             style: TextStyle(
-              color: Colors.white.withAlpha(128),
+              color: AppColors.textHint,
               fontSize: 14,
             ),
           ),

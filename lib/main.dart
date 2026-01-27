@@ -37,9 +37,13 @@ import 'screens/field_journal_screen.dart';
 import 'screens/quick_capture_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
+import 'screens/finds_register_screen.dart';
+import 'screens/harris_matrix_screen.dart';
+import 'screens/photo_register_screen.dart';
 import 'services/export_service.dart';
 import 'services/biometric_service.dart';
 import 'services/background_service.dart';
+import 'services/settings_service.dart';
 import 'widgets/offline_indicator.dart';
 
 // ============================================================
@@ -58,13 +62,56 @@ void main() async {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final _settingsService = SettingsService();
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initSettings();
+  }
+
+  Future<void> _initSettings() async {
+    await _settingsService.initialize();
+    _settingsService.addListener(_onSettingsChanged);
+    if (mounted) setState(() => _initialized = true);
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _settingsService.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (!_initialized) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0D3A39),
+          body: const Center(
+            child: CircularProgressIndicator(color: Color(0xFFFFC107)),
+          ),
+        ),
+      );
+    }
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: _settingsService.getThemeData(MediaQuery.platformBrightnessOf(context)),
       home: StreamBuilder<User?>(
         stream: AuthService.authStateChanges,
         builder: (context, snapshot) {
@@ -3938,11 +3985,17 @@ class _FindingsMap extends StatefulWidget {
 
 class _FindingsMapState extends State<_FindingsMap> {
   MapController? _mapController;
+  String _locationName = 'Archaeological Site';
+  bool _isLoadingLocation = false;
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
+    // Load initial location name
+    if (widget.findings.isNotEmpty) {
+      _reverseGeocode(widget.findings.first.latitude, widget.findings.first.longitude);
+    }
   }
 
   @override
@@ -3955,6 +4008,52 @@ class _FindingsMapState extends State<_FindingsMap> {
         LatLng(selected.latitude, selected.longitude),
         17.5,
       );
+      // Update location name for the new position
+      _reverseGeocode(selected.latitude, selected.longitude);
+    }
+  }
+
+  Future<void> _reverseGeocode(double lat, double lon) async {
+    if (_isLoadingLocation) return;
+    setState(() => _isLoadingLocation = true);
+
+    try {
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1',
+      );
+      final response = await http.get(url, headers: {
+        'User-Agent': 'AncientVision-FLL-App/1.0',
+      });
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final address = data['address'] as Map<String, dynamic>?;
+
+        // Try to get a meaningful location name
+        String name = data['name'] as String? ?? '';
+        if (name.isEmpty) {
+          name = address?['historic'] as String? ??
+                 address?['tourism'] as String? ??
+                 address?['archaeological_site'] as String? ??
+                 address?['amenity'] as String? ??
+                 address?['suburb'] as String? ??
+                 address?['neighbourhood'] as String? ??
+                 address?['village'] as String? ??
+                 address?['town'] as String? ??
+                 address?['city'] as String? ??
+                 'Archaeological Site';
+        }
+
+        if (mounted) {
+          setState(() => _locationName = name);
+        }
+      }
+    } catch (e) {
+      // Keep the default name on error
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingLocation = false);
+      }
     }
   }
 
@@ -4056,7 +4155,7 @@ class _FindingsMapState extends State<_FindingsMap> {
           ],
         ),
 
-        // Map label overlay
+        // Map label overlay - dynamic location name
         Positioned(
           top: 12,
           left: 12,
@@ -4066,13 +4165,30 @@ class _FindingsMapState extends State<_FindingsMap> {
               color: Colors.black.withOpacity(0.7),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Text(
-              'Ancient Agora Site',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isLoadingLocation)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 6),
+                    child: SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
+                      ),
+                    ),
+                  ),
+                Text(
+                  _locationName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -4367,6 +4483,16 @@ class _ToolsView extends StatelessWidget {
                       const SizedBox(height: 12),
                       _buildToolGrid(context, [
                         _ToolCard(
+                          icon: Icons.account_tree_rounded,
+                          title: 'Harris Matrix',
+                          description: 'Stratigraphic diagram',
+                          color: const Color(0xFF4CAF50),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const HarrisMatrixScreen()),
+                          ),
+                        ),
+                        _ToolCard(
                           icon: Icons.auto_awesome_rounded,
                           title: 'AI Recognition',
                           description: 'Identify artifact type and period',
@@ -4382,7 +4508,30 @@ class _ToolsView extends StatelessWidget {
                       // === DATA & REPORTS ===
                       _buildCategoryHeader('Data & Reports'),
                       const SizedBox(height: 12),
+                      // Finds Register - Big Button (Main feature of Data)
+                      _buildBigToolButton(
+                        context,
+                        icon: Icons.inventory_2_rounded,
+                        title: 'Finds Register',
+                        description: 'Museum-standard artifact cataloging with sequential numbering',
+                        color: const Color(0xFF8D6E63),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const FindsRegisterScreen()),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       _buildToolGrid(context, [
+                        _ToolCard(
+                          icon: Icons.photo_library_rounded,
+                          title: 'Photo Register',
+                          description: 'Photo documentation',
+                          color: const Color(0xFF9C27B0),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PhotoRegisterScreen()),
+                          ),
+                        ),
                         _ToolCard(
                           icon: Icons.insights_rounded,
                           title: 'Analytics',
@@ -4393,6 +4542,9 @@ class _ToolsView extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
                           ),
                         ),
+                      ]),
+                      const SizedBox(height: 12),
+                      _buildToolGrid(context, [
                         _ToolCard(
                           icon: Icons.file_download_rounded,
                           title: 'Export Data',

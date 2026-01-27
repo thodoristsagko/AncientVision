@@ -18,6 +18,11 @@ Complete documentation of all features and capabilities.
 10. [Field Journal](#10-field-journal)
 11. [Offline Support](#11-offline-support)
 12. [Settings & Customization](#12-settings--customization)
+13. [Finds Register](#13-finds-register)
+14. [Harris Matrix Visualization](#14-harris-matrix-visualization)
+15. [Photo Register](#15-photo-register)
+16. [Quick Capture](#16-quick-capture)
+17. [Data Validation](#17-data-validation)
 
 ---
 
@@ -573,6 +578,230 @@ Digital excavation diary for daily observations and notes.
 
 ---
 
+## 13. Finds Register
+
+Museum-standard archaeological artifact cataloging system for professional documentation.
+
+### Categories
+| Category | Prefix | Description |
+|----------|--------|-------------|
+| Small Find | SF | Individual artifacts requiring special attention |
+| Bulk Find | BF | Common materials (pottery sherds, bones) |
+| Sample | SA | Soil, carbon, flotation samples |
+| Special Find | SP | Significant or unique discoveries |
+
+### Entry Fields
+| Field | Description | Example |
+|-------|-------------|---------|
+| Find Number | Auto-generated sequential ID | SF001, BF042 |
+| Context Number | Link to stratigraphic context | CTX-105 |
+| Category | Classification type | Small Find |
+| Material | Primary material | Bronze |
+| Description | Detailed notes | Free text |
+| Condition | Preservation state | Good |
+| Storage Location | Museum box/bag number | Box A-15 |
+| X/Y/Z Coordinates | Position within trench | 2.5, 3.2, -1.8 |
+
+### Features
+- **Auto-Sequential Numbering** - Separate sequences per category
+- **Context Linking** - Associate finds with stratigraphic contexts
+- **Flag System** - Mark important or problematic entries
+- **Review Status** - Track processing workflow
+- **Photo Attachment** - Multiple images per find
+- **CSV Export** - Museum-compatible format
+- **QR Code Generation** - For physical labels
+
+### Conservation Tracking
+| Status | Description |
+|--------|-------------|
+| Stable | No treatment needed |
+| At Risk | Requires monitoring |
+| Treated | Conservation completed |
+| Pending | Awaiting assessment |
+
+---
+
+## 14. Harris Matrix Visualization
+
+Interactive stratigraphic relationship diagram following the Harris Matrix method.
+
+### What is Harris Matrix?
+The Harris Matrix is a tool for displaying stratigraphic relationships developed by Edward Harris. It shows the relative chronological sequence of archaeological contexts.
+
+### Relationship Types
+| Type | Line Style | Meaning |
+|------|------------|---------|
+| Above/Below | Solid | Stratigraphic superposition |
+| Cuts/Cut By | Dashed | Intrusive relationship |
+| Fills/Filled By | Dotted | Fill deposit relationship |
+
+### Visualization Features
+- **Auto-Layout Algorithm** - Topological sorting for vertical arrangement
+- **Interactive Canvas** - Zoom, pan, and explore
+- **Color-Coded Nodes** - Context types distinguished by color
+- **Tap to View** - Select any context for details
+- **Real-Time Updates** - Changes reflect immediately
+
+### Context Types (Colors)
+| Type | Color | Description |
+|------|-------|-------------|
+| Deposit | Brown | Natural accumulation |
+| Cut | Red | Negative feature |
+| Fill | Orange | Material filling a cut |
+| Structure | Blue | Built feature |
+| Surface | Green | Activity surface |
+
+### Export
+- **PNG Image** - High-resolution diagram for reports
+- **Print Ready** - Formatted for publication
+
+---
+
+## 15. Photo Register
+
+Professional archaeological photo documentation and cataloging system.
+
+### Photo Subjects
+| Subject | Code | Description |
+|---------|------|-------------|
+| Context | CTX | Stratigraphic layer or feature |
+| Find | FND | Individual artifact |
+| Section | SEC | Vertical profile |
+| Plan | PLN | Overhead/plan view |
+| Working Shot | WRK | Work in progress |
+| Overview | OVW | General site view |
+| Detail | DTL | Close-up detail |
+| With Scale | SCL | Photo with scale bar |
+
+### Photo Entry Fields
+| Field | Description |
+|-------|-------------|
+| Photo Number | Sequential ID (P001, P002...) |
+| Date Taken | Capture timestamp |
+| Taken By | Photographer name |
+| Subject | Photo type classification |
+| Direction | Camera orientation (N/S/E/W/Vertical) |
+| Context Link | Associated context ID |
+| Find Link | Associated find ID |
+| Description | Photo caption |
+| Scale (mm) | Scale bar measurement |
+| GPS | Latitude/Longitude |
+
+### Features
+- **Thumbnail Grid** - Visual browse all photos
+- **Filter System** - By subject, context, date
+- **Auto-Numbering** - Sequential photo numbers
+- **Context Linking** - Associate with contexts/finds
+- **Search** - Find photos by number, description
+- **Statistics** - Total, needs review, GPS count
+- **CSV Export** - Standard format for archives
+
+---
+
+## 16. Quick Capture
+
+Simplified single-photo documentation for rapid field recording.
+
+### Purpose
+Quick capture provides a streamlined workflow for documenting finds without full form completion. Ideal for:
+- Initial discovery documentation
+- Rapid site surveys
+- In-situ photography before excavation
+- Time-sensitive situations
+
+### Capture Workflow
+1. **Take Photo** - Single tap capture
+2. **Review** - Verify image quality
+3. **Select Type** - Choose artifact category
+4. **Add Description** - Optional notes
+5. **Auto GPS** - Location captured automatically
+6. **Save** - Store to database
+
+### Artifact Types
+| Type | Icon | Color |
+|------|------|-------|
+| Pottery | Amphora | Orange |
+| Bone | Bone | Cream |
+| Metal | Shield | Gray |
+| Stone | Mountain | Brown |
+| Glass | Wine Glass | Cyan |
+| Organic | Leaf | Green |
+| Coin | Circle | Gold |
+| Jewelry | Diamond | Purple |
+| Architecture | Building | Blue |
+| Other | Question | Gray |
+
+### Features
+- **One-Tap Capture** - Minimal interface
+- **Auto GPS** - Location embedded
+- **Type Classification** - Quick category selection
+- **Optional Description** - Add notes if needed
+- **Retake Option** - Easy redo before saving
+- **Integration** - Links to full documentation system
+
+---
+
+## 17. Data Validation
+
+Automatic data quality checks ensuring documentation completeness and accuracy.
+
+### Validation Levels
+| Level | Icon | Action |
+|-------|------|--------|
+| Error | Red X | Blocks saving |
+| Warning | Orange ! | Allows save with notice |
+| Info | Blue i | Suggestion only |
+
+### Finding Validation
+**Required Fields (Errors):**
+- Name
+- Type
+
+**Recommended Fields (Warnings):**
+- Context number
+- GPS coordinates
+- Photo attachment
+- Description
+- Material
+- Historical period
+
+### Context Sheet Validation
+**Required Fields:**
+- Context number
+- Context type
+
+**Recommended Fields:**
+- Interpretation
+- Top elevation
+- Stratigraphic relationships
+
+### Finds Register Validation
+**Required Fields:**
+- Find number
+- Category
+
+**Recommended Fields:**
+- Context number
+- Storage location
+- Date found
+
+### Completeness Score
+| Score | Rating | Color |
+|-------|--------|-------|
+| 90-100% | Excellent | Green |
+| 70-89% | Good | Light Green |
+| 50-69% | Fair | Orange |
+| 0-49% | Incomplete | Red |
+
+### Validation Dialog
+When saving incomplete records:
+- Shows completeness percentage
+- Lists all errors (must fix)
+- Lists all warnings (recommendations)
+- "Fix Issues" or "Save Anyway" options
+
+---
+
 ## Feature Matrix
 
 | Feature | Status | Notes |
@@ -591,4 +820,9 @@ Digital excavation diary for daily observations and notes.
 | Voice Commands | ✅ Complete | Speech-to-text |
 | Biometric Auth | ✅ Complete | Fingerprint/Face |
 | Settings Sync | ✅ Complete | Cross-device |
+| Finds Register | ✅ Complete | Museum-standard cataloging |
+| Harris Matrix | ✅ Complete | Interactive visualization |
+| Photo Register | ✅ Complete | Professional photo docs |
+| Quick Capture | ✅ Complete | Simplified single-photo |
+| Data Validation | ✅ Complete | Quality checks |
 | AI Recognition | 🔄 Coming Soon | In development |
