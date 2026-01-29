@@ -37,9 +37,6 @@ import 'screens/field_journal_screen.dart';
 import 'screens/quick_capture_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
-import 'screens/finds_register_screen.dart';
-import 'screens/harris_matrix_screen.dart';
-import 'screens/photo_register_screen.dart';
 import 'services/export_service.dart';
 import 'services/biometric_service.dart';
 import 'services/background_service.dart';
@@ -143,14 +140,52 @@ class _BiometricGate extends StatefulWidget {
   State<_BiometricGate> createState() => _BiometricGateState();
 }
 
-class _BiometricGateState extends State<_BiometricGate> {
+class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObserver {
   bool _isChecking = true;
   bool _showBiometricLock = false;
+  bool _wasInBackground = false;
+  DateTime? _backgroundTime;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkBiometric();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    if (state == AppLifecycleState.paused) {
+      // App going to background
+      _wasInBackground = true;
+      _backgroundTime = DateTime.now();
+    } else if (state == AppLifecycleState.resumed && _wasInBackground) {
+      // App returning from background - check if we need to re-authenticate
+      _wasInBackground = false;
+      _checkBiometricOnResume();
+    }
+  }
+
+  Future<void> _checkBiometricOnResume() async {
+    // Only require re-auth if app was in background for more than 30 seconds
+    if (_backgroundTime != null) {
+      final elapsed = DateTime.now().difference(_backgroundTime!);
+      if (elapsed.inSeconds > 30) {
+        final biometricService = BiometricService();
+        final shouldShow = await biometricService.shouldShowBiometricLock();
+        if (shouldShow && mounted) {
+          setState(() => _showBiometricLock = true);
+        }
+      }
+    }
   }
 
   Future<void> _checkBiometric() async {
@@ -1625,8 +1660,8 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
 
               const SizedBox(height: 12),
 
-              // ACTIVE SITES full width
-              const _FullStatCard(title: 'Active Sites', value: '3'),
+              // ACTIVE DEVICES full width - shows connected BLE devices
+              const _ActiveDevicesCard(),
 
               const SizedBox(height: 12),
 
@@ -1971,16 +2006,16 @@ class _FullStatCard extends StatelessWidget {
           height: 120,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.35)),
+            border: Border.all(color: Colors.white.withAlpha(90)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.85),
+                    color: Colors.white.withAlpha(217),
                     fontSize: 14,
                   )),
               const Spacer(),
@@ -1990,6 +2025,145 @@ class _FullStatCard extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 36,
                   fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dynamic Active Devices card that shows connected BLE devices
+class _ActiveDevicesCard extends StatefulWidget {
+  const _ActiveDevicesCard({super.key});
+
+  @override
+  State<_ActiveDevicesCard> createState() => _ActiveDevicesCardState();
+}
+
+class _ActiveDevicesCardState extends State<_ActiveDevicesCard> {
+  int _connectedCount = 0;
+  String _deviceName = '';
+  late StreamSubscription<List<BluetoothDevice>> _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkConnectedDevices();
+    // Listen for connection changes
+    _subscription = Stream.periodic(const Duration(seconds: 2))
+        .asyncMap((_) => FlutterBluePlus.connectedDevices)
+        .listen((devices) {
+      if (mounted) {
+        setState(() {
+          _connectedCount = devices.length;
+          _deviceName = devices.isNotEmpty ? (devices.first.platformName.isNotEmpty ? devices.first.platformName : 'M5StickC') : '';
+        });
+      }
+    });
+  }
+
+  Future<void> _checkConnectedDevices() async {
+    try {
+      final devices = await FlutterBluePlus.connectedDevices;
+      if (mounted) {
+        setState(() {
+          _connectedCount = devices.length;
+          _deviceName = devices.isNotEmpty ? (devices.first.platformName.isNotEmpty ? devices.first.platformName : 'M5StickC') : '';
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking connected devices: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isConnected = _connectedCount > 0;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          width: double.infinity,
+          height: 120,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isConnected
+                  ? [const Color(0xFF4CAF50).withAlpha(40), const Color(0xFF4CAF50).withAlpha(20)]
+                  : [Colors.white.withAlpha(26), Colors.white.withAlpha(13)],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isConnected ? const Color(0xFF4CAF50).withAlpha(150) : Colors.white.withAlpha(90),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('Active Devices',
+                            style: TextStyle(
+                              color: Colors.white.withAlpha(217),
+                              fontSize: 14,
+                            )),
+                        const SizedBox(width: 8),
+                        if (isConnected)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4CAF50).withAlpha(80),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text('LIVE', style: TextStyle(color: Color(0xFF4CAF50), fontSize: 10, fontWeight: FontWeight.w700)),
+                          ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      '$_connectedCount',
+                      style: TextStyle(
+                        color: isConnected ? const Color(0xFF4CAF50) : Colors.white,
+                        fontSize: 36,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (_deviceName.isNotEmpty)
+                      Text(
+                        _deviceName,
+                        style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isConnected
+                      ? const Color(0xFF4CAF50).withAlpha(50)
+                      : Colors.white.withAlpha(20),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                  color: isConnected ? const Color(0xFF4CAF50) : Colors.white.withAlpha(150),
+                  size: 28,
                 ),
               ),
             ],
@@ -4483,16 +4657,6 @@ class _ToolsView extends StatelessWidget {
                       const SizedBox(height: 12),
                       _buildToolGrid(context, [
                         _ToolCard(
-                          icon: Icons.account_tree_rounded,
-                          title: 'Harris Matrix',
-                          description: 'Stratigraphic diagram',
-                          color: const Color(0xFF4CAF50),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const HarrisMatrixScreen()),
-                          ),
-                        ),
-                        _ToolCard(
                           icon: Icons.auto_awesome_rounded,
                           title: 'AI Recognition',
                           description: 'Identify artifact type and period',
@@ -4508,30 +4672,7 @@ class _ToolsView extends StatelessWidget {
                       // === DATA & REPORTS ===
                       _buildCategoryHeader('Data & Reports'),
                       const SizedBox(height: 12),
-                      // Finds Register - Big Button (Main feature of Data)
-                      _buildBigToolButton(
-                        context,
-                        icon: Icons.inventory_2_rounded,
-                        title: 'Finds Register',
-                        description: 'Museum-standard artifact cataloging with sequential numbering',
-                        color: const Color(0xFF8D6E63),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const FindsRegisterScreen()),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
                       _buildToolGrid(context, [
-                        _ToolCard(
-                          icon: Icons.photo_library_rounded,
-                          title: 'Photo Register',
-                          description: 'Photo documentation',
-                          color: const Color(0xFF9C27B0),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const PhotoRegisterScreen()),
-                          ),
-                        ),
                         _ToolCard(
                           icon: Icons.insights_rounded,
                           title: 'Analytics',
@@ -4542,9 +4683,6 @@ class _ToolsView extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
                           ),
                         ),
-                      ]),
-                      const SizedBox(height: 12),
-                      _buildToolGrid(context, [
                         _ToolCard(
                           icon: Icons.file_download_rounded,
                           title: 'Export Data',
@@ -8109,71 +8247,134 @@ class _SensorHistoryGraphCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withAlpha(25),
+                Colors.white.withAlpha(13),
+              ],
+            ),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.35), width: 1),
+            border: Border.all(color: Colors.white.withAlpha(90), width: 1),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Text('Sensor History', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00BCD4).withAlpha(50),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.show_chart_rounded, color: Color(0xFF00BCD4), size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text('Sensor History', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.teal, width: 1),
+                      gradient: LinearGradient(
+                        colors: [Colors.green.withAlpha(100), Colors.green.withAlpha(50)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.withAlpha(150), width: 1),
                     ),
-                    child: const Text('Live', style: TextStyle(color: Colors.teal, fontSize: 10, fontWeight: FontWeight.w600)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 5),
+                        const Text('Live', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text('Updates every 10 seconds from Firebase', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11)),
-              const SizedBox(height: 12),
-              // Legend row - outside the graph
+              const SizedBox(height: 6),
+              Text('Real-time environmental monitoring', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
+              const SizedBox(height: 16),
+              // Legend row with improved styling
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Container(width: 12, height: 3, color: Colors.blue),
-                      const SizedBox(width: 6),
-                      const Text('Moisture %', style: TextStyle(color: Colors.blue, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Container(width: 12, height: 3, color: Colors.red),
-                      const SizedBox(width: 6),
-                      const Text('Vibration g', style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
+                  _buildLegendItem(const Color(0xFF42A5F5), 'Moisture'),
+                  const SizedBox(width: 24),
+                  _buildLegendItem(const Color(0xFFEF5350), 'Vibration'),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               if (sensorHistory.isEmpty)
                 Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Text('Waiting for data...', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                    padding: const EdgeInsets.all(30),
+                    child: Column(
+                      children: [
+                        Icon(Icons.sensors_off_rounded, color: Colors.white.withAlpha(100), size: 32),
+                        const SizedBox(height: 8),
+                        Text('Waiting for sensor data...', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 13)),
+                      ],
+                    ),
                   ),
                 )
               else
-                SizedBox(
-                  height: 140,
-                  child: CustomPaint(
-                    size: const Size(double.infinity, 140),
-                    painter: _SensorGraphPainter(sensorHistory),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Y-axis labels
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('100%', style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 9)),
+                        const SizedBox(height: 28),
+                        Text('50%', style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 9)),
+                        const SizedBox(height: 28),
+                        Text('0%', style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 9)),
+                      ],
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SizedBox(
+                        height: 120,
+                        child: CustomPaint(
+                          size: const Size(double.infinity, 120),
+                          painter: _SensorGraphPainter(sensorHistory),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 20,
+          height: 4,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+            boxShadow: [BoxShadow(color: color.withAlpha(100), blurRadius: 4)],
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+      ],
     );
   }
 }
@@ -8187,58 +8388,137 @@ class _SensorGraphPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
 
-    // Add padding so lines don't touch elements above
-    const double topPadding = 12.0;
-    final double graphHeight = size.height - topPadding;
+    const double leftPadding = 0;
+    const double rightPadding = 0;
+    const double topPadding = 8.0;
+    const double bottomPadding = 4.0;
+    final double graphWidth = size.width - leftPadding - rightPadding;
+    final double graphHeight = size.height - topPadding - bottomPadding;
 
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
+    // Draw subtle grid lines
     final gridPaint = Paint()
-      ..color = Colors.white.withOpacity(0.1)
+      ..color = Colors.white.withAlpha(20)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
-    // Draw grid lines (within padded area)
     for (int i = 0; i <= 4; i++) {
       final y = topPadding + (graphHeight * i / 4);
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+      canvas.drawLine(Offset(leftPadding, y), Offset(size.width - rightPadding, y), gridPaint);
     }
 
-    // Find max values for scaling
-    double maxVibration = 1.0; // Max 1g
-    double maxMoisture = 100.0; // Max 100%
+    // Max values for scaling
+    const double maxVibration = 1.0;
+    const double maxMoisture = 100.0;
 
-    // Draw moisture line (blue) - with top padding
-    paint.color = Colors.blue;
-    final moisturePath = ui.Path();
+    // Colors
+    const moistureColor = Color(0xFF42A5F5);
+    const vibrationColor = Color(0xFFEF5350);
+
+    // Draw moisture area fill and line
+    _drawSmoothLineWithFill(
+      canvas, size, data, 'moisture', maxMoisture,
+      moistureColor, topPadding, bottomPadding, leftPadding, graphWidth, graphHeight,
+    );
+
+    // Draw vibration area fill and line (scaled to percentage)
+    _drawSmoothLineWithFill(
+      canvas, size, data, 'vibration', maxVibration,
+      vibrationColor, topPadding, bottomPadding, leftPadding, graphWidth, graphHeight,
+    );
+
+    // Draw data points
+    _drawDataPoints(canvas, data, 'moisture', maxMoisture, moistureColor, topPadding, leftPadding, graphWidth, graphHeight);
+    _drawDataPoints(canvas, data, 'vibration', maxVibration, vibrationColor, topPadding, leftPadding, graphWidth, graphHeight);
+  }
+
+  void _drawSmoothLineWithFill(
+    Canvas canvas, Size size, List<Map<String, dynamic>> data, String key, double maxValue,
+    Color color, double topPadding, double bottomPadding, double leftPadding, double graphWidth, double graphHeight,
+  ) {
+    if (data.length < 2) return;
+
+    final points = <Offset>[];
     for (int i = 0; i < data.length; i++) {
-      final x = size.width * i / (data.length - 1);
-      final moisture = (data[i]['moisture'] as num?)?.toDouble() ?? 0.0;
-      final y = topPadding + graphHeight - (graphHeight * moisture / maxMoisture);
+      final x = leftPadding + (graphWidth * i / (data.length - 1));
+      final value = (data[i][key] as num?)?.toDouble() ?? 0.0;
+      final y = topPadding + graphHeight - (graphHeight * value / maxValue);
+      points.add(Offset(x, y));
+    }
+
+    // Create smooth path using quadratic bezier curves
+    final linePath = ui.Path();
+    linePath.moveTo(points[0].dx, points[0].dy);
+
+    for (int i = 0; i < points.length - 1; i++) {
+      final current = points[i];
+      final next = points[i + 1];
+      final midX = (current.dx + next.dx) / 2;
+      final midY = (current.dy + next.dy) / 2;
+
       if (i == 0) {
-        moisturePath.moveTo(x, y);
+        linePath.quadraticBezierTo(current.dx, current.dy, midX, midY);
       } else {
-        moisturePath.lineTo(x, y);
+        linePath.quadraticBezierTo(current.dx, current.dy, midX, midY);
       }
     }
-    canvas.drawPath(moisturePath, paint);
+    linePath.lineTo(points.last.dx, points.last.dy);
 
-    // Draw vibration line (red) - with top padding
-    paint.color = Colors.red;
-    final vibrationPath = ui.Path();
-    for (int i = 0; i < data.length; i++) {
-      final x = size.width * i / (data.length - 1);
-      final vibration = (data[i]['vibration'] as num?)?.toDouble() ?? 0.0;
-      final y = topPadding + graphHeight - (graphHeight * vibration / maxVibration);
-      if (i == 0) {
-        vibrationPath.moveTo(x, y);
-      } else {
-        vibrationPath.lineTo(x, y);
-      }
+    // Draw gradient fill
+    final fillPath = ui.Path.from(linePath);
+    fillPath.lineTo(leftPadding + graphWidth, topPadding + graphHeight);
+    fillPath.lineTo(leftPadding, topPadding + graphHeight);
+    fillPath.close();
+
+    final fillPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, topPadding),
+        Offset(0, topPadding + graphHeight),
+        [color.withAlpha(80), color.withAlpha(10)],
+      );
+    canvas.drawPath(fillPath, fillPaint);
+
+    // Draw line
+    final linePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(linePath, linePaint);
+
+    // Draw glow effect
+    final glowPaint = Paint()
+      ..color = color.withAlpha(50)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4);
+    canvas.drawPath(linePath, glowPaint);
+  }
+
+  void _drawDataPoints(
+    Canvas canvas, List<Map<String, dynamic>> data, String key, double maxValue,
+    Color color, double topPadding, double leftPadding, double graphWidth, double graphHeight,
+  ) {
+    final dotPaint = Paint()..color = color;
+    final dotBorderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    // Only draw dots at first, last, and a few middle points to avoid clutter
+    final indicesToDraw = <int>{0, data.length - 1};
+    if (data.length > 4) {
+      indicesToDraw.add(data.length ~/ 2);
     }
-    canvas.drawPath(vibrationPath, paint);
+
+    for (final i in indicesToDraw) {
+      final x = leftPadding + (graphWidth * i / (data.length - 1));
+      final value = (data[i][key] as num?)?.toDouble() ?? 0.0;
+      final y = topPadding + graphHeight - (graphHeight * value / maxValue);
+
+      canvas.drawCircle(Offset(x, y), 4, dotPaint);
+      canvas.drawCircle(Offset(x, y), 4, dotBorderPaint);
+    }
   }
 
   @override

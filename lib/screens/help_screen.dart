@@ -234,9 +234,9 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
           ),
           const SizedBox(height: AppSpacing.lg),
           Text(
-            'AncientVision is developed for the FIRST LEGO League 2024-2025 "Submerged" season. '
+            'AncientVision is developed for the FIRST LEGO League 2025-2026 "Unearthed" season. '
             'Designed to help archaeologists and researchers document, analyze, and preserve '
-            'underwater and terrestrial archaeological findings.',
+            'archaeological findings in the field.',
             style: AppTextStyles.subtitle.copyWith(height: 1.5),
           ),
           const SizedBox(height: AppSpacing.lg),

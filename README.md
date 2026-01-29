@@ -26,12 +26,6 @@ Developed in the context of FIRST LEGO League (FLL), the project focuses on solv
 - **Findings Database**: Track and manage archaeological discoveries
 - **Quick Capture**: Simplified single-photo documentation with GPS
 - **Manual Entry Form**: Comprehensive 25+ field documentation
-- **Photo Register**: Professional photo cataloging system
-
-### Professional Tools
-- **Finds Register**: Museum-standard artifact cataloging (SF/BF/SA/SP)
-- **Harris Matrix**: Interactive stratigraphic relationship visualization
-- **Context Sheets**: Full stratigraphic documentation
 - **Field Journal**: Daily excavation logging with voice notes
 
 ### 3D & Analysis

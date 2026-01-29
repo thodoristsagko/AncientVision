@@ -42,7 +42,7 @@ class AppGradients {
 }
 
 class AppTextStyles {
-  // Headers
+  // Headers - larger sizes for better readability
   static const TextStyle h1 = TextStyle(
     color: AppColors.textPrimary,
     fontSize: 28,
@@ -68,7 +68,7 @@ class AppTextStyles {
     fontWeight: FontWeight.w600,
   );
 
-  // Body text
+  // Body text - increased for readability
   static const TextStyle bodyLarge = TextStyle(
     color: AppColors.textPrimary,
     fontSize: 16,
@@ -83,11 +83,11 @@ class AppTextStyles {
 
   static const TextStyle bodySmall = TextStyle(
     color: AppColors.textPrimary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: FontWeight.normal,
   );
 
-  // Secondary text (for subtitles, hints)
+  // Secondary text (for subtitles, hints) - increased
   static const TextStyle subtitle = TextStyle(
     color: AppColors.textSecondary,
     fontSize: 14,
@@ -96,13 +96,13 @@ class AppTextStyles {
 
   static const TextStyle subtitleSmall = TextStyle(
     color: AppColors.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: FontWeight.normal,
   );
 
   static const TextStyle caption = TextStyle(
     color: AppColors.textSecondary,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: FontWeight.normal,
   );
 
@@ -128,14 +128,14 @@ class AppTextStyles {
 
   static const TextStyle buttonSmall = TextStyle(
     color: AppColors.textPrimary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: FontWeight.w600,
   );
 
   // Label text
   static const TextStyle label = TextStyle(
     color: AppColors.textPrimary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: FontWeight.w500,
     letterSpacing: 0.5,
   );
