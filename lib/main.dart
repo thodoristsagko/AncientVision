@@ -178,9 +178,12 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
     // Only require re-auth if app was in background for more than 30 seconds
     if (_backgroundTime != null) {
       final elapsed = DateTime.now().difference(_backgroundTime!);
+      debugPrint('App resumed after ${elapsed.inSeconds} seconds in background');
       if (elapsed.inSeconds > 30) {
+        debugPrint('Over 30 seconds - checking biometric lock...');
         final biometricService = BiometricService();
         final shouldShow = await biometricService.shouldShowBiometricLock();
+        debugPrint('Should show biometric lock on resume: $shouldShow');
         if (shouldShow && mounted) {
           setState(() => _showBiometricLock = true);
         }
@@ -190,7 +193,16 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
 
   Future<void> _checkBiometric() async {
     final biometricService = BiometricService();
+
+    // Debug: Check biometric state
+    final isSupported = await biometricService.isDeviceSupported();
+    final canCheck = await biometricService.canCheckBiometrics();
+    final isEnrolled = await biometricService.isEnrolled();
+    final isEnabled = await biometricService.isEnabled();
+    debugPrint('Biometric check: supported=$isSupported, canCheck=$canCheck, enrolled=$isEnrolled, enabled=$isEnabled');
+
     final shouldShow = await biometricService.shouldShowBiometricLock();
+    debugPrint('Should show biometric lock: $shouldShow');
 
     if (mounted) {
       setState(() {
@@ -4431,32 +4443,89 @@ class _FindingsMapState extends State<_FindingsMap> {
 
 /// Handle Quick Capture result - save to Firestore with source 'quick'
 Future<void> _handleQuickCaptureResult(BuildContext context, Map<String, dynamic> result) async {
+  // Support both formats: 'photo' (single) from QuickCapture, 'photos' (list) from elsewhere
+  final singlePhoto = result['photo'] as XFile?;
+  final photosList = result['photos'] as List<dynamic>?;
+  final photos = photosList ?? (singlePhoto != null ? [singlePhoto] : null);
+  final type = result['type'];
+  // Support both 'note' and 'description' field names
+  final description = (result['description'] ?? result['note']) as String?;
+  final location = result['location'] as Map<String, dynamic>?;
+  final persistedPath = result['persistedPath'] as String?;
+
+  if (photos == null || photos.isEmpty) {
+    debugPrint('QuickCapture: No photos to save');
+    return;
+  }
+
+  // Get type label
+  String typeLabel = 'Unknown';
+  if (type != null) {
+    try {
+      typeLabel = type.label ?? 'Unknown';
+    } catch (_) {
+      typeLabel = type.toString();
+    }
+  }
+
+  // Generate a local ID
+  final timestamp = DateTime.now().millisecondsSinceEpoch;
+  final localId = 'QC-$timestamp';
+
+  // Create finding data with local photo path
+  final findingData = {
+    'id': localId,
+    'name': description?.isNotEmpty == true ? description : 'Quick Capture ${DateTime.now().toIso8601String().split('T')[0]}',
+    'type': typeLabel,
+    'site': 'Field Site',
+    'date': DateTime.now().toIso8601String().split('T')[0],
+    'description': description ?? '',
+    'latitude': location?['latitude'] ?? 37.9715,
+    'longitude': location?['longitude'] ?? 23.7267,
+    'imageUrl': persistedPath, // Use local path
+    'photoGallery': persistedPath != null ? [persistedPath] : <String>[],
+    'createdAt': DateTime.now().toIso8601String(),
+    'source': 'quick',
+  };
+
+  // Save to local storage first (offline-first)
   try {
-    final photos = result['photos'] as List<dynamic>?;
-    final type = result['type'];
-    final note = result['note'] as String?;
-    final location = result['location'] as Map<String, dynamic>?;
+    final localStorage = LocalStorageService();
+    await localStorage.initialize();
+    // Cache locally and queue for cloud sync
+    await localStorage.cacheFinding(findingId: localId, data: findingData);
+    await localStorage.queueForUpload(findingId: localId, data: findingData);
+    debugPrint('QuickCapture: Saved locally as $localId');
 
-    if (photos == null || photos.isEmpty) return;
-
-    // Generate next ID
-    final snapshot = await FirebaseFirestore.instance
-        .collection('findings')
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .get();
-
-    String nextId = 'A-001';
-    if (snapshot.docs.isNotEmpty) {
-      final lastId = snapshot.docs.first.id;
-      final match = RegExp(r'A-(\d+)').firstMatch(lastId);
-      if (match != null) {
-        final num = int.parse(match.group(1)!) + 1;
-        nextId = 'A-${num.toString().padLeft(3, '0')}';
-      }
+    // Show success immediately
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Quick capture saved locally ($typeLabel)'),
+          backgroundColor: const Color(0xFF4CAF50),
+        ),
+      );
     }
 
-    // Upload photos to imgbb
+    // Try to sync to cloud in background (non-blocking)
+    _syncQuickCaptureToCloud(findingData, photos);
+  } catch (e) {
+    debugPrint('QuickCapture: Local save error: $e');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+/// Background sync to cloud (non-blocking)
+Future<void> _syncQuickCaptureToCloud(Map<String, dynamic> findingData, List<dynamic> photos) async {
+  try {
+    // Try to upload photos to imgbb
     final List<String> photoUrls = [];
     for (final photo in photos) {
       try {
@@ -4470,7 +4539,7 @@ Future<void> _handleQuickCaptureResult(BuildContext context, Map<String, dynamic
             'key': imgbbApiKey,
             'image': base64Image,
           },
-        );
+        ).timeout(const Duration(seconds: 10));
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
@@ -4479,56 +4548,28 @@ Future<void> _handleQuickCaptureResult(BuildContext context, Map<String, dynamic
           }
         }
       } catch (e) {
-        debugPrint('Error uploading photo: $e');
+        debugPrint('QuickCapture: Photo upload failed: $e');
       }
     }
 
-    // Get type label
-    String typeLabel = 'Unknown';
-    if (type != null) {
-      try {
-        typeLabel = type.label ?? 'Unknown';
-      } catch (_) {
-        typeLabel = type.toString();
-      }
+    // Update finding data with cloud URLs if available
+    if (photoUrls.isNotEmpty) {
+      findingData['imageUrl'] = photoUrls.first;
+      findingData['photoGallery'] = photoUrls;
     }
+    findingData['createdAt'] = FieldValue.serverTimestamp();
 
-    final findingData = {
-      'name': note ?? 'Quick Capture ${DateTime.now().toIso8601String().split('T')[0]}',
-      'type': typeLabel,
-      'site': 'Field Site',
-      'date': DateTime.now().toIso8601String().split('T')[0],
-      'description': note ?? '',
-      'latitude': location?['latitude'] ?? 37.9715,
-      'longitude': location?['longitude'] ?? 23.7267,
-      'imageUrl': photoUrls.isNotEmpty ? photoUrls.first : null,
-      'photoGallery': photoUrls,
-      'createdAt': FieldValue.serverTimestamp(),
-      'source': 'quick',
-    };
-
+    // Try to save to Firestore
     await FirebaseFirestore.instance
         .collection('findings')
-        .doc(nextId)
-        .set(findingData);
+        .doc(findingData['id'] as String)
+        .set(findingData)
+        .timeout(const Duration(seconds: 10));
 
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Quick capture saved as $nextId'),
-          backgroundColor: const Color(0xFF4CAF50),
-        ),
-      );
-    }
+    debugPrint('QuickCapture: Synced to cloud');
   } catch (e) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error saving quick capture: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    debugPrint('QuickCapture: Cloud sync failed (will retry later): $e');
+    // Data is already saved locally, will sync when online
   }
 }
 
@@ -4889,8 +4930,8 @@ class _ToolsView extends StatelessWidget {
       title,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
       ),
     );
   }
@@ -4920,21 +4961,20 @@ class _ToolsView extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: color.withAlpha(30),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withAlpha(100), width: 1),
+          color: Colors.white.withAlpha(26),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withAlpha(50),
-                borderRadius: BorderRadius.circular(12),
+                color: color.withAlpha(51),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(icon, color: color, size: 28),
+              child: Icon(icon, color: color, size: 20),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4943,7 +4983,7 @@ class _ToolsView extends StatelessWidget {
                     title,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -4951,8 +4991,8 @@ class _ToolsView extends StatelessWidget {
                   Text(
                     description,
                     style: TextStyle(
-                      color: Colors.white.withAlpha(179),
-                      fontSize: 12,
+                      color: Colors.white.withAlpha(204),
+                      fontSize: 14,
                     ),
                   ),
                 ],
@@ -5223,23 +5263,26 @@ class _ToolCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withAlpha(20),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: color.withAlpha(77),
-            width: 1,
-          ),
+          color: Colors.white.withAlpha(26),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon, color: color, size: 24),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(51),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
                 const Spacer(),
                 if (badge != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: color.withAlpha(51),
                       borderRadius: BorderRadius.circular(8),
@@ -5248,8 +5291,8 @@ class _ToolCard extends StatelessWidget {
                       badge!,
                       style: TextStyle(
                         color: color,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
@@ -5260,16 +5303,16 @@ class _ToolCard extends StatelessWidget {
               title,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               description,
               style: TextStyle(
-                color: Colors.white.withAlpha(153),
-                fontSize: 11,
+                color: Colors.white.withAlpha(204),
+                fontSize: 14,
               ),
             ),
           ],

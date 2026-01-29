@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/progress_service.dart';
+import '../services/local_storage_service.dart';
+import '../services/export_service.dart';
 
 /// Analytics and Statistics Dashboard Screen
 /// Professional documentation statistics with beautiful visualizations
@@ -14,11 +17,19 @@ class AnalyticsScreen extends StatefulWidget {
 class _AnalyticsScreenState extends State<AnalyticsScreen>
     with SingleTickerProviderStateMixin {
   final _progressService = ProgressService();
+  final _localStorage = LocalStorageService();
   bool _isLoading = true;
   List<DailyStats> _weeklyStats = [];
+  List<DailyStats> _monthlyStats = [];
+  List<Map<String, dynamic>> _allFindings = [];
   int _selectedPeriod = 0; // 0: Week, 1: Month, 2: All Time
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+
+  // Computed from real data
+  Map<String, int> _materialCounts = {};
+  Map<String, int> _periodCounts = {};
+  Map<String, double> _qualityMetrics = {};
 
   @override
   void initState() {
@@ -42,10 +53,331 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
 
   Future<void> _loadData() async {
     await _progressService.initialize();
+    await _localStorage.initialize();
+
     _weeklyStats = await _progressService.getWeeklyStats();
+    _monthlyStats = await _getMonthlyStats();
+    _allFindings = _localStorage.getAllCachedFindings();
+
+    // Analyze real finding data
+    _analyzeFindingData();
+
     if (mounted) {
       setState(() => _isLoading = false);
       _animationController.forward();
+    }
+  }
+
+  /// Get monthly stats (last 30 days)
+  Future<List<DailyStats>> _getMonthlyStats() async {
+    // For now, return weekly stats extended - can be enhanced later
+    return _weeklyStats;
+  }
+
+  /// Analyze real finding data for materials, periods, and quality
+  void _analyzeFindingData() {
+    _materialCounts = {};
+    _periodCounts = {};
+    int withGps = 0;
+    int withPhotos = 0;
+    int withDescription = 0;
+    int total = _allFindings.length;
+
+    for (final finding in _allFindings) {
+      // Count materials
+      final material = finding['material'] as String? ?? 'Unknown';
+      _materialCounts[material] = (_materialCounts[material] ?? 0) + 1;
+
+      // Count periods
+      final period = finding['period'] as String? ?? 'Unknown';
+      _periodCounts[period] = (_periodCounts[period] ?? 0) + 1;
+
+      // Quality metrics
+      if (finding['latitude'] != null && finding['longitude'] != null) {
+        withGps++;
+      }
+      if (finding['imageUrl'] != null ||
+          (finding['photoGallery'] as List?)?.isNotEmpty == true) {
+        withPhotos++;
+      }
+      if ((finding['description'] as String?)?.isNotEmpty == true) {
+        withDescription++;
+      }
+    }
+
+    // Calculate quality percentages
+    _qualityMetrics = {
+      'gps': total > 0 ? withGps / total : 0.0,
+      'photos': total > 0 ? withPhotos / total : 0.0,
+      'description': total > 0 ? withDescription / total : 0.0,
+    };
+  }
+
+  /// Get filtered stats based on selected period
+  List<DailyStats> get _filteredStats {
+    switch (_selectedPeriod) {
+      case 0: // Week
+        return _weeklyStats;
+      case 1: // Month
+        return _monthlyStats;
+      case 2: // All Time
+        return _weeklyStats; // Show weekly as sample of all time
+      default:
+        return _weeklyStats;
+    }
+  }
+
+  /// Get period label for display
+  String get _periodLabel {
+    switch (_selectedPeriod) {
+      case 0:
+        return 'This Week';
+      case 1:
+        return 'This Month';
+      case 2:
+        return 'All Time';
+      default:
+        return 'This Week';
+    }
+  }
+
+  /// Show export dialog for analytics data
+  void _showExportDialog(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C2523),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Export Analytics',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Export your documentation statistics',
+              style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            _buildExportOption(
+              context,
+              icon: Icons.description,
+              title: 'Export as CSV',
+              subtitle: 'Spreadsheet format for analysis',
+              onTap: () => _exportAnalytics(context, 'csv'),
+            ),
+            const SizedBox(height: 12),
+            _buildExportOption(
+              context,
+              icon: Icons.code,
+              title: 'Export as JSON',
+              subtitle: 'Full data with metadata',
+              onTap: () => _exportAnalytics(context, 'json'),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExportOption(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withAlpha(30)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFC107).withAlpha(30),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: const Color(0xFFFFC107), size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(150),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.white.withAlpha(100)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportAnalytics(BuildContext context, String format) async {
+    Navigator.pop(context); // Close bottom sheet
+
+    final progress = _progressService.progress;
+    final today = _progressService.todayStats;
+
+    // Build analytics data as a list of findings-like maps for export
+    final analyticsData = [
+      {
+        'category': 'Summary',
+        'metric': 'Total Findings',
+        'value': progress.totalFindings,
+      },
+      {
+        'category': 'Summary',
+        'metric': 'Total Photos',
+        'value': progress.totalPhotos,
+      },
+      {
+        'category': 'Summary',
+        'metric': 'Total 3D Models',
+        'value': progress.total3DModels,
+      },
+      {
+        'category': 'Summary',
+        'metric': 'Total Contexts',
+        'value': progress.totalContexts,
+      },
+      {
+        'category': 'Summary',
+        'metric': 'Total Notes',
+        'value': progress.totalNotes,
+      },
+      {
+        'category': 'Summary',
+        'metric': 'Total Reports',
+        'value': progress.totalReports,
+      },
+      {
+        'category': 'Summary',
+        'metric': 'Current Streak',
+        'value': progress.currentStreak,
+      },
+      {
+        'category': 'Summary',
+        'metric': 'Level',
+        'value': '${progress.level} - ${progress.levelTitle}',
+      },
+      {
+        'category': 'Today',
+        'metric': 'Findings Recorded',
+        'value': today.findingsRecorded,
+      },
+      {
+        'category': 'Today',
+        'metric': 'Photos Captured',
+        'value': today.photosCapture,
+      },
+      {
+        'category': 'Today',
+        'metric': 'Models Created',
+        'value': today.modelsCreated,
+      },
+      {
+        'category': 'Today',
+        'metric': 'Total Actions',
+        'value': today.totalActions,
+      },
+      // Add material breakdown
+      ..._materialCounts.entries.map((e) => {
+        'category': 'Materials',
+        'metric': e.key,
+        'value': e.value,
+      }),
+      // Add period breakdown
+      ..._periodCounts.entries.map((e) => {
+        'category': 'Historical Periods',
+        'metric': e.key,
+        'value': e.value,
+      }),
+      // Add quality metrics
+      {
+        'category': 'Data Quality',
+        'metric': 'GPS Coverage',
+        'value': '${((_qualityMetrics['gps'] ?? 0) * 100).round()}%',
+      },
+      {
+        'category': 'Data Quality',
+        'metric': 'Photo Coverage',
+        'value': '${((_qualityMetrics['photos'] ?? 0) * 100).round()}%',
+      },
+      {
+        'category': 'Data Quality',
+        'metric': 'Description Coverage',
+        'value': '${((_qualityMetrics['description'] ?? 0) * 100).round()}%',
+      },
+    ];
+
+    try {
+      final exportService = ExportService();
+      File? file;
+
+      if (format == 'csv') {
+        file = await exportService.exportFindingsToCsv(analyticsData);
+      } else {
+        file = await exportService.exportFindingsToJson(analyticsData);
+      }
+
+      if (context.mounted && file != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Analytics exported successfully'),
+            backgroundColor: const Color(0xFF4CAF50),
+            action: SnackBarAction(
+              label: 'Share',
+              textColor: Colors.white,
+              onPressed: () => exportService.shareFile(file!),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -154,6 +486,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       pinned: true,
       backgroundColor: const Color(0xFF0D3A39),
       foregroundColor: Colors.white,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.file_download_rounded),
+          tooltip: 'Export Analytics',
+          onPressed: () => _showExportDialog(context),
+        ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: BoxDecoration(
@@ -419,7 +758,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
 
   Widget _buildWeeklyChart() {
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final maxValue = _weeklyStats.fold<int>(
+    final stats = _filteredStats;
+    final maxValue = stats.fold<int>(
       1,
       (max, stat) => stat.totalActions > max ? stat.totalActions : max,
     );
@@ -439,7 +779,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Weekly Documentation Activity',
+                '$_periodLabel Activity',
                 style: TextStyle(
                   color: Colors.white.withAlpha(200),
                   fontSize: 13,
@@ -453,7 +793,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  '${_weeklyStats.fold<int>(0, (sum, s) => sum + s.totalActions)} total',
+                  '${stats.fold<int>(0, (sum, s) => sum + s.totalActions)} total',
                   style: const TextStyle(
                     color: Color(0xFFFFC107),
                     fontSize: 12,
@@ -474,8 +814,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     tooltipBgColor: const Color(0xFF1A5653),
                     tooltipRoundedRadius: 8,
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                      if (groupIndex >= _weeklyStats.length) return null;
-                      final stat = _weeklyStats[groupIndex];
+                      if (groupIndex >= stats.length) return null;
+                      final stat = stats[groupIndex];
                       return BarTooltipItem(
                         '${stat.totalActions} actions\n'
                         '${stat.findingsRecorded} findings\n'
@@ -492,9 +832,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                       showTitles: true,
                       getTitlesWidget: (value, meta) {
                         final index = value.toInt();
-                        if (index >= 0 && index < _weeklyStats.length) {
-                          final dayIndex = _weeklyStats[index].date.weekday - 1;
-                          final isToday = index == _weeklyStats.length - 1;
+                        if (index >= 0 && index < stats.length) {
+                          final dayIndex = stats[index].date.weekday - 1;
+                          final isToday = index == stats.length - 1;
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
@@ -549,9 +889,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     dashArray: [5, 5],
                   ),
                 ),
-                barGroups: List.generate(_weeklyStats.length, (index) {
-                  final stat = _weeklyStats[index];
-                  final isToday = index == _weeklyStats.length - 1;
+                barGroups: List.generate(stats.length, (index) {
+                  final stat = stats[index];
+                  final isToday = index == stats.length - 1;
                   return BarChartGroupData(
                     x: index,
                     barRods: [
@@ -786,16 +1126,71 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   }
 
   Widget _buildMaterialAnalysis() {
-    // Sample material distribution data
-    final materials = [
-      _MaterialData('Ceramic', 45, const Color(0xFFE57373)),
-      _MaterialData('Stone', 28, const Color(0xFF64B5F6)),
-      _MaterialData('Metal', 15, const Color(0xFFFFD54F)),
-      _MaterialData('Bone', 8, const Color(0xFFAED581)),
-      _MaterialData('Glass', 4, const Color(0xFFBA68C8)),
-    ];
+    // Material colors mapping
+    const materialColors = {
+      'Ceramic': Color(0xFFE57373),
+      'Stone': Color(0xFF64B5F6),
+      'Metal': Color(0xFFFFD54F),
+      'Bone': Color(0xFFAED581),
+      'Glass': Color(0xFFBA68C8),
+      'Wood': Color(0xFF8D6E63),
+      'Textile': Color(0xFFCE93D8),
+      'Organic': Color(0xFFA5D6A7),
+      'Unknown': Color(0xFF90A4AE),
+    };
 
-    final total = materials.fold(0, (sum, m) => sum + m.count);
+    // Build materials list from real data
+    final materials = _materialCounts.entries.map((e) {
+      final color = materialColors[e.key] ?? const Color(0xFF90A4AE);
+      return _MaterialData(e.key, e.value, color);
+    }).toList()
+      ..sort((a, b) => b.count.compareTo(a.count)); // Sort by count descending
+
+    // Take top 5 and group rest as "Other"
+    final displayMaterials = <_MaterialData>[];
+    if (materials.length <= 5) {
+      displayMaterials.addAll(materials);
+    } else {
+      displayMaterials.addAll(materials.take(4));
+      final otherCount = materials.skip(4).fold<int>(0, (sum, m) => sum + m.count);
+      if (otherCount > 0) {
+        displayMaterials.add(_MaterialData('Other', otherCount, const Color(0xFF90A4AE)));
+      }
+    }
+
+    final total = displayMaterials.fold(0, (sum, m) => sum + m.count);
+
+    if (displayMaterials.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(20),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withAlpha(30)),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Icon(Icons.category, color: Colors.white.withAlpha(100), size: 40),
+                const SizedBox(height: 12),
+                Text(
+                  'No material data yet',
+                  style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Add findings with material types to see analysis',
+                  style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -805,7 +1200,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         border: Border.all(color: Colors.white.withAlpha(30)),
       ),
       child: Column(
-        children: materials.map((m) {
+        children: displayMaterials.map((m) {
           final percentage = total > 0 ? (m.count / total) : 0.0;
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -864,16 +1259,75 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   }
 
   Widget _buildPeriodDistribution() {
-    // Sample period distribution data
-    final periods = [
-      _PeriodData('Hellenistic', 32, const Color(0xFF7986CB)),
-      _PeriodData('Roman', 28, const Color(0xFFE57373)),
-      _PeriodData('Byzantine', 18, const Color(0xFF4DB6AC)),
-      _PeriodData('Classical', 15, const Color(0xFFFFB74D)),
-      _PeriodData('Other', 7, const Color(0xFF90A4AE)),
-    ];
+    // Period colors mapping
+    const periodColors = {
+      'Paleolithic': Color(0xFF5D4037),
+      'Neolithic': Color(0xFF8D6E63),
+      'Bronze Age': Color(0xFFFFB74D),
+      'Iron Age': Color(0xFF90A4AE),
+      'Archaic': Color(0xFF7986CB),
+      'Classical': Color(0xFFFFB74D),
+      'Hellenistic': Color(0xFF7986CB),
+      'Roman': Color(0xFFE57373),
+      'Byzantine': Color(0xFF4DB6AC),
+      'Medieval': Color(0xFF9575CD),
+      'Ottoman': Color(0xFFFF8A65),
+      'Modern': Color(0xFF4FC3F7),
+      'Unknown': Color(0xFF90A4AE),
+    };
 
-    final total = periods.fold(0, (sum, p) => sum + p.count);
+    // Build periods list from real data
+    final periods = _periodCounts.entries.map((e) {
+      final color = periodColors[e.key] ?? const Color(0xFF90A4AE);
+      return _PeriodData(e.key, e.value, color);
+    }).toList()
+      ..sort((a, b) => b.count.compareTo(a.count)); // Sort by count descending
+
+    // Take top 5 and group rest as "Other"
+    final displayPeriods = <_PeriodData>[];
+    if (periods.length <= 5) {
+      displayPeriods.addAll(periods);
+    } else {
+      displayPeriods.addAll(periods.take(4));
+      final otherCount = periods.skip(4).fold<int>(0, (sum, p) => sum + p.count);
+      if (otherCount > 0) {
+        displayPeriods.add(_PeriodData('Other', otherCount, const Color(0xFF90A4AE)));
+      }
+    }
+
+    final total = displayPeriods.fold(0, (sum, p) => sum + p.count);
+
+    if (displayPeriods.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(20),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withAlpha(30)),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Icon(Icons.history, color: Colors.white.withAlpha(100), size: 40),
+                const SizedBox(height: 12),
+                Text(
+                  'No period data yet',
+                  style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Add findings with historical periods to see distribution',
+                  style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -888,7 +1342,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           SizedBox(
             height: 40,
             child: Row(
-              children: periods.map((p) {
+              children: displayPeriods.map((p) {
                 final width = total > 0 ? (p.count / total) : 0.0;
                 return Expanded(
                   flex: (width * 100).round().clamp(1, 100),
@@ -908,7 +1362,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           Wrap(
             spacing: 16,
             runSpacing: 8,
-            children: periods.map((p) => Row(
+            children: displayPeriods.map((p) => Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
@@ -936,12 +1390,40 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   }
 
   Widget _buildDataQuality() {
-    // Data quality metrics
+    // Build quality metrics from real data analysis
+    final gpsScore = _qualityMetrics['gps'] ?? 0.0;
+    final photoScore = _qualityMetrics['photos'] ?? 0.0;
+    final descScore = _qualityMetrics['description'] ?? 0.0;
+    // Calculate overall completeness as average of available metrics
+    final overallScore = _allFindings.isNotEmpty
+        ? (gpsScore + photoScore + descScore) / 3
+        : 0.0;
+
     final quality = [
-      _QualityMetric('GPS Accuracy', 0.85, 'High precision coordinates', const Color(0xFF4CAF50)),
-      _QualityMetric('Photo Coverage', 0.72, 'Photos per finding', const Color(0xFF2196F3)),
-      _QualityMetric('Field Completeness', 0.68, 'Required fields filled', const Color(0xFFFF9800)),
-      _QualityMetric('3D Model Quality', 0.90, 'Reconstruction success', const Color(0xFF9C27B0)),
+      _QualityMetric(
+        'GPS Coverage',
+        gpsScore,
+        '${(_allFindings.where((f) => f['latitude'] != null).length)}/${_allFindings.length} with coordinates',
+        const Color(0xFF4CAF50),
+      ),
+      _QualityMetric(
+        'Photo Documentation',
+        photoScore,
+        '${(_allFindings.where((f) => f['imageUrl'] != null || (f['photoGallery'] as List?)?.isNotEmpty == true).length)}/${_allFindings.length} with photos',
+        const Color(0xFF2196F3),
+      ),
+      _QualityMetric(
+        'Description Coverage',
+        descScore,
+        '${(_allFindings.where((f) => (f['description'] as String?)?.isNotEmpty == true).length)}/${_allFindings.length} with descriptions',
+        const Color(0xFFFF9800),
+      ),
+      _QualityMetric(
+        'Overall Completeness',
+        overallScore,
+        'Average data quality score',
+        const Color(0xFF9C27B0),
+      ),
     ];
 
     return Container(
