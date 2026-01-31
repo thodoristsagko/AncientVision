@@ -65,6 +65,14 @@ class BiometricService {
     return false;
   }
 
+  /// Auto-enroll biometrics without requiring initial authentication
+  /// Used to enable quick unlock by default when device supports biometrics
+  Future<void> autoEnroll() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_enrolledKey, true);
+    await prefs.setBool(_enabledKey, true);
+  }
+
   /// Disable biometric authentication
   Future<void> disable() async {
     final prefs = await SharedPreferences.getInstance();

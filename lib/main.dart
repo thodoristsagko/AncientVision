@@ -201,6 +201,13 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
     final isEnabled = await biometricService.isEnabled();
     debugPrint('Biometric check: supported=$isSupported, canCheck=$canCheck, enrolled=$isEnrolled, enabled=$isEnabled');
 
+    // Auto-enroll biometrics if device supports it but user hasn't enrolled yet
+    // This makes quick unlock available by default for convenience
+    if (isSupported && canCheck && !isEnrolled) {
+      debugPrint('Auto-enrolling biometrics for quick unlock...');
+      await biometricService.autoEnroll();
+    }
+
     final shouldShow = await biometricService.shouldShowBiometricLock();
     debugPrint('Should show biometric lock: $shouldShow');
 
