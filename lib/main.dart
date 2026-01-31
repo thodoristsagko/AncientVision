@@ -225,28 +225,281 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
     }
   }
 
-  Future<void> _authenticateWithBiometric() async {
-    final biometricService = BiometricService();
-    final success = await biometricService.authenticate();
-
-    if (mounted) {
-      if (success) {
-        setState(() => _showBiometricLock = false);
-        // Start background service after successful authentication
-        _startBackgroundService();
-      }
-      // If failed, stay on lock screen - user can retry or use password
-    }
-  }
-
   Future<void> _startBackgroundService() async {
     await BackgroundServiceManager().startService();
   }
 
-  void _usePassword() {
-    // Skip biometric lock for this session and go directly to dashboard
-    setState(() => _showBiometricLock = false);
-    _startBackgroundService();
+  Future<void> _usePassword() async {
+    final biometricService = BiometricService();
+    final hasPin = await biometricService.hasPin();
+
+    if (!hasPin) {
+      // No PIN set - show PIN setup dialog
+      if (mounted) {
+        await _showPinSetupDialog();
+      }
+    } else {
+      // PIN exists - show PIN entry dialog
+      if (mounted) {
+        await _showPinEntryDialog();
+      }
+    }
+  }
+
+  Future<void> _showPinSetupDialog() async {
+    final pinController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? errorText;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1C2523),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Set Up PIN',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Create a 4-8 digit PIN for quick access when biometrics are unavailable.',
+                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: pinController,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                maxLength: 8,
+                style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
+                textAlign: TextAlign.center,
+                decoration: InputDecoration(
+                  labelText: 'Enter PIN',
+                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  counterText: '',
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFFFC107)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: confirmController,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                maxLength: 8,
+                style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
+                textAlign: TextAlign.center,
+                decoration: InputDecoration(
+                  labelText: 'Confirm PIN',
+                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  counterText: '',
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFFFC107)),
+                  ),
+                ),
+              ),
+              if (errorText != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  errorText!,
+                  style: const TextStyle(color: Colors.red, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white.withOpacity(0.7)),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC107),
+                foregroundColor: const Color(0xFF0D3A39),
+              ),
+              onPressed: () async {
+                final pin = pinController.text;
+                final confirm = confirmController.text;
+
+                if (pin.length < 4) {
+                  setDialogState(() => errorText = 'PIN must be at least 4 digits');
+                  return;
+                }
+                if (pin != confirm) {
+                  setDialogState(() => errorText = 'PINs do not match');
+                  return;
+                }
+
+                final result = await BiometricService().setupPin(pin);
+                if (result.success) {
+                  if (context.mounted) Navigator.pop(context, true);
+                } else {
+                  setDialogState(() => errorText = result.error);
+                }
+              },
+              child: const Text('Save PIN'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      setState(() => _showBiometricLock = false);
+      _startBackgroundService();
+    }
+  }
+
+  Future<void> _showPinEntryDialog() async {
+    final pinController = TextEditingController();
+    String? errorText;
+    int attempts = 0;
+    const maxAttempts = 5;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1C2523),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Enter PIN',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Enter your PIN to unlock AncientVision',
+                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: pinController,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                maxLength: 8,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
+                textAlign: TextAlign.center,
+                decoration: InputDecoration(
+                  labelText: 'PIN',
+                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  counterText: '',
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFFFC107)),
+                  ),
+                ),
+                onSubmitted: (_) async {
+                  final pin = pinController.text;
+                  final result = await BiometricService().verifyPin(pin);
+
+                  if (result.success) {
+                    if (context.mounted) Navigator.pop(context, true);
+                  } else {
+                    attempts++;
+                    if (attempts >= maxAttempts) {
+                      if (context.mounted) {
+                        Navigator.pop(context, false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Too many attempts. Try biometrics or restart the app.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    } else {
+                      setDialogState(() {
+                        errorText = '${result.error}. ${maxAttempts - attempts} attempts left.';
+                        pinController.clear();
+                      });
+                    }
+                  }
+                },
+              ),
+              if (errorText != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  errorText!,
+                  style: const TextStyle(color: Colors.red, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white.withOpacity(0.7)),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC107),
+                foregroundColor: const Color(0xFF0D3A39),
+              ),
+              onPressed: () async {
+                final pin = pinController.text;
+                final result = await BiometricService().verifyPin(pin);
+
+                if (result.success) {
+                  if (context.mounted) Navigator.pop(context, true);
+                } else {
+                  attempts++;
+                  if (attempts >= maxAttempts) {
+                    if (context.mounted) {
+                      Navigator.pop(context, false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Too many attempts. Try biometrics or restart the app.'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  } else {
+                    setDialogState(() {
+                      errorText = '${result.error}. ${maxAttempts - attempts} attempts left.';
+                      pinController.clear();
+                    });
+                  }
+                }
+              },
+              child: const Text('Unlock'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      setState(() => _showBiometricLock = false);
+      _startBackgroundService();
+    }
   }
 
   @override
@@ -261,7 +514,10 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
 
     if (_showBiometricLock) {
       return _BiometricLockScreen(
-        onAuthenticate: _authenticateWithBiometric,
+        onBiometricSuccess: () {
+          setState(() => _showBiometricLock = false);
+          _startBackgroundService();
+        },
         onUsePassword: _usePassword,
       );
     }
@@ -272,11 +528,11 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
 
 /// Lock screen shown when biometric auth is required
 class _BiometricLockScreen extends StatefulWidget {
-  final VoidCallback onAuthenticate;
-  final VoidCallback onUsePassword;
+  final VoidCallback onBiometricSuccess;
+  final Future<void> Function() onUsePassword;
 
   const _BiometricLockScreen({
-    required this.onAuthenticate,
+    required this.onBiometricSuccess,
     required this.onUsePassword,
   });
 
@@ -319,7 +575,7 @@ class _BiometricLockScreenState extends State<_BiometricLockScreen> {
       setState(() => _isAuthenticating = false);
       if (result.success) {
         // Success - notify parent to hide lock and proceed to dashboard
-        widget.onUsePassword(); // This now just bypasses the lock
+        widget.onBiometricSuccess();
       } else if (result.error != null) {
         setState(() => _errorMessage = result.error);
       }
@@ -429,11 +685,11 @@ class _BiometricLockScreenState extends State<_BiometricLockScreen> {
                 ),
               ),
               const Spacer(),
-              // Skip option
+              // Use PIN option
               TextButton(
                 onPressed: widget.onUsePassword,
                 child: const Text(
-                  'Skip for now',
+                  'Use PIN instead',
                   style: TextStyle(
                     color: Color(0xFFFFC107),
                     fontSize: 14,

@@ -35,6 +35,7 @@ dependencies:
   speech_to_text: ^6.6.0  # Voice commands (hands-free)
   flutter_tts: ^4.0.2  # Text-to-speech feedback
   shared_preferences: ^2.2.2  # Settings persistence
+  crypto: ^3.0.3  # Cryptographic hashing for PIN security
   flutter_cache_manager: ^3.3.1  # Offline caching
   pdf: ^3.10.7  # PDF report generation
   share_plus: ^7.2.1  # Advanced sharing options

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +14,8 @@ class BiometricService {
 
   static const String _enrolledKey = 'biometric_enrolled';
   static const String _enabledKey = 'biometric_enabled';
+  static const String _pinHashKey = 'app_pin_hash';
+  static const String _pinSaltKey = 'app_pin_salt';
 
   /// Check if device supports any form of biometric authentication
   Future<bool> isDeviceSupported() async {
@@ -171,5 +175,89 @@ class BiometricService {
     final supported = await isDeviceSupported();
 
     return enrolled && enabled && supported;
+  }
+
+  // ==================== PIN Authentication ====================
+
+  /// Generate a random salt for PIN hashing
+  String _generateSalt() {
+    final random = DateTime.now().microsecondsSinceEpoch.toString();
+    final bytes = utf8.encode(random);
+    return sha256.convert(bytes).toString().substring(0, 16);
+  }
+
+  /// Hash a PIN with salt using SHA-256
+  String _hashPin(String pin, String salt) {
+    final saltedPin = '$salt$pin';
+    final bytes = utf8.encode(saltedPin);
+    return sha256.convert(bytes).toString();
+  }
+
+  /// Check if user has set up a PIN
+  Future<bool> hasPin() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.containsKey(_pinHashKey) && prefs.containsKey(_pinSaltKey);
+  }
+
+  /// Set up a new PIN for the user
+  /// PIN must be 4-8 digits
+  Future<({bool success, String? error})> setupPin(String pin) async {
+    // Validate PIN format
+    if (pin.length < 4 || pin.length > 8) {
+      return (success: false, error: 'PIN must be 4-8 digits');
+    }
+    if (!RegExp(r'^[0-9]+$').hasMatch(pin)) {
+      return (success: false, error: 'PIN must contain only numbers');
+    }
+
+    try {
+      final salt = _generateSalt();
+      final hash = _hashPin(pin, salt);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pinSaltKey, salt);
+      await prefs.setString(_pinHashKey, hash);
+
+      return (success: true, error: null);
+    } catch (e) {
+      return (success: false, error: 'Failed to save PIN');
+    }
+  }
+
+  /// Verify entered PIN against stored hash
+  Future<({bool success, String? error})> verifyPin(String pin) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final storedHash = prefs.getString(_pinHashKey);
+      final storedSalt = prefs.getString(_pinSaltKey);
+
+      if (storedHash == null || storedSalt == null) {
+        return (success: false, error: 'No PIN set up');
+      }
+
+      final enteredHash = _hashPin(pin, storedSalt);
+
+      if (enteredHash == storedHash) {
+        return (success: true, error: null);
+      } else {
+        return (success: false, error: 'Incorrect PIN');
+      }
+    } catch (e) {
+      return (success: false, error: 'Verification failed');
+    }
+  }
+
+  /// Clear the stored PIN
+  Future<void> clearPin() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pinHashKey);
+    await prefs.remove(_pinSaltKey);
+  }
+
+  /// Check if app should show lock screen (biometric or PIN)
+  Future<bool> shouldShowLockScreen() async {
+    final hasPinSet = await hasPin();
+    final shouldShowBiometric = await shouldShowBiometricLock();
+    return hasPinSet || shouldShowBiometric;
   }
 }
