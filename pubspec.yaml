@@ -31,7 +31,8 @@ dependencies:
   vector_math: ^2.1.4  # 3D math utilities for custom point cloud rendering
   video_player: ^2.8.2  # Video playback for frame extraction
   # ULTRA++ Advanced Features
-  # qr_code_scanner: ^1.0.1  # QR code object tagging (temporarily disabled due to build issues)
+  mobile_scanner: ^5.1.1  # QR/barcode scanning with MLKit (modern replacement for qr_code_scanner)
+  device_info_plus: ^10.1.0  # Device info for RAM detection and hardware capabilities
   speech_to_text: ^6.6.0  # Voice commands (hands-free)
   flutter_tts: ^4.0.2  # Text-to-speech feedback
   shared_preferences: ^2.2.2  # Settings persistence

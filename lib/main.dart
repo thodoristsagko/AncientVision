@@ -37,6 +37,7 @@ import 'screens/field_journal_screen.dart';
 import 'screens/quick_capture_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
+import 'screens/qr_scanner_screen.dart';
 import 'services/export_service.dart';
 import 'services/biometric_service.dart';
 import 'services/background_service.dart';
@@ -4836,6 +4837,159 @@ Future<void> _syncQuickCaptureToCloud(Map<String, dynamic> findingData, List<dyn
   }
 }
 
+/// Handle QR Scanner result - view finding details or create new
+void _handleQRScanResult(BuildContext context, Map<String, dynamic> result) {
+  final action = result['action'] as String?;
+
+  switch (action) {
+    case 'view':
+      // Show finding details
+      final finding = result['finding'] as Map<String, dynamic>?;
+      if (finding != null) {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: const Color(0xFF1C2523),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (context) => _QRFindingDetailsSheet(finding: finding),
+        );
+      }
+      break;
+    case 'create':
+      // Navigate to manual entry with pre-filled ID
+      final id = result['id'] as String?;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Create finding with ID: $id'),
+          action: SnackBarAction(
+            label: 'Create',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
+              );
+            },
+          ),
+        ),
+      );
+      break;
+    case 'link':
+      // Link external code to a finding
+      final code = result['code'] as String?;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('External code: $code'),
+          backgroundColor: const Color(0xFF2196F3),
+        ),
+      );
+      break;
+  }
+}
+
+/// Bottom sheet to show scanned finding details
+class _QRFindingDetailsSheet extends StatelessWidget {
+  final Map<String, dynamic> finding;
+
+  const _QRFindingDetailsSheet({required this.finding});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFC107),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  finding['artifactId'] ?? 'Unknown',
+                  style: const TextStyle(
+                    color: Color(0xFF0D3A39),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            finding['name'] ?? finding['description'] ?? 'Unnamed Finding',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (finding['site'] != null)
+            _buildDetailRow(Icons.location_on_outlined, 'Site', finding['site']),
+          if (finding['type'] != null)
+            _buildDetailRow(Icons.category_outlined, 'Type', finding['type']),
+          if (finding['material'] != null)
+            _buildDetailRow(Icons.texture_outlined, 'Material', finding['material']),
+          if (finding['period'] != null)
+            _buildDetailRow(Icons.history_outlined, 'Period', finding['period']),
+          if (finding['date'] != null)
+            _buildDetailRow(Icons.calendar_today_outlined, 'Date', finding['date']),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                // Navigate to full finding view if needed
+              },
+              icon: const Icon(Icons.visibility_outlined),
+              label: const Text('View Full Record'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC107),
+                foregroundColor: const Color(0xFF0D3A39),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white54, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: const TextStyle(color: Colors.white54, fontSize: 14),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ToolsView extends StatelessWidget {
   const _ToolsView({super.key});
 
@@ -4931,7 +5085,7 @@ class _ToolsView extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 12),
-                      // Manual Entry & Photo Capture - Grid
+                      // Manual Entry, Photo Capture & QR Scanner - Grid
                       _buildToolGrid(context, [
                         _ToolCard(
                           icon: Icons.edit_note_rounded,
@@ -4952,6 +5106,21 @@ class _ToolsView extends StatelessWidget {
                             context,
                             MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
                           ),
+                        ),
+                        _ToolCard(
+                          icon: Icons.qr_code_scanner_rounded,
+                          title: 'QR Scanner',
+                          description: 'Scan artifact tags',
+                          color: const Color(0xFF00BCD4),
+                          onTap: () async {
+                            final result = await Navigator.push<Map<String, dynamic>>(
+                              context,
+                              MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+                            );
+                            if (result != null && context.mounted) {
+                              _handleQRScanResult(context, result);
+                            }
+                          },
                         ),
                       ]),
                       const SizedBox(height: 20),

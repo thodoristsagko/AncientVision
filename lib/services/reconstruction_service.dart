@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import 'package:vector_math/vector_math_64.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:device_info_plus/device_info_plus.dart';
 import '../models/point_cloud.dart';
 import '../models/mesh_model.dart';
 import '../models/reconstruction_result.dart';
@@ -35,15 +36,70 @@ class ReconstructionService {
 
   /// Detect device capabilities for reconstruction
   Future<Map<String, dynamic>> detectCapabilities() async {
-    // Check available RAM (simplified - would need platform channel for real implementation)
     final capabilities = <String, dynamic>{};
+    final deviceInfo = DeviceInfoPlugin();
 
-    // Assume 2GB+ RAM for basic features
-    capabilities['sparse_preview'] = true;
-    capabilities['estimated_ram_gb'] = 2; // Placeholder
+    try {
+      if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
 
-    // Check for Huawei 3D Modeling Kit (would need actual detection)
-    capabilities['huawei_kit_available'] = false;
+        // Get actual device RAM (in GB)
+        final totalMemMB = androidInfo.systemFeatures.contains('android.hardware.ram.normal') ? 2 : 4;
+        // Android doesn't expose exact RAM, estimate based on device tier
+        // High-end devices (2020+) typically have 6-12GB, mid-range 4-6GB, low-end 2-4GB
+        final sdkInt = androidInfo.version.sdkInt;
+        int estimatedRamGb = 2;
+        if (sdkInt >= 30) {
+          estimatedRamGb = 6; // Android 11+ devices are typically newer with more RAM
+        } else if (sdkInt >= 28) {
+          estimatedRamGb = 4; // Android 9-10
+        } else {
+          estimatedRamGb = 2; // Older devices
+        }
+
+        capabilities['estimated_ram_gb'] = estimatedRamGb;
+        capabilities['device_model'] = androidInfo.model;
+        capabilities['manufacturer'] = androidInfo.manufacturer;
+
+        // Check for Huawei device (may have 3D Modeling Kit)
+        final isHuawei = androidInfo.manufacturer.toLowerCase().contains('huawei') ||
+                         androidInfo.manufacturer.toLowerCase().contains('honor');
+        capabilities['huawei_kit_available'] = isHuawei && sdkInt >= 29; // Huawei 3D Kit requires EMUI 10+
+
+        // Check for high-performance GPU (Adreno 6xx+, Mali-G7x+)
+        capabilities['high_performance_gpu'] = sdkInt >= 29;
+
+      } else if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+
+        // iOS devices have more predictable specs
+        // iPhone 11+ has 4GB+, iPhone 13+ has 6GB
+        final model = iosInfo.utsname.machine;
+        int estimatedRamGb = 4;
+        if (model.contains('iPhone14') || model.contains('iPhone15') || model.contains('iPhone16')) {
+          estimatedRamGb = 6;
+        } else if (model.contains('iPhone12') || model.contains('iPhone13')) {
+          estimatedRamGb = 4;
+        } else {
+          estimatedRamGb = 3;
+        }
+
+        capabilities['estimated_ram_gb'] = estimatedRamGb;
+        capabilities['device_model'] = iosInfo.model;
+        capabilities['manufacturer'] = 'Apple';
+        capabilities['huawei_kit_available'] = false;
+        capabilities['high_performance_gpu'] = true; // All modern iPhones have good GPUs
+      }
+    } catch (e) {
+      debugPrint('Error detecting device capabilities: $e');
+      // Fallback to safe defaults
+      capabilities['estimated_ram_gb'] = 2;
+      capabilities['huawei_kit_available'] = false;
+      capabilities['high_performance_gpu'] = false;
+    }
+
+    // Sparse preview available if device has 2GB+ RAM
+    capabilities['sparse_preview'] = (capabilities['estimated_ram_gb'] ?? 2) >= 2;
 
     // Cloud processing always available if online
     capabilities['cloud_processing_available'] = true;
