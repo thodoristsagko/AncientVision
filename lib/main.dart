@@ -38,6 +38,7 @@ import 'screens/quick_capture_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
 import 'screens/qr_scanner_screen.dart';
+import 'screens/ai_recognition_screen.dart';
 import 'services/export_service.dart';
 import 'services/biometric_service.dart';
 import 'services/background_service.dart';
@@ -2463,13 +2464,20 @@ class _QuickActionsRow extends StatelessWidget {
           child: _GlassActionButton(
             icon: Icons.auto_awesome_rounded,
             title: 'AI Recognition',
-            subtitle: 'COMING SOON',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('AI Recognition - Coming Soon'),
-                ),
+            subtitle: 'ML Kit AI',
+            onTap: () async {
+              final result = await Navigator.push<Map<String, dynamic>>(
+                context,
+                MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
               );
+              if (result != null && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Classified as: ${result['type'] ?? 'Unknown'}'),
+                    backgroundColor: const Color(0xFF4CAF50),
+                  ),
+                );
+              }
             },
           ),
         ),
@@ -5133,10 +5141,11 @@ class _ToolsView extends StatelessWidget {
                           icon: Icons.auto_awesome_rounded,
                           title: 'AI Recognition',
                           description: 'Identify artifact type and period',
-                          badge: 'Coming Soon',
+                          badge: 'NEW',
                           color: const Color(0xFFFF9800),
-                          onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('AI Recognition - Coming Soon')),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
                           ),
                         ),
                       ]),
