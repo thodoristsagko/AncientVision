@@ -15,11 +15,13 @@ class AIRecognitionScreen extends StatefulWidget {
 
 class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
   final _aiService = AIClassificationService();
+  final _coinService = CoinIdentificationService();
   final _imagePicker = ImagePicker();
 
   File? _selectedImage;
   ArtifactClassificationResult? _result;
   CoinClassificationResult? _coinResult;
+  ComprehensiveCoinAnalysis? _comprehensiveAnalysis;
   bool _isProcessing = false;
   String? _error;
 
@@ -49,6 +51,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
           _selectedImage = File(picked.path);
           _result = null;
           _coinResult = null;
+          _comprehensiveAnalysis = null;
           _error = null;
         });
         await _classifyImage();
@@ -73,14 +76,19 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
         _result = result;
       });
 
-      // If a coin is detected, run specialized coin classification
+      // If a coin is detected, run specialized coin classification AND comprehensive analysis
       if (result.artifactType == 'Coin') {
         final coinResult = await _aiService.classifyCoin(
           _selectedImage!,
           detectedMaterial: result.material,
         );
+
+        // Run advanced comprehensive analysis (patina, grade, edge, side detection)
+        final comprehensive = await _coinService.performComprehensiveAnalysis(_selectedImage!);
+
         setState(() {
           _coinResult = coinResult;
+          _comprehensiveAnalysis = comprehensive;
         });
       }
 
@@ -277,6 +285,10 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
               if (_coinResult != null) ...[
                 const SizedBox(height: 16),
                 _buildCoinPeriodCard(),
+              ],
+              if (_comprehensiveAnalysis != null) ...[
+                const SizedBox(height: 16),
+                _buildAdvancedCoinAnalysisCard(),
               ],
               const SizedBox(height: 16),
               _buildLabelsCard(),
@@ -550,6 +562,398 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildAdvancedCoinAnalysisCard() {
+    if (_comprehensiveAnalysis == null) return const SizedBox.shrink();
+
+    final analysis = _comprehensiveAnalysis!;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF1565C0).withOpacity(0.3),
+            const Color(0xFF0D47A1).withOpacity(0.2),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF42A5F5).withOpacity(0.5),
+          width: 2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF42A5F5).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.science_rounded,
+                  color: Color(0xFF42A5F5),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Advanced Numismatic Analysis',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4CAF50).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'PRO',
+                  style: TextStyle(
+                    color: Color(0xFF4CAF50),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+          const Divider(color: Colors.white24),
+          const SizedBox(height: 12),
+
+          // Wear Grade Section
+          if (analysis.grade != null) ...[
+            _buildAnalysisSection(
+              icon: Icons.grade_rounded,
+              title: 'Condition Grade',
+              color: const Color(0xFFFFD700),
+              children: [
+                _buildAnalysisRow(
+                  'Grade',
+                  _getGradeName(analysis.grade!),
+                  Icons.star_rounded,
+                ),
+                if (analysis.sheldonNumber > 0)
+                  _buildAnalysisRow(
+                    'Sheldon #',
+                    analysis.sheldonNumber.toString(),
+                    Icons.tag_rounded,
+                  ),
+                _buildAnalysisRow(
+                  'Confidence',
+                  '${analysis.gradeConfidence.toStringAsFixed(0)}%',
+                  Icons.verified_rounded,
+                ),
+                if (analysis.gradeDescription != null && analysis.gradeDescription!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      analysis.gradeDescription!,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Patina Section
+          if (analysis.patinaType != null && analysis.patinaType != PatinaType.none) ...[
+            _buildAnalysisSection(
+              icon: Icons.palette_rounded,
+              title: 'Patina Analysis',
+              color: const Color(0xFF4CAF50),
+              children: [
+                _buildAnalysisRow(
+                  'Type',
+                  _getPatinaTypeName(analysis.patinaType!),
+                  Icons.color_lens_rounded,
+                ),
+                _buildAnalysisRow(
+                  'Coverage',
+                  '${analysis.patinaCoverage.toStringAsFixed(0)}%',
+                  Icons.pie_chart_rounded,
+                ),
+                if (analysis.patinaQuality != null)
+                  _buildAnalysisRow(
+                    'Quality',
+                    analysis.patinaQuality!.name.toUpperCase(),
+                    Icons.high_quality_rounded,
+                  ),
+                if (analysis.isCleaningDetected)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_rounded, color: Colors.orange, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Cleaning detected - may affect collector value',
+                            style: TextStyle(
+                              color: Colors.orange.shade200,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Edge Type Section
+          if (analysis.edgeType != null && analysis.edgeType != EdgeType.unknown) ...[
+            _buildAnalysisSection(
+              icon: Icons.radio_button_unchecked,
+              title: 'Edge Type',
+              color: const Color(0xFF9C27B0),
+              children: [
+                _buildAnalysisRow(
+                  'Type',
+                  _getEdgeTypeName(analysis.edgeType!),
+                  Icons.circle_outlined,
+                ),
+                if (analysis.edgeDescription != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      analysis.edgeDescription!,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.6),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Coin Side Section
+          if (analysis.coinSide != null && analysis.coinSide != CoinSide.unknown) ...[
+            _buildAnalysisSection(
+              icon: Icons.flip_rounded,
+              title: 'Side Detection',
+              color: const Color(0xFFFF9800),
+              children: [
+                _buildAnalysisRow(
+                  'Showing',
+                  analysis.coinSide == CoinSide.obverse ? 'OBVERSE (Heads)' : 'REVERSE (Tails)',
+                  analysis.coinSide == CoinSide.obverse ? Icons.person_rounded : Icons.shield_rounded,
+                ),
+                _buildAnalysisRow(
+                  'Confidence',
+                  '${analysis.sideConfidence.toStringAsFixed(0)}%',
+                  Icons.verified_rounded,
+                ),
+                if (analysis.possibleElements.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Possible elements:',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.6),
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: analysis.possibleElements.take(4).map((e) => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D3A39),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        e,
+                        style: const TextStyle(color: Colors.white60, fontSize: 10),
+                      ),
+                    )).toList(),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Material Section
+          if (analysis.estimatedMaterial != null) ...[
+            _buildAnalysisSection(
+              icon: Icons.texture_rounded,
+              title: 'Material Analysis',
+              color: const Color(0xFF795548),
+              children: [
+                _buildAnalysisRow(
+                  'Estimated',
+                  analysis.estimatedMaterial!,
+                  Icons.auto_awesome_rounded,
+                ),
+              ],
+            ),
+          ],
+
+          // Wear Locations (if any)
+          if (analysis.wearLocations.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Divider(color: Colors.white24),
+            const SizedBox(height: 8),
+            Text(
+              'Wear observed on:',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...analysis.wearLocations.map((loc) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.arrow_right_rounded, color: Colors.white38, size: 16),
+                  Text(
+                    loc,
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisSection({
+    required IconData icon,
+    required String title,
+    required Color color,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: color, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.only(left: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnalysisRow(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white38, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.5),
+              fontSize: 12,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getGradeName(CoinGrade grade) {
+    switch (grade) {
+      case CoinGrade.poor1: return 'Poor (P-1)';
+      case CoinGrade.ag3: return 'About Good (AG-3)';
+      case CoinGrade.g6: return 'Good (G-6)';
+      case CoinGrade.vg10: return 'Very Good (VG-10)';
+      case CoinGrade.f15: return 'Fine (F-15)';
+      case CoinGrade.vf25: return 'Very Fine (VF-25)';
+      case CoinGrade.vf35: return 'Choice VF (VF-35)';
+      case CoinGrade.ef40: return 'Extremely Fine (EF-40)';
+      case CoinGrade.ef45: return 'Choice EF (EF-45)';
+      case CoinGrade.au50: return 'About Uncirculated (AU-50)';
+      case CoinGrade.au58: return 'Choice AU (AU-58)';
+      case CoinGrade.ms60: return 'Mint State (MS-60)';
+      case CoinGrade.ms63: return 'Choice MS (MS-63)';
+      case CoinGrade.ms65Plus: return 'Gem MS (MS-65+)';
+      case CoinGrade.unknown: return 'Unknown';
+    }
+  }
+
+  String _getPatinaTypeName(PatinaType type) {
+    switch (type) {
+      case PatinaType.greenVerdigris: return 'Green Verdigris';
+      case PatinaType.redCuprite: return 'Red Cuprite';
+      case PatinaType.blackOxide: return 'Black Oxide';
+      case PatinaType.brownEarth: return 'Brown Earth';
+      case PatinaType.desertPatina: return 'Desert Patina';
+      case PatinaType.none: return 'None';
+    }
+  }
+
+  String _getEdgeTypeName(EdgeType type) {
+    switch (type) {
+      case EdgeType.plain: return 'Plain/Smooth';
+      case EdgeType.reeded: return 'Reeded';
+      case EdgeType.lettered: return 'Lettered';
+      case EdgeType.decorated: return 'Decorated';
+      case EdgeType.unknown: return 'Unknown';
+    }
   }
 
   Widget _buildCoinInfoRow(IconData icon, String label, String value) {
