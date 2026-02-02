@@ -2458,6 +2458,8 @@ class _QuickActionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Photogrammetry feature hidden from UI but code preserved
+    // To re-enable, uncomment the second Expanded widget below
     return Row(
       children: [
         Expanded(
@@ -2481,21 +2483,23 @@ class _QuickActionsRow extends StatelessWidget {
             },
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _GlassActionButton(
-            icon: Icons.camera_alt_outlined,
-            title: 'Photogrammetry',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const PhotogrammetryScreen(),
-                ),
-              );
-            },
-          ),
-        ),
+        // PHOTOGRAMMETRY BUTTON - HIDDEN BY REQUEST (code preserved)
+        // Uncomment to re-enable:
+        // const SizedBox(width: 12),
+        // Expanded(
+        //   child: _GlassActionButton(
+        //     icon: Icons.camera_alt_outlined,
+        //     title: 'Photogrammetry',
+        //     onTap: () {
+        //       Navigator.push(
+        //         context,
+        //         MaterialPageRoute(
+        //           builder: (_) => const PhotogrammetryScreen(),
+        //         ),
+        //       );
+        //     },
+        //   ),
+        // ),
       ],
     );
   }
@@ -7925,6 +7929,17 @@ class _SafetyViewState extends State<_SafetyView> {
   Timer? _firebaseLogTimer;
   List<Map<String, dynamic>> _sensorHistory = [];
 
+  // Enhanced connection management
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 10;
+  Timer? _reconnectTimer;
+  Timer? _keepAliveTimer;
+  DateTime? _lastDataReceived;
+  bool _showFullScreenAlert = false;
+  String _fullScreenAlertMessage = '';
+  String _fullScreenAlertLevel = 'warning';
+  String? _lastNotifiedAlertLevel; // Prevent duplicate notifications
+
   @override
   void initState() {
     super.initState();
@@ -7942,6 +7957,8 @@ class _SafetyViewState extends State<_SafetyView> {
     }
     _simulationTimer?.cancel();
     _firebaseLogTimer?.cancel();
+    _reconnectTimer?.cancel();
+    _keepAliveTimer?.cancel();
     super.dispose();
   }
 
@@ -8008,22 +8025,31 @@ class _SafetyViewState extends State<_SafetyView> {
     });
 
     try {
-      await device.connect(timeout: const Duration(seconds: 10));
+      // Enable auto-connect for persistent connection
+      await device.connect(
+        timeout: const Duration(seconds: 15),
+        autoConnect: true,
+      );
 
       setState(() {
         _connectedDevice = device;
         _isConnecting = false;
         _isScanning = false;
         _connectionStatus = 'Connected';
+        _reconnectAttempts = 0; // Reset on successful connection
       });
+
+      // Start keepalive monitoring
+      _startKeepAliveMonitor();
 
       _connectionSubscription = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected && mounted) {
+          _handleDisconnection();
+        } else if (state == BluetoothConnectionState.connected && mounted) {
           setState(() {
-            _connectedDevice = null;
-            _connectionStatus = 'Disconnected';
+            _connectionStatus = 'Connected';
+            _reconnectAttempts = 0;
           });
-          Future.delayed(const Duration(seconds: 2), _startScan);
         }
       });
 
@@ -8034,8 +8060,80 @@ class _SafetyViewState extends State<_SafetyView> {
           _isConnecting = false;
           _connectionStatus = 'Connection failed';
         });
+        // Auto-retry with exponential backoff
+        _scheduleReconnect();
       }
     }
+  }
+
+  /// Handle device disconnection with smart reconnect
+  void _handleDisconnection() {
+    final deviceName = _connectedDevice?.platformName ?? 'Sensor';
+
+    setState(() {
+      _connectedDevice = null;
+      _connectionStatus = 'Reconnecting...';
+    });
+
+    // Send notification about disconnection
+    NotificationService().showDeviceDisconnected(deviceName: deviceName);
+
+    // Cancel keepalive
+    _keepAliveTimer?.cancel();
+
+    // Schedule reconnect with exponential backoff
+    _scheduleReconnect();
+  }
+
+  /// Schedule reconnection with exponential backoff
+  void _scheduleReconnect() {
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      setState(() => _connectionStatus = 'Connection lost - tap Scan');
+      return;
+    }
+
+    // Exponential backoff: 1s, 2s, 4s, 8s... max 30s
+    final delaySeconds = (1 << _reconnectAttempts).clamp(1, 30);
+    _reconnectAttempts++;
+
+    setState(() {
+      _connectionStatus = 'Reconnecting in ${delaySeconds}s... (${_reconnectAttempts}/$_maxReconnectAttempts)';
+    });
+
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      if (mounted && _connectedDevice == null) {
+        _startScan();
+      }
+    });
+  }
+
+  /// Monitor connection health and request RSSI periodically
+  void _startKeepAliveMonitor() {
+    _keepAliveTimer?.cancel();
+    _lastDataReceived = DateTime.now();
+
+    _keepAliveTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      if (!mounted || _connectedDevice == null) {
+        timer.cancel();
+        return;
+      }
+
+      // Check if we've received data recently
+      final now = DateTime.now();
+      if (_lastDataReceived != null &&
+          now.difference(_lastDataReceived!).inSeconds > 15) {
+        // No data for 15 seconds - connection might be stale
+        debugPrint('Connection stale - no data for 15s');
+        try {
+          // Try to read RSSI to verify connection is alive
+          await _connectedDevice!.readRssi();
+        } catch (e) {
+          // Connection is dead, trigger reconnect
+          _handleDisconnection();
+        }
+      }
+    });
   }
 
   Future<void> _disconnectDevice() async {
@@ -8098,6 +8196,9 @@ class _SafetyViewState extends State<_SafetyView> {
       final jsonStr = String.fromCharCodes(value);
       final data = json.decode(jsonStr);
 
+      // Update last data received for keepalive monitoring
+      _lastDataReceived = DateTime.now();
+
       setState(() {
         _lastUpdate = _formatTime(DateTime.now());
 
@@ -8121,6 +8222,14 @@ class _SafetyViewState extends State<_SafetyView> {
             ));
             if (_alerts.length > 10) _alerts.removeLast();
             _saveAlertToFirebase(newLevel, newMessage);
+
+            // Send push notification for alerts (only if level changed)
+            _sendAlertNotification(newLevel, newMessage);
+
+            // Show full-screen alert for critical alerts
+            if (newLevel == 'critical') {
+              _triggerFullScreenAlert(newMessage, newLevel);
+            }
           }
 
           _alertLevel = newLevel;
@@ -8130,6 +8239,44 @@ class _SafetyViewState extends State<_SafetyView> {
     } catch (e) {
       debugPrint('Error parsing BLE data: $e');
     }
+  }
+
+  /// Send push notification for safety alerts
+  void _sendAlertNotification(String level, String message) {
+    // Only notify if alert level changed (prevent spam)
+    if (_lastNotifiedAlertLevel == level) return;
+    _lastNotifiedAlertLevel = level;
+
+    if (level == 'critical') {
+      NotificationService().showSafetyCritical(
+        message: message,
+        sensorType: 'Trench Safety',
+      );
+    } else if (level == 'warning') {
+      NotificationService().showSafetyWarning(
+        message: message,
+        sensorType: 'Trench Safety',
+      );
+    } else {
+      // Alert cleared
+      _lastNotifiedAlertLevel = null;
+    }
+  }
+
+  /// Trigger full-screen alert overlay
+  void _triggerFullScreenAlert(String message, String level) {
+    setState(() {
+      _showFullScreenAlert = true;
+      _fullScreenAlertMessage = message;
+      _fullScreenAlertLevel = level;
+    });
+  }
+
+  /// Dismiss full-screen alert
+  void _dismissFullScreenAlert() {
+    setState(() {
+      _showFullScreenAlert = false;
+    });
   }
 
   Future<void> _saveAlertToFirebase(String level, String message) async {
@@ -8274,6 +8421,14 @@ class _SafetyViewState extends State<_SafetyView> {
           ));
           if (_alerts.length > 10) _alerts.removeLast();
           _saveAlertToFirebase(newLevel, newMessage);
+
+          // Send notification for simulated alerts too
+          _sendAlertNotification(newLevel, newMessage);
+
+          // Show full-screen alert for critical
+          if (newLevel == 'critical') {
+            _triggerFullScreenAlert(newMessage, newLevel);
+          }
         }
 
         _alertLevel = newLevel;
@@ -8332,34 +8487,37 @@ class _SafetyViewState extends State<_SafetyView> {
   Widget build(BuildContext context) {
     final isConnected = _connectedDevice != null;
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF0D3A39), Color(0xFF1C2523)],
-        ),
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // HEADER
-              Row(
+    return Stack(
+      children: [
+        // Main content
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0D3A39), Color(0xFF1C2523)],
+            ),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.engineering_rounded, color: Colors.white, size: 26),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Trench Safety',
-                    style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                  // HEADER
+                  Row(
+                    children: [
+                      const Icon(Icons.engineering_rounded, color: Colors.white, size: 26),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Trench Safety',
+                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                      ),
+                      const Spacer(),
+                      _LiveChip(isConnected: isConnected, status: _connectionStatus),
+                    ],
                   ),
-                  const Spacer(),
-                  _LiveChip(isConnected: isConnected, status: _connectionStatus),
-                ],
-              ),
-              const SizedBox(height: 8),
+                  const SizedBox(height: 8),
 
               // Connection status and action buttons
               Row(
@@ -8470,6 +8628,15 @@ class _SafetyViewState extends State<_SafetyView> {
           ),
         ),
       ),
+    ),
+    // Full-screen alert overlay
+    if (_showFullScreenAlert)
+      _FullScreenAlertOverlay(
+        message: _fullScreenAlertMessage,
+        level: _fullScreenAlertLevel,
+        onDismiss: _dismissFullScreenAlert,
+      ),
+      ],
     );
   }
 }
@@ -8481,6 +8648,209 @@ class _AlertData {
   final String message;
 
   _AlertData({required this.time, required this.level, required this.title, required this.message});
+}
+
+/// Full-screen alert overlay for critical safety warnings
+class _FullScreenAlertOverlay extends StatefulWidget {
+  final String message;
+  final String level;
+  final VoidCallback onDismiss;
+
+  const _FullScreenAlertOverlay({
+    required this.message,
+    required this.level,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_FullScreenAlertOverlay> createState() => _FullScreenAlertOverlayState();
+}
+
+class _FullScreenAlertOverlayState extends State<_FullScreenAlertOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    )..repeat(reverse: true);
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isCritical = widget.level == 'critical';
+    final alertColor = isCritical ? const Color(0xFFE53935) : const Color(0xFFFFB300);
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment.center,
+            radius: 1.5,
+            colors: [
+              alertColor.withAlpha(230),
+              alertColor.withAlpha(200),
+              Colors.black.withAlpha(240),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Pulsing icon
+              AnimatedBuilder(
+                animation: _pulseAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _pulseAnimation.value,
+                    child: Container(
+                      width: 140,
+                      height: 140,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(50),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: alertColor.withAlpha(150),
+                            blurRadius: 40,
+                            spreadRadius: 20,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        isCritical ? Icons.warning_rounded : Icons.error_outline,
+                        size: 80,
+                        color: Colors.white,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 40),
+              // Alert title
+              Text(
+                isCritical ? '⚠️ CRITICAL ALERT ⚠️' : '⚠️ WARNING',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              // Alert message
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withAlpha(100),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withAlpha(100), width: 2),
+                  ),
+                  child: Text(
+                    widget.message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Timestamp
+              Text(
+                'Detected at ${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+                style: TextStyle(
+                  color: Colors.white.withAlpha(180),
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 48),
+              // Action buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Acknowledge button
+                  GestureDetector(
+                    onTap: widget.onDismiss,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withAlpha(80),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle, color: alertColor, size: 28),
+                          const SizedBox(width: 12),
+                          Text(
+                            'ACKNOWLEDGE',
+                            style: TextStyle(
+                              color: alertColor,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              // Safety instruction
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 48),
+                child: Text(
+                  isCritical
+                      ? 'EVACUATE THE TRENCH IMMEDIATELY!\nFollow emergency protocol.'
+                      : 'Check conditions and take appropriate action.',
+                  style: TextStyle(
+                    color: Colors.white.withAlpha(200),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _CurrentAlertBanner extends StatelessWidget {

@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,6 +23,9 @@ class NotificationService {
   static const int processingFailedId = 2;
   static const int uploadProgressId = 3;
   static const int achievementUnlockedId = 4;
+  static const int safetyWarningId = 5;
+  static const int safetyCriticalId = 6;
+  static const int deviceDisconnectedId = 7;
 
   /// Initialize the notification service
   Future<void> initialize() async {
@@ -200,6 +205,123 @@ class NotificationService {
       body: '$achievementTitle - $achievementDescription',
       type: 'achievement',
     );
+  }
+
+  /// Show safety warning notification
+  Future<void> showSafetyWarning({
+    required String message,
+    String? sensorType,
+  }) async {
+    if (!await areNotificationsEnabled()) return;
+
+    final body = sensorType != null
+        ? '⚠️ $sensorType: $message'
+        : '⚠️ $message';
+
+    await _showUrgentNotification(
+      id: safetyWarningId,
+      title: 'Safety Warning',
+      body: body,
+      payload: 'safety_warning:$message',
+      isWarning: true,
+    );
+
+    await _saveNotification(
+      title: 'Safety Warning',
+      body: body,
+      type: 'warning',
+    );
+  }
+
+  /// Show critical safety alert notification (highest priority)
+  Future<void> showSafetyCritical({
+    required String message,
+    String? sensorType,
+  }) async {
+    if (!await areNotificationsEnabled()) return;
+
+    final body = sensorType != null
+        ? '🚨 CRITICAL - $sensorType: $message'
+        : '🚨 CRITICAL: $message';
+
+    await _showUrgentNotification(
+      id: safetyCriticalId,
+      title: 'CRITICAL SAFETY ALERT',
+      body: body,
+      payload: 'safety_critical:$message',
+      isWarning: false,
+    );
+
+    await _saveNotification(
+      title: 'CRITICAL SAFETY ALERT',
+      body: body,
+      type: 'critical',
+    );
+  }
+
+  /// Show device disconnection notification
+  Future<void> showDeviceDisconnected({
+    required String deviceName,
+  }) async {
+    if (!await areNotificationsEnabled()) return;
+
+    await _showNotification(
+      id: deviceDisconnectedId,
+      title: 'Sensor Disconnected',
+      body: '$deviceName has been disconnected. Attempting to reconnect...',
+      payload: 'device_disconnected:$deviceName',
+    );
+
+    await _saveNotification(
+      title: 'Sensor Disconnected',
+      body: '$deviceName has been disconnected',
+      type: 'warning',
+    );
+  }
+
+  /// Show urgent notification with vibration and sound
+  Future<void> _showUrgentNotification({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+    required bool isWarning,
+  }) async {
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.max,
+      priority: Priority.max,
+      icon: '@mipmap/ic_launcher',
+      fullScreenIntent: true,
+      category: AndroidNotificationCategory.alarm,
+      visibility: NotificationVisibility.public,
+      enableVibration: true,
+      vibrationPattern: isWarning
+          ? Int64List.fromList([0, 500, 200, 500])
+          : Int64List.fromList([0, 1000, 500, 1000, 500, 1000]),
+      playSound: true,
+      enableLights: true,
+      ledColor: isWarning ? const Color(0xFFFFB300) : const Color(0xFFE53935),
+      ledOnMs: 1000,
+      ledOffMs: 500,
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: 'default',
+      interruptionLevel: InterruptionLevel.critical,
+    );
+
+    final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _notifications.show(id, title, body, details, payload: payload);
   }
 
   /// Show a standard notification
