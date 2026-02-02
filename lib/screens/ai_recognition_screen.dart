@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/ai_classification_service.dart';
+import '../services/coin_identification_service.dart';
 
 /// AI-powered artifact recognition screen
 /// Takes a photo and classifies the artifact using ML Kit
@@ -18,6 +19,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
 
   File? _selectedImage;
   ArtifactClassificationResult? _result;
+  CoinClassificationResult? _coinResult;
   bool _isProcessing = false;
   String? _error;
 
@@ -46,6 +48,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
         setState(() {
           _selectedImage = File(picked.path);
           _result = null;
+          _coinResult = null;
           _error = null;
         });
         await _classifyImage();
@@ -61,12 +64,27 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
     setState(() {
       _isProcessing = true;
       _error = null;
+      _coinResult = null;
     });
 
     try {
       final result = await _aiService.classifyArtifact(_selectedImage!);
       setState(() {
         _result = result;
+      });
+
+      // If a coin is detected, run specialized coin classification
+      if (result.artifactType == 'Coin') {
+        final coinResult = await _aiService.classifyCoin(
+          _selectedImage!,
+          detectedMaterial: result.material,
+        );
+        setState(() {
+          _coinResult = coinResult;
+        });
+      }
+
+      setState(() {
         _isProcessing = false;
       });
     } catch (e) {
@@ -80,13 +98,25 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
   void _useClassification() {
     if (_result == null) return;
 
+    // Use coin-specific period if available, otherwise use general classification
+    final period = _coinResult?.period ?? _result!.suggestedPeriod;
+    final dateRange = _coinResult?.dateRange;
+
     Navigator.pop(context, {
       'type': _result!.artifactType,
-      'material': _result!.material,
-      'period': _result!.suggestedPeriod,
-      'description': _aiService.generateDescription(_result!),
-      'confidence': (_result!.typeConfidence + _result!.materialConfidence) / 2,
+      'material': _coinResult?.material ?? _result!.material,
+      'period': period,
+      'dateRange': dateRange,
+      'description': _coinResult != null
+          ? _coinResult!.description
+          : _aiService.generateDescription(_result!),
+      'confidence': _coinResult != null
+          ? _coinResult!.confidence / 100
+          : (_result!.typeConfidence + _result!.materialConfidence) / 2,
       'imagePath': _selectedImage?.path,
+      'isCoin': _coinResult?.isCoin ?? false,
+      'characteristics': _coinResult?.characteristics,
+      'regions': _coinResult?.regions,
     });
   }
 
@@ -244,6 +274,10 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
             if (_result != null) ...[
               const SizedBox(height: 24),
               _buildResultsCard(),
+              if (_coinResult != null) ...[
+                const SizedBox(height: 16),
+                _buildCoinPeriodCard(),
+              ],
               const SizedBox(height: 16),
               _buildLabelsCard(),
             ],
@@ -347,6 +381,200 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildCoinPeriodCard() {
+    if (_coinResult == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF8B4513).withOpacity(0.3),
+            const Color(0xFFD4AF37).withOpacity(0.2),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFD4AF37).withOpacity(0.5),
+          width: 2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD4AF37).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.monetization_on_rounded,
+                  color: Color(0xFFD4AF37),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Coin Period Analysis',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD4AF37).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_coinResult!.confidence.toStringAsFixed(0)}%',
+                  style: const TextStyle(
+                    color: Color(0xFFD4AF37),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+          const Divider(color: Colors.white24),
+          const SizedBox(height: 12),
+
+          // Period & Date Range
+          if (_coinResult!.period != null) ...[
+            _buildCoinInfoRow(
+              Icons.history_edu_rounded,
+              'Period',
+              _coinResult!.period!,
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (_coinResult!.dateRange != null) ...[
+            _buildCoinInfoRow(
+              Icons.calendar_today_rounded,
+              'Date Range',
+              _coinResult!.dateRange!,
+            ),
+            const SizedBox(height: 8),
+          ],
+          _buildCoinInfoRow(
+            Icons.texture_rounded,
+            'Material',
+            _coinResult!.material,
+          ),
+
+          // Characteristics
+          if (_coinResult!.characteristics.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Characteristics',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: _coinResult!.characteristics.map((c) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D3A39),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
+                ),
+                child: Text(
+                  c,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+              )).toList(),
+            ),
+          ],
+
+          // Regions
+          if (_coinResult!.regions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Common Regions',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _coinResult!.regions.join(' • '),
+              style: const TextStyle(color: Colors.white60, fontSize: 13),
+            ),
+          ],
+
+          // Alternative Periods
+          if (_coinResult!.alternativePeriods.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Divider(color: Colors.white24),
+            const SizedBox(height: 8),
+            Text(
+              'Alternative Periods',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _coinResult!.alternativePeriods.join(', '),
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.5),
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoinInfoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFFD4AF37).withOpacity(0.7), size: 18),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.6),
+            fontSize: 13,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

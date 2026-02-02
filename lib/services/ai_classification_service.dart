@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
+import 'coin_identification_service.dart';
 
 /// AI-powered artifact classification using Google ML Kit
 /// Provides on-device image labeling and object detection
@@ -242,6 +243,41 @@ class AIClassificationService {
     );
   }
 
+  /// Enhanced coin classification using the coin period database
+  /// Call this after classifyArtifact if the artifact is detected as a coin
+  Future<CoinClassificationResult> classifyCoin(File imageFile, {String? detectedMaterial}) async {
+    final coinService = CoinIdentificationService();
+
+    // Analyze image colors to estimate material
+    final imageAnalysis = await coinService.analyzeImage(imageFile);
+    final material = detectedMaterial ?? imageAnalysis['estimatedMaterial'] as String? ?? 'Unknown';
+
+    // Extract keywords from ML Kit labels for better period matching
+    final mlResult = await classifyArtifact(imageFile);
+    final keywords = mlResult.allLabels
+        .where((l) => l.confidence > 0.3)
+        .map((l) => l.label)
+        .toList();
+
+    // Analyze coin using period database
+    final periodResult = coinService.analyzeByCharacteristics(
+      material: material,
+      keywords: keywords,
+    );
+
+    return CoinClassificationResult(
+      isCoin: mlResult.artifactType == 'Coin',
+      material: material,
+      period: periodResult.period,
+      dateRange: periodResult.dateRange,
+      confidence: periodResult.confidence,
+      characteristics: periodResult.characteristics ?? [],
+      regions: periodResult.regions ?? [],
+      alternativePeriods: periodResult.alternativePeriods ?? [],
+      colorAnalysis: imageAnalysis['colorAnalysis'] as Map<String, dynamic>? ?? {},
+    );
+  }
+
   /// Get AI suggestions for a description based on classification
   String generateDescription(ArtifactClassificationResult result) {
     final parts = <String>[];
@@ -338,4 +374,47 @@ class DetectedObject {
     required this.labels,
     this.trackingId,
   });
+}
+
+/// Result of coin-specific classification with period detection
+class CoinClassificationResult {
+  final bool isCoin;
+  final String material;
+  final String? period;
+  final String? dateRange;
+  final double confidence;
+  final List<String> characteristics;
+  final List<String> regions;
+  final List<String> alternativePeriods;
+  final Map<String, dynamic> colorAnalysis;
+
+  CoinClassificationResult({
+    required this.isCoin,
+    required this.material,
+    this.period,
+    this.dateRange,
+    required this.confidence,
+    required this.characteristics,
+    required this.regions,
+    required this.alternativePeriods,
+    required this.colorAnalysis,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'isCoin': isCoin,
+    'material': material,
+    'period': period,
+    'dateRange': dateRange,
+    'confidence': confidence,
+    'characteristics': characteristics,
+    'regions': regions,
+    'alternativePeriods': alternativePeriods,
+  };
+
+  String get description {
+    if (period == null) {
+      return 'Coin detected, material: $material. Period could not be determined.';
+    }
+    return '$period coin ($dateRange), material: $material. Confidence: ${confidence.toStringAsFixed(0)}%';
+  }
 }
