@@ -6,8 +6,9 @@ import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'coin_identification_service.dart';
 
-/// AI-powered artifact classification using Google ML Kit
-/// Provides on-device image labeling and object detection
+/// Advanced AI-powered artifact classification using Google ML Kit
+/// Provides professional-grade on-device image labeling and object detection
+/// Optimized for archaeological artifact analysis
 class AIClassificationService {
   static final AIClassificationService _instance = AIClassificationService._internal();
   factory AIClassificationService() => _instance;
@@ -16,7 +17,12 @@ class AIClassificationService {
   ImageLabeler? _imageLabeler;
   ObjectDetector? _objectDetector;
 
-  // Archaeological artifact type mappings based on ML Kit labels
+  // Classification cache for performance
+  final Map<String, ArtifactClassificationResult> _cache = {};
+
+  // ═══════════════════════════════════════════════════════════════
+  // COMPREHENSIVE ARTIFACT TYPE MAPPINGS (100+ labels)
+  // ═══════════════════════════════════════════════════════════════
   static const Map<String, String> _labelToArtifactType = {
     // Coins & Currency
     'coin': 'Coin',
@@ -24,6 +30,12 @@ class AIClassificationService {
     'currency': 'Coin',
     'medal': 'Coin',
     'token': 'Coin',
+    'medallion': 'Coin',
+    'numismatic': 'Coin',
+    'penny': 'Coin',
+    'dime': 'Coin',
+    'quarter': 'Coin',
+    'dollar': 'Coin',
 
     // Pottery & Ceramics
     'pottery': 'Pottery',
@@ -37,18 +49,50 @@ class AIClassificationService {
     'dish': 'Pottery',
     'amphora': 'Pottery',
     'urn': 'Pottery',
+    'jug': 'Pottery',
+    'pitcher': 'Pottery',
+    'vessel': 'Pottery',
+    'terracotta': 'Pottery',
+    'earthenware': 'Pottery',
+    'porcelain': 'Pottery',
+    'stoneware': 'Pottery',
+    'crockery': 'Pottery',
 
-    // Tools & Weapons
+    // Tools & Implements
     'tool': 'Tool',
     'knife': 'Tool',
     'blade': 'Tool',
     'axe': 'Tool',
     'hammer': 'Tool',
+    'chisel': 'Tool',
+    'scraper': 'Tool',
+    'awl': 'Tool',
+    'needle': 'Tool',
+    'spindle': 'Tool',
+    'loom': 'Tool',
+    'millstone': 'Tool',
+    'mortar': 'Tool',
+    'pestle': 'Tool',
+    'sickle': 'Tool',
+    'plowshare': 'Tool',
+    'hoe': 'Tool',
+
+    // Weapons
     'sword': 'Weapon',
     'weapon': 'Weapon',
     'arrowhead': 'Weapon',
     'spear': 'Weapon',
     'dagger': 'Weapon',
+    'arrow': 'Weapon',
+    'bow': 'Weapon',
+    'shield': 'Weapon',
+    'helmet': 'Weapon',
+    'armor': 'Weapon',
+    'mace': 'Weapon',
+    'lance': 'Weapon',
+    'javelin': 'Weapon',
+    'sling': 'Weapon',
+    'projectile': 'Weapon',
 
     // Jewelry & Ornaments
     'jewelry': 'Jewelry',
@@ -60,6 +104,15 @@ class AIClassificationService {
     'earring': 'Jewelry',
     'bead': 'Jewelry',
     'amulet': 'Jewelry',
+    'fibula': 'Jewelry',
+    'torque': 'Jewelry',
+    'diadem': 'Jewelry',
+    'crown': 'Jewelry',
+    'tiara': 'Jewelry',
+    'charm': 'Jewelry',
+    'ornament': 'Jewelry',
+    'seal': 'Jewelry',
+    'signet': 'Jewelry',
 
     // Sculpture & Art
     'sculpture': 'Sculpture',
@@ -68,14 +121,38 @@ class AIClassificationService {
     'bust': 'Sculpture',
     'relief': 'Sculpture',
     'carving': 'Sculpture',
+    'idol': 'Sculpture',
+    'mask': 'Sculpture',
+    'head': 'Sculpture',
+    'torso': 'Sculpture',
+    'statuette': 'Sculpture',
 
-    // Building Materials
+    // Building Materials & Architecture
     'brick': 'Building Material',
     'tile': 'Building Material',
+    'mosaic': 'Building Material',
+    'column': 'Building Material',
+    'capital': 'Building Material',
+    'frieze': 'Building Material',
+    'architrave': 'Building Material',
+    'cornice': 'Building Material',
+    'plaster': 'Building Material',
+
+    // Stone & Lithic
     'stone': 'Stone',
     'rock': 'Stone',
     'marble': 'Stone',
     'granite': 'Stone',
+    'flint': 'Lithic',
+    'obsidian': 'Lithic',
+    'chert': 'Lithic',
+    'quartz': 'Stone',
+    'basalt': 'Stone',
+    'limestone': 'Stone',
+    'sandstone': 'Stone',
+    'slate': 'Stone',
+    'stele': 'Stone',
+    'obelisk': 'Stone',
 
     // Bone & Organic
     'bone': 'Bone/Organic',
@@ -84,6 +161,10 @@ class AIClassificationService {
     'ivory': 'Bone/Organic',
     'horn': 'Bone/Organic',
     'tooth': 'Bone/Organic',
+    'antler': 'Bone/Organic',
+    'tusk': 'Bone/Organic',
+    'skull': 'Bone/Organic',
+    'fossil': 'Bone/Organic',
 
     // Metal Objects
     'metal': 'Metal Object',
@@ -92,20 +173,64 @@ class AIClassificationService {
     'copper': 'Metal Object',
     'gold': 'Metal Object',
     'silver': 'Metal Object',
+    'brass': 'Metal Object',
+    'pewter': 'Metal Object',
+    'lead': 'Metal Object',
+    'tin': 'Metal Object',
 
     // Glass
     'glass': 'Glass',
     'bottle': 'Glass',
+    'glassware': 'Glass',
+    'window': 'Glass',
 
-    // Textile
+    // Textile & Fiber
     'fabric': 'Textile',
     'textile': 'Textile',
     'cloth': 'Textile',
     'leather': 'Textile',
+    'linen': 'Textile',
+    'wool': 'Textile',
+    'silk': 'Textile',
+    'cotton': 'Textile',
+    'rope': 'Textile',
+    'basket': 'Textile',
+    'weaving': 'Textile',
+
+    // Writing & Documents
+    'inscription': 'Inscription',
+    'tablet': 'Inscription',
+    'papyrus': 'Inscription',
+    'scroll': 'Inscription',
+    'codex': 'Inscription',
+    'ostracon': 'Inscription',
+    'cuneiform': 'Inscription',
+    'hieroglyph': 'Inscription',
+
+    // Religious & Ritual
+    'altar': 'Religious Object',
+    'incense': 'Religious Object',
+    'offering': 'Religious Object',
+    'votive': 'Religious Object',
+    'lamp': 'Lamp',
+    'lantern': 'Lamp',
+    'candle': 'Lamp',
+    'oil lamp': 'Lamp',
+
+    // Containers
+    'container': 'Container',
+    'box': 'Container',
+    'chest': 'Container',
+    'casket': 'Container',
+    'coffin': 'Container',
+    'sarcophagus': 'Container',
   };
 
-  // Material detection mappings
+  // ═══════════════════════════════════════════════════════════════
+  // MATERIAL DETECTION MAPPINGS (50+ materials)
+  // ═══════════════════════════════════════════════════════════════
   static const Map<String, String> _labelToMaterial = {
+    // Metals
     'metal': 'Metal',
     'bronze': 'Bronze',
     'iron': 'Iron',
@@ -113,33 +238,101 @@ class AIClassificationService {
     'gold': 'Gold',
     'silver': 'Silver',
     'brass': 'Bronze',
+    'pewter': 'Lead/Tin',
+    'lead': 'Lead',
+    'tin': 'Tin',
+    'electrum': 'Electrum',
+    'orichalcum': 'Bronze',
+    'billon': 'Billon',
+
+    // Ceramics
     'ceramic': 'Ceramic',
     'pottery': 'Ceramic',
     'clay': 'Ceramic',
-    'terracotta': 'Ceramic',
+    'terracotta': 'Terracotta',
+    'earthenware': 'Ceramic',
+    'stoneware': 'Ceramic',
+    'porcelain': 'Porcelain',
+    'faience': 'Faience',
+
+    // Stone
     'stone': 'Stone',
     'rock': 'Stone',
     'marble': 'Marble',
-    'granite': 'Stone',
-    'limestone': 'Stone',
-    'sandstone': 'Stone',
+    'granite': 'Granite',
+    'limestone': 'Limestone',
+    'sandstone': 'Sandstone',
+    'basalt': 'Basalt',
+    'alabaster': 'Alabaster',
+    'jade': 'Jade',
+    'obsidian': 'Obsidian',
+    'flint': 'Flint',
+    'chert': 'Chert',
+    'quartz': 'Quartz',
+    'slate': 'Slate',
+    'lapis': 'Lapis Lazuli',
+
+    // Organic
     'bone': 'Bone',
     'ivory': 'Ivory',
     'wood': 'Wood',
+    'shell': 'Shell',
+    'horn': 'Horn',
+    'antler': 'Antler',
+    'amber': 'Amber',
+    'coral': 'Coral',
+
+    // Glass
     'glass': 'Glass',
+
+    // Textile
     'leather': 'Leather',
     'fabric': 'Textile',
     'textile': 'Textile',
+    'linen': 'Linen',
+    'wool': 'Wool',
+    'silk': 'Silk',
+    'cotton': 'Cotton',
+
+    // Other
+    'papyrus': 'Papyrus',
+    'parchment': 'Parchment',
+    'plaster': 'Plite',
+    'wax': 'Wax',
+    'bitumen': 'Bitumen',
   };
 
-  /// Initialize the ML Kit services
+  // ═══════════════════════════════════════════════════════════════
+  // PERIOD DETECTION MAPPINGS
+  // ═══════════════════════════════════════════════════════════════
+  static const Map<String, Map<String, String>> _periodMappings = {
+    // Type + Material combinations
+    'Coin|Bronze': {'period': 'Roman/Byzantine', 'confidence': '0.6'},
+    'Coin|Silver': {'period': 'Classical/Roman', 'confidence': '0.6'},
+    'Coin|Gold': {'period': 'Imperial/Medieval', 'confidence': '0.5'},
+    'Pottery|Ceramic': {'period': 'Classical/Hellenistic', 'confidence': '0.5'},
+    'Pottery|Terracotta': {'period': 'Archaic/Classical', 'confidence': '0.5'},
+    'Tool|Bronze': {'period': 'Bronze Age', 'confidence': '0.7'},
+    'Tool|Iron': {'period': 'Iron Age', 'confidence': '0.7'},
+    'Weapon|Bronze': {'period': 'Bronze Age', 'confidence': '0.7'},
+    'Weapon|Iron': {'period': 'Iron Age/Medieval', 'confidence': '0.6'},
+    'Lithic|Flint': {'period': 'Paleolithic/Neolithic', 'confidence': '0.8'},
+    'Lithic|Obsidian': {'period': 'Neolithic/Bronze Age', 'confidence': '0.7'},
+    'Sculpture|Marble': {'period': 'Classical/Hellenistic', 'confidence': '0.6'},
+    'Sculpture|Bronze': {'period': 'Classical/Roman', 'confidence': '0.6'},
+    'Glass|Glass': {'period': 'Roman/Byzantine', 'confidence': '0.5'},
+    'Jewelry|Gold': {'period': 'Various (context needed)', 'confidence': '0.3'},
+    'Jewelry|Bronze': {'period': 'Bronze Age/Iron Age', 'confidence': '0.5'},
+  };
+
+  /// Initialize the ML Kit services with optimized settings
   Future<void> initialize() async {
     try {
-      // Initialize image labeler with high confidence threshold
-      final labelerOptions = ImageLabelerOptions(confidenceThreshold: 0.5);
+      // Lower threshold for better detection (0.3 instead of 0.5)
+      final labelerOptions = ImageLabelerOptions(confidenceThreshold: 0.3);
       _imageLabeler = ImageLabeler(options: labelerOptions);
 
-      // Initialize object detector for locating artifacts in image
+      // Multi-object detection for complex scenes
       final detectorOptions = ObjectDetectorOptions(
         mode: DetectionMode.single,
         classifyObjects: true,
@@ -147,14 +340,20 @@ class AIClassificationService {
       );
       _objectDetector = ObjectDetector(options: detectorOptions);
 
-      debugPrint('AI Classification Service initialized');
+      debugPrint('AI Classification Service initialized (optimized)');
     } catch (e) {
       debugPrint('Error initializing AI service: $e');
     }
   }
 
-  /// Classify an artifact image and return predictions
+  /// Classify an artifact image with comprehensive analysis
   Future<ArtifactClassificationResult> classifyArtifact(File imageFile) async {
+    // Check cache first
+    final cacheKey = imageFile.path;
+    if (_cache.containsKey(cacheKey)) {
+      return _cache[cacheKey]!;
+    }
+
     if (_imageLabeler == null) {
       await initialize();
     }
@@ -179,24 +378,31 @@ class AIClassificationService {
         confidence: confidence,
       ));
 
-      // Check for artifact type match
+      // Check for artifact type match (prioritize higher confidence)
       for (final entry in _labelToArtifactType.entries) {
-        if (labelText.contains(entry.key) && confidence > typeConfidence) {
-          detectedType = entry.value;
-          typeConfidence = confidence;
+        if (labelText.contains(entry.key)) {
+          // Use weighted confidence for better accuracy
+          final weightedConf = confidence * (labelText == entry.key ? 1.2 : 1.0);
+          if (weightedConf > typeConfidence) {
+            detectedType = entry.value;
+            typeConfidence = confidence;
+          }
         }
       }
 
       // Check for material match
       for (final entry in _labelToMaterial.entries) {
-        if (labelText.contains(entry.key) && confidence > materialConfidence) {
-          detectedMaterial = entry.value;
-          materialConfidence = confidence;
+        if (labelText.contains(entry.key)) {
+          final weightedConf = confidence * (labelText == entry.key ? 1.2 : 1.0);
+          if (weightedConf > materialConfidence) {
+            detectedMaterial = entry.value;
+            materialConfidence = confidence;
+          }
         }
       }
     }
 
-    // Process detected objects
+    // Process detected objects for additional context
     final detectedObjects = <DetectedObject>[];
     for (final obj in objects) {
       detectedObjects.add(DetectedObject(
@@ -207,30 +413,59 @@ class AIClassificationService {
         )).toList(),
         trackingId: obj.trackingId,
       ));
+
+      // Use object labels to improve detection
+      for (final objLabel in obj.labels) {
+        final labelText = objLabel.text.toLowerCase();
+        for (final entry in _labelToArtifactType.entries) {
+          if (labelText.contains(entry.key) && objLabel.confidence > typeConfidence) {
+            detectedType = entry.value;
+            typeConfidence = objLabel.confidence;
+          }
+        }
+      }
     }
 
-    // Generate suggested period based on common associations
+    // Generate suggested period based on type + material combination
     String? suggestedPeriod;
-    if (detectedType == 'Coin' && detectedMaterial == 'Bronze') {
-      suggestedPeriod = 'Roman/Byzantine';
-    } else if (detectedType == 'Pottery') {
-      suggestedPeriod = 'Classical/Hellenistic';
-    } else if (detectedMaterial == 'Bronze' || detectedMaterial == 'Copper') {
-      suggestedPeriod = 'Bronze Age';
-    } else if (detectedMaterial == 'Iron') {
-      suggestedPeriod = 'Iron Age';
+    double periodConfidence = 0;
+
+    if (detectedType != null && detectedMaterial != null) {
+      final key = '$detectedType|$detectedMaterial';
+      if (_periodMappings.containsKey(key)) {
+        suggestedPeriod = _periodMappings[key]!['period'];
+        periodConfidence = double.tryParse(_periodMappings[key]!['confidence'] ?? '0') ?? 0;
+      }
     }
 
-    return ArtifactClassificationResult(
+    // Fallback period detection
+    if (suggestedPeriod == null) {
+      if (detectedMaterial == 'Bronze' || detectedMaterial == 'Copper') {
+        suggestedPeriod = 'Bronze Age';
+        periodConfidence = 0.4;
+      } else if (detectedMaterial == 'Iron') {
+        suggestedPeriod = 'Iron Age';
+        periodConfidence = 0.4;
+      } else if (detectedMaterial == 'Flint' || detectedMaterial == 'Obsidian') {
+        suggestedPeriod = 'Stone Age';
+        periodConfidence = 0.6;
+      }
+    }
+
+    final result = ArtifactClassificationResult(
       artifactType: detectedType,
       material: detectedMaterial,
       suggestedPeriod: suggestedPeriod,
       typeConfidence: typeConfidence,
       materialConfidence: materialConfidence,
+      periodConfidence: periodConfidence,
       allLabels: allLabels,
       detectedObjects: detectedObjects,
-      isHighConfidence: typeConfidence > 0.7 || materialConfidence > 0.7,
+      isHighConfidence: typeConfidence > 0.6 || materialConfidence > 0.6,
     );
+
+    _cache[cacheKey] = result;
+    return result;
   }
 
   /// Quick classification - returns just the top prediction
@@ -243,26 +478,29 @@ class AIClassificationService {
     );
   }
 
-  /// Enhanced coin classification using the coin period database
-  /// Call this after classifyArtifact if the artifact is detected as a coin
+  /// Enhanced coin classification with advanced period detection
   Future<CoinClassificationResult> classifyCoin(File imageFile, {String? detectedMaterial}) async {
     final coinService = CoinIdentificationService();
 
-    // Analyze image colors to estimate material
+    // Analyze image colors and texture for better material/period estimation
     final imageAnalysis = await coinService.analyzeImage(imageFile);
     final material = detectedMaterial ?? imageAnalysis['estimatedMaterial'] as String? ?? 'Unknown';
 
-    // Extract keywords from ML Kit labels for better period matching
+    // Extract keywords from ML Kit labels for period matching
     final mlResult = await classifyArtifact(imageFile);
     final keywords = mlResult.allLabels
-        .where((l) => l.confidence > 0.3)
+        .where((l) => l.confidence > 0.25) // Lower threshold for more keywords
         .map((l) => l.label)
         .toList();
 
-    // Analyze coin using period database
+    // Pass color data to coin service for enhanced analysis
+    final colorData = imageAnalysis['colorAnalysis'] as Map<String, dynamic>? ?? {};
+
+    // Analyze coin using comprehensive period database
     final periodResult = coinService.analyzeByCharacteristics(
       material: material,
       keywords: keywords,
+      colorData: colorData,
     );
 
     return CoinClassificationResult(
@@ -273,12 +511,14 @@ class AIClassificationService {
       confidence: periodResult.confidence,
       characteristics: periodResult.characteristics ?? [],
       regions: periodResult.regions ?? [],
+      materials: periodResult.materials ?? [],
       alternativePeriods: periodResult.alternativePeriods ?? [],
-      colorAnalysis: imageAnalysis['colorAnalysis'] as Map<String, dynamic>? ?? {},
+      colorAnalysis: colorData,
+      textureAnalysis: imageAnalysis['textureAnalysis'] as Map<String, dynamic>? ?? {},
     );
   }
 
-  /// Get AI suggestions for a description based on classification
+  /// Generate intelligent description based on classification
   String generateDescription(ArtifactClassificationResult result) {
     final parts = <String>[];
 
@@ -299,11 +539,15 @@ class AIClassificationService {
     }
 
     if (parts.isEmpty) {
-      return 'Unable to classify. Please enter details manually.';
+      return 'Unable to classify automatically. Please enter details manually.';
     }
 
-    return '${parts.join(', ')}. Confidence: ${((result.typeConfidence + result.materialConfidence) / 2 * 100).toStringAsFixed(0)}%';
+    final avgConfidence = (result.typeConfidence + result.materialConfidence) / 2 * 100;
+    return '${parts.join(', ')}. Confidence: ${avgConfidence.toStringAsFixed(0)}%';
   }
+
+  /// Clear classification cache
+  void clearCache() => _cache.clear();
 
   /// Dispose resources
   Future<void> dispose() async {
@@ -311,6 +555,7 @@ class AIClassificationService {
     await _objectDetector?.close();
     _imageLabeler = null;
     _objectDetector = null;
+    _cache.clear();
   }
 }
 
@@ -321,6 +566,7 @@ class ArtifactClassificationResult {
   final String? suggestedPeriod;
   final double typeConfidence;
   final double materialConfidence;
+  final double periodConfidence;
   final List<ClassificationLabel> allLabels;
   final List<DetectedObject> detectedObjects;
   final bool isHighConfidence;
@@ -331,6 +577,7 @@ class ArtifactClassificationResult {
     this.suggestedPeriod,
     required this.typeConfidence,
     required this.materialConfidence,
+    this.periodConfidence = 0,
     required this.allLabels,
     required this.detectedObjects,
     required this.isHighConfidence,
@@ -342,6 +589,7 @@ class ArtifactClassificationResult {
     'suggestedPeriod': suggestedPeriod,
     'typeConfidence': typeConfidence,
     'materialConfidence': materialConfidence,
+    'periodConfidence': periodConfidence,
     'allLabels': allLabels.map((l) => l.toJson()).toList(),
     'isHighConfidence': isHighConfidence,
   };
@@ -376,7 +624,7 @@ class DetectedObject {
   });
 }
 
-/// Result of coin-specific classification with period detection
+/// Enhanced coin classification result with full analysis data
 class CoinClassificationResult {
   final bool isCoin;
   final String material;
@@ -385,8 +633,10 @@ class CoinClassificationResult {
   final double confidence;
   final List<String> characteristics;
   final List<String> regions;
+  final List<String> materials;
   final List<String> alternativePeriods;
   final Map<String, dynamic> colorAnalysis;
+  final Map<String, dynamic> textureAnalysis;
 
   CoinClassificationResult({
     required this.isCoin,
@@ -396,8 +646,10 @@ class CoinClassificationResult {
     required this.confidence,
     required this.characteristics,
     required this.regions,
+    this.materials = const [],
     required this.alternativePeriods,
     required this.colorAnalysis,
+    this.textureAnalysis = const {},
   });
 
   Map<String, dynamic> toJson() => {
@@ -408,6 +660,7 @@ class CoinClassificationResult {
     'confidence': confidence,
     'characteristics': characteristics,
     'regions': regions,
+    'materials': materials,
     'alternativePeriods': alternativePeriods,
   };
 
