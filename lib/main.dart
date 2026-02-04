@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -21,6 +22,7 @@ import 'package:archive/archive_io.dart';
 import 'package:video_player/video_player.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/auth_service.dart';
 import 'services/local_storage_service.dart';
@@ -37,7 +39,7 @@ import 'screens/field_journal_screen.dart';
 import 'screens/quick_capture_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
-import 'screens/qr_scanner_screen.dart';
+// import 'screens/qr_scanner_screen.dart'; // Removed - QR scanner hidden
 import 'screens/ai_recognition_screen.dart';
 import 'services/export_service.dart';
 import 'services/biometric_service.dart';
@@ -5055,9 +5057,9 @@ class _ToolsView extends StatelessWidget {
                       // GUEST VIEW with locked features
                       _buildLockedFeaturePreview(context),
                     ] else ...[
-                      // === HERO FEATURE: 3D RECONSTRUCTION ===
-                      _buildHeroFeature(context),
-                      const SizedBox(height: 20),
+                      // === HERO FEATURE: 3D RECONSTRUCTION === (HIDDEN)
+                      // _buildHeroFeature(context),
+                      // const SizedBox(height: 20),
 
                       // === FIELD WORK ===
                       _buildCategoryHeader('Field Work'),
@@ -5097,7 +5099,7 @@ class _ToolsView extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 12),
-                      // Manual Entry, Photo Capture & QR Scanner - Grid
+                      // Manual Entry & Photo Capture - Grid (QR Scanner removed)
                       _buildToolGrid(context, [
                         _ToolCard(
                           icon: Icons.edit_note_rounded,
@@ -5119,21 +5121,6 @@ class _ToolsView extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
                           ),
                         ),
-                        _ToolCard(
-                          icon: Icons.qr_code_scanner_rounded,
-                          title: 'QR Scanner',
-                          description: 'Scan artifact tags',
-                          color: const Color(0xFF00BCD4),
-                          onTap: () async {
-                            final result = await Navigator.push<Map<String, dynamic>>(
-                              context,
-                              MaterialPageRoute(builder: (_) => const QRScannerScreen()),
-                            );
-                            if (result != null && context.mounted) {
-                              _handleQRScanResult(context, result);
-                            }
-                          },
-                        ),
                       ]),
                       const SizedBox(height: 20),
 
@@ -5142,9 +5129,9 @@ class _ToolsView extends StatelessWidget {
                       const SizedBox(height: 12),
                       _buildToolGrid(context, [
                         _ToolCard(
-                          icon: Icons.auto_awesome_rounded,
-                          title: 'AI Recognition',
-                          description: 'Identify artifact type and period',
+                          icon: Icons.monetization_on_rounded,
+                          title: 'Coin Recognition',
+                          description: 'Identify coins - ancient & modern',
                           badge: 'NEW',
                           color: const Color(0xFFFF9800),
                           onTap: () => Navigator.push(
@@ -7905,7 +7892,11 @@ class _SafetyView extends StatefulWidget {
   State<_SafetyView> createState() => _SafetyViewState();
 }
 
-class _SafetyViewState extends State<_SafetyView> {
+class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientMixin {
+  // Keep the BLE connection alive when switching tabs
+  @override
+  bool get wantKeepAlive => true;
+
   BluetoothDevice? _connectedDevice;
   bool _isScanning = false;
   bool _isConnecting = false;
@@ -7940,16 +7931,42 @@ class _SafetyViewState extends State<_SafetyView> {
   String _fullScreenAlertLevel = 'warning';
   String? _lastNotifiedAlertLevel; // Prevent duplicate notifications
 
+  // Text-to-speech for voice alerts
+  late FlutterTts _tts;
+
+  // Audio player for alarm sounds
+  final AudioPlayer _alarmPlayer = AudioPlayer();
+
+  // Mute control for alerts
+  bool _isMuted = false;
+
   @override
   void initState() {
     super.initState();
+    _initTts();
+    _initAlarm();
     _checkBluetoothAndScan();
     _startFirebaseLogging();
     _loadSensorHistory();
   }
 
+  Future<void> _initTts() async {
+    _tts = FlutterTts();
+    await _tts.setLanguage('en-US');
+    await _tts.setSpeechRate(0.6);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.2);
+  }
+
+  Future<void> _initAlarm() async {
+    await _alarmPlayer.setReleaseMode(ReleaseMode.loop); // Loop alarm sound
+  }
+
   @override
   void dispose() {
+    _tts.stop();
+    _alarmPlayer.stop();
+    _alarmPlayer.dispose();
     _scanSubscription?.cancel();
     _connectionSubscription?.cancel();
     for (var sub in _charSubscriptions) {
@@ -7984,33 +8001,52 @@ class _SafetyViewState extends State<_SafetyView> {
     });
 
     try {
+      // Scan for ALL BLE devices (don't filter by service - ESP32 may not advertise it)
       await FlutterBluePlus.startScan(
-        withServices: [Guid(_bleSensorServiceUUID)],
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 20),
       );
 
+      int devicesFound = 0;
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
         for (ScanResult r in results) {
-          if (r.device.platformName.contains('AncientVision')) {
+          final name = r.device.platformName;
+          final nameLower = name.toLowerCase();
+
+          // Log all devices found for debugging
+          if (name.isNotEmpty && devicesFound < 20) {
+            debugPrint('BLE Found: "$name" (${r.device.remoteId})');
+            devicesFound++;
+          }
+
+          // Match our device by name (case insensitive)
+          // Also match "M5" prefix for M5Stack devices
+          if (nameLower.contains('ancientvision') ||
+              nameLower.contains('ancient') ||
+              nameLower.contains('m5stick') ||
+              nameLower.contains('m5-') ||
+              nameLower.startsWith('m5')) {
+            debugPrint('>>> MATCHED DEVICE: $name - connecting...');
             FlutterBluePlus.stopScan();
             _connectToDevice(r.device);
-            break;
+            return; // Exit the listener
           }
         }
       });
 
-      await Future.delayed(const Duration(seconds: 10));
+      await Future.delayed(const Duration(seconds: 20));
       if (_connectedDevice == null && mounted) {
         setState(() {
           _isScanning = false;
-          _connectionStatus = 'Sensor not found';
+          _connectionStatus = 'Sensor not found - check device is on';
         });
+        debugPrint('Scan complete - AncientVision device not found');
       }
     } catch (e) {
+      debugPrint('BLE Scan error: $e');
       if (mounted) {
         setState(() {
           _isScanning = false;
-          _connectionStatus = 'Scan failed';
+          _connectionStatus = 'Scan failed: $e';
         });
       }
     }
@@ -8226,10 +8262,8 @@ class _SafetyViewState extends State<_SafetyView> {
             // Send push notification for alerts (only if level changed)
             _sendAlertNotification(newLevel, newMessage);
 
-            // Show full-screen alert for critical alerts
-            if (newLevel == 'critical') {
-              _triggerFullScreenAlert(newMessage, newLevel);
-            }
+            // Show full-screen alert for ALL alerts (both warning and critical)
+            _triggerFullScreenAlert(newMessage, newLevel);
           }
 
           _alertLevel = newLevel;
@@ -8263,17 +8297,44 @@ class _SafetyViewState extends State<_SafetyView> {
     }
   }
 
-  /// Trigger full-screen alert overlay
-  void _triggerFullScreenAlert(String message, String level) {
+  /// Trigger full-screen alert overlay with voice, haptic feedback, and alarm sound
+  void _triggerFullScreenAlert(String message, String level) async {
     setState(() {
       _showFullScreenAlert = true;
       _fullScreenAlertMessage = message;
       _fullScreenAlertLevel = level;
     });
+
+    // Skip sounds if muted (still show visual alert)
+    if (_isMuted) return;
+
+    // Haptic feedback - multiple vibrations for critical
+    if (level == 'critical') {
+      for (int i = 0; i < 3; i++) {
+        HapticFeedback.heavyImpact();
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    } else {
+      HapticFeedback.heavyImpact();
+    }
+
+    // Play alarm sound (local asset - works offline)
+    try {
+      await _alarmPlayer.play(AssetSource('audio/alarm.wav'));
+    } catch (e) {
+      debugPrint('Could not play alarm: $e');
+    }
+
+    // Voice alert - speak the warning
+    String voiceMessage = level == 'critical'
+        ? 'Critical alert! $message'
+        : 'Warning! $message';
+    _tts.speak(voiceMessage);
   }
 
-  /// Dismiss full-screen alert
+  /// Dismiss full-screen alert and stop alarm
   void _dismissFullScreenAlert() {
+    _alarmPlayer.stop(); // Stop alarm sound
     setState(() {
       _showFullScreenAlert = false;
     });
@@ -8485,6 +8546,7 @@ class _SafetyViewState extends State<_SafetyView> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final isConnected = _connectedDevice != null;
 
     return Stack(
@@ -8572,6 +8634,41 @@ class _SafetyViewState extends State<_SafetyView> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  // Mute button - toggle alarm sounds
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isMuted = !_isMuted;
+                        if (_isMuted) {
+                          _alarmPlayer.stop(); // Stop any playing alarm
+                          _tts.stop(); // Stop any voice alert
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _isMuted ? Colors.grey : Colors.green.withAlpha(200),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isMuted ? Icons.volume_off : Icons.volume_up,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isMuted ? 'Muted' : 'Sound',
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -8603,6 +8700,7 @@ class _SafetyViewState extends State<_SafetyView> {
               // Live Sensors Card
               _LiveSensorsCard(
                 accX: _accX, accY: _accY, accZ: _accZ,
+                vibration: _vibration,
                 moisturePercent: _moisturePercent,
                 lastUpdate: _lastUpdate,
                 isConnected: isConnected,
@@ -8993,15 +9091,28 @@ class _LiveSensorsCard extends StatelessWidget {
   final int moisturePercent;
   final String lastUpdate;
   final bool isConnected;
+  final double vibration;
 
   const _LiveSensorsCard({
     required this.accX, required this.accY, required this.accZ,
     required this.moisturePercent, required this.lastUpdate, required this.isConnected,
+    this.vibration = 0.0,
     super.key,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Determine vibration status
+    String vibStatus = 'Safe';
+    Color vibColor = Colors.green;
+    if (vibration > 0.5) {
+      vibStatus = 'HIGH!';
+      vibColor = Colors.red;
+    } else if (vibration > 0.2) {
+      vibStatus = 'Moderate';
+      vibColor = Colors.orange;
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
@@ -9030,9 +9141,10 @@ class _LiveSensorsCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               _SensorRow(
-                label: 'IMU (M5StickC Plus 2)',
-                value: 'X ${accX.toStringAsFixed(2)}g   Y ${accY.toStringAsFixed(2)}g   Z ${accZ.toStringAsFixed(2)}g',
-                icon: Icons.sensors_rounded,
+                label: 'Vibration (M5StickC)',
+                value: '${vibration.toStringAsFixed(2)}g   Status: $vibStatus',
+                icon: Icons.vibration,
+                valueColor: vibColor,
               ),
               const SizedBox(height: 6),
               _SensorRow(
@@ -9054,8 +9166,9 @@ class _SensorRow extends StatelessWidget {
   final String label;
   final String value;
   final IconData icon;
+  final Color? valueColor;
 
-  const _SensorRow({required this.label, required this.value, required this.icon, super.key});
+  const _SensorRow({required this.label, required this.value, required this.icon, this.valueColor, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -9077,7 +9190,7 @@ class _SensorRow extends StatelessWidget {
             children: [
               Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
               const SizedBox(height: 2),
-              Text(value, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 11)),
+              Text(value, style: TextStyle(color: valueColor ?? Colors.white.withOpacity(0.8), fontSize: 11)),
             ],
           ),
         ),

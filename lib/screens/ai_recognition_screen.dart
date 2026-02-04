@@ -4,8 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import '../services/ai_classification_service.dart';
 import '../services/coin_identification_service.dart';
 
-/// AI-powered artifact recognition screen
-/// Takes a photo and classifies the artifact using ML Kit
+/// AI-powered COIN recognition screen
+/// Takes a photo and classifies coins using ML Kit + advanced numismatic analysis
 class AIRecognitionScreen extends StatefulWidget {
   const AIRecognitionScreen({super.key});
 
@@ -68,29 +68,49 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
       _isProcessing = true;
       _error = null;
       _coinResult = null;
+      _comprehensiveAnalysis = null;
     });
 
     try {
-      final result = await _aiService.classifyArtifact(_selectedImage!);
+      // COIN-ONLY MODE: Skip general artifact classification, go directly to coin analysis
+      // Create a coin-type result directly
       setState(() {
-        _result = result;
+        _result = ArtifactClassificationResult(
+          artifactType: 'Coin',
+          material: 'Metal',
+          suggestedPeriod: 'Analyzing...',
+          typeConfidence: 0.95,
+          materialConfidence: 0.90,
+          allLabels: [],
+          detectedObjects: [],
+          isHighConfidence: true,
+        );
       });
 
-      // If a coin is detected, run specialized coin classification AND comprehensive analysis
-      if (result.artifactType == 'Coin') {
-        final coinResult = await _aiService.classifyCoin(
-          _selectedImage!,
-          detectedMaterial: result.material,
+      // Run specialized coin classification
+      final coinResult = await _aiService.classifyCoin(
+        _selectedImage!,
+        detectedMaterial: 'Metal',
+      );
+
+      // Run advanced comprehensive analysis (patina, grade, edge, side detection)
+      final comprehensive = await _coinService.performComprehensiveAnalysis(_selectedImage!);
+
+      setState(() {
+        _coinResult = coinResult;
+        _comprehensiveAnalysis = comprehensive;
+        // Update result with coin period info
+        _result = ArtifactClassificationResult(
+          artifactType: 'Coin',
+          material: coinResult.material ?? 'Metal',
+          suggestedPeriod: coinResult.period,
+          typeConfidence: coinResult.confidence / 100,
+          materialConfidence: 0.90,
+          allLabels: [],
+          detectedObjects: [],
+          isHighConfidence: coinResult.confidence > 70,
         );
-
-        // Run advanced comprehensive analysis (patina, grade, edge, side detection)
-        final comprehensive = await _coinService.performComprehensiveAnalysis(_selectedImage!);
-
-        setState(() {
-          _coinResult = coinResult;
-          _comprehensiveAnalysis = comprehensive;
-        });
-      }
+      });
 
       setState(() {
         _isProcessing = false;
@@ -136,7 +156,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
         backgroundColor: const Color(0xFF0D3A39),
         elevation: 0,
         title: const Text(
-          'AI Recognition',
+          'Coin Recognition',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         iconTheme: const IconThemeData(color: Colors.white),

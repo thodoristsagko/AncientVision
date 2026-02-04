@@ -514,6 +514,210 @@ class CoinIdentificationService {
       rulers: ['Qin Shi Huang', 'Han Wudi', 'Tang Taizong', 'Song Taizu', 'Kangxi', 'Qianlong'],
       weight: 0.4,
     ),
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MODERN COINS (1900 - Present)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // UNITED STATES
+    'us_modern': CoinPeriodInfo(
+      period: 'United States (Modern)',
+      dateRange: '1965 - Present',
+      characteristics: ['Clad coinage', 'Copper-nickel', 'In God We Trust', 'E Pluribus Unum', 'Liberty', 'Eagle', 'Presidential portraits', 'State quarters', 'America the Beautiful'],
+      regions: ['United States', 'US Mint Philadelphia', 'Denver', 'San Francisco', 'West Point'],
+      materials: ['Copper-Nickel Clad', 'Copper Plated Zinc', 'Manganese-Brass', 'Silver Proof'],
+      denominations: ['Cent (Penny)', 'Nickel (5c)', 'Dime (10c)', 'Quarter (25c)', 'Half Dollar (50c)', 'Dollar', 'Presidential Dollar', 'Sacagawea Dollar'],
+      rulers: ['Lincoln (Cent)', 'Jefferson (Nickel)', 'Roosevelt (Dime)', 'Washington (Quarter)', 'Kennedy (Half)', 'Eisenhower', 'Susan B. Anthony', 'Sacagawea'],
+      weight: 0.5,
+    ),
+    'us_classic': CoinPeriodInfo(
+      period: 'United States (Classic)',
+      dateRange: '1900 - 1964',
+      characteristics: ['Silver coinage', '90% silver', 'Walking Liberty', 'Mercury dime', 'Buffalo nickel', 'Indian head', 'Morgan', 'Peace dollar', 'Franklin half'],
+      regions: ['United States', 'Philadelphia', 'Denver', 'San Francisco', 'New Orleans', 'Carson City'],
+      materials: ['90% Silver', 'Bronze', 'Copper', 'Nickel'],
+      denominations: ['Cent', 'Nickel', 'Dime', 'Quarter', 'Half Dollar', 'Dollar', 'Gold Eagle'],
+      rulers: ['Lincoln', 'Indian Head', 'Buffalo', 'Mercury', 'Walking Liberty', 'Franklin', 'Morgan', 'Peace'],
+      weight: 0.5,
+    ),
+
+    // EUROZONE
+    'euro': CoinPeriodInfo(
+      period: 'Eurozone (Euro)',
+      dateRange: '1999 - Present',
+      characteristics: ['Bi-metallic', 'Common reverse', 'National obverse', 'Stars of Europe', '12 stars', 'Map of Europe', 'Commemorative issues', 'Country-specific designs'],
+      regions: ['European Union', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Austria', 'Greece', 'Ireland', 'Portugal', 'Finland'],
+      materials: ['Nordic Gold', 'Copper-Nickel', 'Bi-metallic (Nickel-Brass/Copper-Nickel)'],
+      denominations: ['1 Cent', '2 Cent', '5 Cent', '10 Cent', '20 Cent', '50 Cent', '1 Euro', '2 Euro'],
+      rulers: ['National symbols', 'Marianne (France)', 'Brandenburg Gate (Germany)', 'Dante (Italy)', 'King (Spain/Belgium)', 'Harp (Ireland)'],
+      weight: 0.5,
+    ),
+
+    // UNITED KINGDOM
+    'uk_modern': CoinPeriodInfo(
+      period: 'United Kingdom (Modern)',
+      dateRange: '1971 - Present',
+      characteristics: ['Decimal coinage', 'Royal portrait', 'Britannia', 'Royal Shield', 'Queen Elizabeth II', 'King Charles III', 'New Pence', 'Royal Mint'],
+      regions: ['United Kingdom', 'England', 'Scotland', 'Wales', 'Northern Ireland', 'Royal Mint Llantrisant'],
+      materials: ['Copper Plated Steel', 'Nickel-Brass', 'Cupro-Nickel', 'Bi-metallic'],
+      denominations: ['1 Penny', '2 Pence', '5 Pence', '10 Pence', '20 Pence', '50 Pence', '1 Pound', '2 Pounds'],
+      rulers: ['Elizabeth II', 'Charles III', 'Britannia', 'Royal Arms', 'Thistle', 'Leek', 'Shamrock', 'Rose'],
+      weight: 0.5,
+    ),
+    'uk_pre_decimal': CoinPeriodInfo(
+      period: 'United Kingdom (Pre-Decimal)',
+      dateRange: '1900 - 1971',
+      characteristics: ['Pounds Shillings Pence', 'LSD system', 'Farthing', 'Crown', 'Florin', 'Guinea tradition', 'Victorian', 'Edwardian', 'Georgian'],
+      regions: ['United Kingdom', 'British Empire', 'Commonwealth'],
+      materials: ['Silver', 'Bronze', 'Cupro-Nickel', 'Brass'],
+      denominations: ['Farthing', 'Halfpenny', 'Penny', 'Threepence', 'Sixpence', 'Shilling', 'Florin', 'Half Crown', 'Crown'],
+      rulers: ['Victoria', 'Edward VII', 'George V', 'Edward VIII', 'George VI', 'Elizabeth II'],
+      weight: 0.45,
+    ),
+
+    // CANADA
+    'canada_modern': CoinPeriodInfo(
+      period: 'Canada (Modern)',
+      dateRange: '1968 - Present',
+      characteristics: ['Maple leaf', 'Beaver', 'Caribou', 'Bluenose schooner', 'Loon dollar', 'Toonie', 'Royal Canadian Mint', 'Bilingual'],
+      regions: ['Canada', 'Royal Canadian Mint Ottawa', 'Winnipeg'],
+      materials: ['Nickel', 'Copper Plated Steel', 'Multi-ply Brass', 'Bi-metallic'],
+      denominations: ['1 Cent (Discontinued)', '5 Cents', '10 Cents', '25 Cents', '50 Cents', '1 Dollar (Loonie)', '2 Dollars (Toonie)'],
+      rulers: ['Elizabeth II', 'Charles III', 'Maple Leaf', 'Beaver', 'Caribou', 'Loon', 'Polar Bear'],
+      weight: 0.45,
+    ),
+
+    // AUSTRALIA
+    'australia_modern': CoinPeriodInfo(
+      period: 'Australia (Modern)',
+      dateRange: '1966 - Present',
+      characteristics: ['Decimal currency', 'Kangaroo', 'Platypus', 'Echidna', 'Lyrebird', 'Aboriginal art', 'Royal Australian Mint', 'Perth Mint'],
+      regions: ['Australia', 'Royal Australian Mint Canberra', 'Perth Mint'],
+      materials: ['Copper Plated Steel', 'Cupro-Nickel', 'Aluminium Bronze', 'Bi-metallic'],
+      denominations: ['5 Cents', '10 Cents', '20 Cents', '50 Cents', '1 Dollar', '2 Dollars'],
+      rulers: ['Elizabeth II', 'Charles III', 'Kangaroo', 'Platypus', 'Echidna', 'Lyrebird', 'Aboriginal Elder'],
+      weight: 0.45,
+    ),
+
+    // JAPAN
+    'japan_modern': CoinPeriodInfo(
+      period: 'Japan (Modern)',
+      dateRange: '1948 - Present',
+      characteristics: ['Yen', 'Cherry blossom', 'Chrysanthemum', 'Paulownia', 'Emperor era dating', 'Showa', 'Heisei', 'Reiwa', 'Hole in 5 and 50 yen'],
+      regions: ['Japan', 'Japan Mint Osaka', 'Hiroshima'],
+      materials: ['Aluminium', 'Brass', 'Cupro-Nickel', 'Nickel-Brass'],
+      denominations: ['1 Yen', '5 Yen', '10 Yen', '50 Yen', '100 Yen', '500 Yen'],
+      rulers: ['Hirohito (Showa)', 'Akihito (Heisei)', 'Naruhito (Reiwa)', 'Chrysanthemum Crest'],
+      weight: 0.45,
+    ),
+
+    // CHINA (MODERN)
+    'china_modern': CoinPeriodInfo(
+      period: 'China (Modern PRC)',
+      dateRange: '1955 - Present',
+      characteristics: ['Renminbi', 'Yuan', 'Jiao', 'National emblem', 'Tiananmen Gate', 'Flower series', 'Simplified Chinese'],
+      regions: ['China', 'People\'s Republic of China', 'Shanghai Mint', 'Shenyang Mint'],
+      materials: ['Aluminium', 'Steel', 'Nickel Plated Steel', 'Brass', 'Bi-metallic'],
+      denominations: ['1 Fen', '2 Fen', '5 Fen', '1 Jiao', '5 Jiao', '1 Yuan'],
+      rulers: ['National Emblem', 'Orchid', 'Lotus', 'Chrysanthemum', 'Plum Blossom'],
+      weight: 0.45,
+    ),
+
+    // INDIA (MODERN)
+    'india_modern': CoinPeriodInfo(
+      period: 'India (Modern Republic)',
+      dateRange: '1950 - Present',
+      characteristics: ['Indian Rupee', 'Ashoka Lion Capital', 'Rupee symbol', 'Mahatma Gandhi', 'Red Fort', 'India Map', 'Hindi and English'],
+      regions: ['India', 'India Government Mint Mumbai', 'Kolkata', 'Hyderabad', 'Noida'],
+      materials: ['Stainless Steel', 'Cupro-Nickel', 'Ferritic Stainless Steel', 'Bi-metallic'],
+      denominations: ['1 Paisa (Discontinued)', '5 Paise', '10 Paise', '25 Paise', '50 Paise', '1 Rupee', '2 Rupees', '5 Rupees', '10 Rupees'],
+      rulers: ['Ashoka Pillar', 'Lion Capital', 'Mahatma Gandhi', 'National Emblem'],
+      weight: 0.45,
+    ),
+
+    // MEXICO
+    'mexico_modern': CoinPeriodInfo(
+      period: 'Mexico (Modern)',
+      dateRange: '1993 - Present',
+      characteristics: ['Nuevo Peso', 'Eagle and serpent', 'Aztec calendar', 'Angel of Independence', 'Bi-metallic', 'Estados Unidos Mexicanos'],
+      regions: ['Mexico', 'Casa de Moneda de México'],
+      materials: ['Stainless Steel', 'Bronze', 'Bi-metallic', 'Silver (Commemorative)'],
+      denominations: ['5 Centavos', '10 Centavos', '20 Centavos', '50 Centavos', '1 Peso', '2 Pesos', '5 Pesos', '10 Pesos', '20 Pesos'],
+      rulers: ['Eagle with Serpent', 'Aztec Sunstone', 'Miguel Hidalgo', 'Benito Juárez', 'José María Morelos'],
+      weight: 0.45,
+    ),
+
+    // RUSSIA
+    'russia_modern': CoinPeriodInfo(
+      period: 'Russia (Modern Federation)',
+      dateRange: '1992 - Present',
+      characteristics: ['Russian Ruble', 'Double-headed eagle', 'St. George', 'Cyrillic script', 'Bank of Russia', 'Bi-metallic'],
+      regions: ['Russia', 'Moscow Mint', 'Saint Petersburg Mint'],
+      materials: ['Steel', 'Brass Plated Steel', 'Cupro-Nickel', 'Bi-metallic'],
+      denominations: ['1 Kopek', '5 Kopeks', '10 Kopeks', '50 Kopeks', '1 Ruble', '2 Rubles', '5 Rubles', '10 Rubles'],
+      rulers: ['Double-Headed Eagle', 'St. George Slaying Dragon', 'Bank of Russia Emblem'],
+      weight: 0.45,
+    ),
+
+    // SWITZERLAND
+    'swiss_modern': CoinPeriodInfo(
+      period: 'Switzerland (Modern)',
+      dateRange: '1968 - Present',
+      characteristics: ['Swiss Franc', 'Helvetia', 'Swiss cross', 'Libertas', 'William Tell', 'High quality', 'Multilingual'],
+      regions: ['Switzerland', 'Swiss Mint Bern'],
+      materials: ['Cupro-Nickel', 'Aluminium-Bronze', 'Bi-metallic'],
+      denominations: ['5 Rappen', '10 Rappen', '20 Rappen', '½ Franc', '1 Franc', '2 Francs', '5 Francs'],
+      rulers: ['Helvetia', 'Libertas', 'Swiss Cross', 'William Tell'],
+      weight: 0.45,
+    ),
+
+    // SOUTH KOREA
+    'korea_modern': CoinPeriodInfo(
+      period: 'South Korea (Modern)',
+      dateRange: '1966 - Present',
+      characteristics: ['Korean Won', 'Rose of Sharon', 'Turtle ship', 'Dabotap Pagoda', 'Admiral Yi Sun-sin', 'Hangul script'],
+      regions: ['South Korea', 'Korea Minting and Security Printing Corporation'],
+      materials: ['Aluminium', 'Brass', 'Cupro-Nickel', 'Copper-Nickel-Zinc'],
+      denominations: ['1 Won', '5 Won', '10 Won', '50 Won', '100 Won', '500 Won'],
+      rulers: ['Yi Sun-sin', 'Rose of Sharon', 'Turtle Ship', 'Dabotap Pagoda', 'Crane'],
+      weight: 0.45,
+    ),
+
+    // BRAZIL
+    'brazil_modern': CoinPeriodInfo(
+      period: 'Brazil (Modern Real)',
+      dateRange: '1994 - Present',
+      characteristics: ['Brazilian Real', 'Southern Cross', 'Effigy of Republic', 'Bi-metallic', 'Central Bank of Brazil'],
+      regions: ['Brazil', 'Casa da Moeda do Brasil Rio de Janeiro'],
+      materials: ['Copper Plated Steel', 'Bronze Plated Steel', 'Stainless Steel', 'Bi-metallic'],
+      denominations: ['1 Centavo', '5 Centavos', '10 Centavos', '25 Centavos', '50 Centavos', '1 Real'],
+      rulers: ['Effigy of Republic', 'Southern Cross', 'Pedro Álvares Cabral', 'Tiradentes', 'Juscelino Kubitschek'],
+      weight: 0.45,
+    ),
+
+    // SOUTH AFRICA
+    'south_africa_modern': CoinPeriodInfo(
+      period: 'South Africa (Modern)',
+      dateRange: '1961 - Present',
+      characteristics: ['South African Rand', 'Springbok', 'Big Five animals', 'Coat of Arms', 'Krugerrand', 'Multilingual', '11 languages'],
+      regions: ['South Africa', 'South African Mint Pretoria'],
+      materials: ['Copper Plated Steel', 'Bronze Plated Steel', 'Nickel Plated Copper', 'Bi-metallic'],
+      denominations: ['5 Cents', '10 Cents', '20 Cents', '50 Cents', '1 Rand', '2 Rand', '5 Rand'],
+      rulers: ['Springbok', 'Wildebeest', 'Kudu', 'Bird', 'Coat of Arms', 'Nelson Mandela'],
+      weight: 0.45,
+    ),
+
+    // TURKEY
+    'turkey_modern': CoinPeriodInfo(
+      period: 'Turkey (Modern Lira)',
+      dateRange: '2005 - Present',
+      characteristics: ['Turkish Lira', 'Atatürk portrait', 'Crescent and star', 'Turkish Republic', 'Bi-metallic'],
+      regions: ['Turkey', 'Turkish State Mint Istanbul'],
+      materials: ['Brass', 'Cupro-Nickel', 'Bi-metallic'],
+      denominations: ['1 Kuruş', '5 Kuruş', '10 Kuruş', '25 Kuruş', '50 Kuruş', '1 Lira'],
+      rulers: ['Mustafa Kemal Atatürk', 'Crescent and Star', 'Republic Emblem'],
+      weight: 0.45,
+    ),
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
