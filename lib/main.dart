@@ -8228,9 +8228,14 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
   }
 
   void _handleCharacteristicData(String charUuid, List<int> value) {
+    if (!mounted) return;
+
     try {
       final jsonStr = String.fromCharCodes(value);
+      if (jsonStr.isEmpty) return;
+
       final data = json.decode(jsonStr);
+      if (data == null) return;
 
       // Update last data received for keepalive monitoring
       _lastDataReceived = DateTime.now();
@@ -8299,6 +8304,8 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
 
   /// Trigger full-screen alert overlay with voice, haptic feedback, and alarm sound
   void _triggerFullScreenAlert(String message, String level) async {
+    if (!mounted) return;
+
     setState(() {
       _showFullScreenAlert = true;
       _fullScreenAlertMessage = message;
@@ -8308,14 +8315,11 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
     // Skip sounds if muted (still show visual alert)
     if (_isMuted) return;
 
-    // Haptic feedback - multiple vibrations for critical
-    if (level == 'critical') {
-      for (int i = 0; i < 3; i++) {
-        HapticFeedback.heavyImpact();
-        await Future.delayed(const Duration(milliseconds: 200));
-      }
-    } else {
+    // Haptic feedback - single vibration (safer)
+    try {
       HapticFeedback.heavyImpact();
+    } catch (e) {
+      debugPrint('Haptic error: $e');
     }
 
     // Play alarm sound (local asset - works offline)
@@ -8325,11 +8329,15 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
       debugPrint('Could not play alarm: $e');
     }
 
-    // Voice alert - speak the warning
-    String voiceMessage = level == 'critical'
-        ? 'Critical alert! $message'
-        : 'Warning! $message';
-    _tts.speak(voiceMessage);
+    // Voice alert - speak the warning (wrapped in try-catch)
+    try {
+      String voiceMessage = level == 'critical'
+          ? 'Critical alert! $message'
+          : 'Warning! $message';
+      await _tts.speak(voiceMessage);
+    } catch (e) {
+      debugPrint('TTS error: $e');
+    }
   }
 
   /// Dismiss full-screen alert and stop alarm
