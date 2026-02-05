@@ -541,16 +541,26 @@ class CoinIdentificationService {
       weight: 0.5,
     ),
 
-    // EUROZONE
+    // EUROZONE (HIGH PRIORITY - very common modern coin)
     'euro': CoinPeriodInfo(
       period: 'Eurozone (Euro)',
       dateRange: '1999 - Present',
-      characteristics: ['Bi-metallic', 'Common reverse', 'National obverse', 'Stars of Europe', '12 stars', 'Map of Europe', 'Commemorative issues', 'Country-specific designs'],
-      regions: ['European Union', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Austria', 'Greece', 'Ireland', 'Portugal', 'Finland'],
-      materials: ['Nordic Gold', 'Copper-Nickel', 'Bi-metallic (Nickel-Brass/Copper-Nickel)'],
-      denominations: ['1 Cent', '2 Cent', '5 Cent', '10 Cent', '20 Cent', '50 Cent', '1 Euro', '2 Euro'],
-      rulers: ['National symbols', 'Marianne (France)', 'Brandenburg Gate (Germany)', 'Dante (Italy)', 'King (Spain/Belgium)', 'Harp (Ireland)'],
-      weight: 0.5,
+      characteristics: [
+        'Euro', 'EURO', 'cent', 'Cent', 'EUR', 'European',
+        'Nordic Gold', 'Gold colored', 'Copper colored', 'Yellow brass',
+        '12 stars', 'Stars of Europe', 'Circle of stars', 'Star ring',
+        'Map of Europe', 'EU map', 'Europa',
+        'Bi-metallic 1 Euro', 'Bi-metallic 2 Euro',
+        'Sowing figure', 'Woman sowing seeds', '50 cent design',
+        'National side', 'Common side', 'Country-specific',
+        'Marianne', 'Brandenburg Gate', 'Dante', 'Harp', 'Oak leaf',
+        'Smooth edge', 'Reeded edge', 'Spanish flower edge',
+      ],
+      regions: ['European Union', 'EU', 'Europe', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Austria', 'Greece', 'Ireland', 'Portugal', 'Finland', 'Luxembourg', 'Slovenia', 'Cyprus', 'Malta', 'Slovakia', 'Estonia', 'Latvia', 'Lithuania'],
+      materials: ['Nordic Gold', 'Copper-Nickel', 'Copper plated steel', 'Bi-metallic'],
+      denominations: ['1 Cent', '2 Cent', '5 Cent', '10 Cent', '20 Cent', '50 Cent', '1 Euro', '2 Euro', 'Euro cent', 'Eurocent'],
+      rulers: ['National symbols', 'Marianne (France)', 'Brandenburg Gate (Germany)', 'Dante (Italy)', 'King Felipe VI (Spain)', 'King Philippe (Belgium)', 'Harp (Ireland)', 'Mozart (Austria)', 'Oak twig (Germany)'],
+      weight: 0.7,  // Higher weight - very common coin
     ),
 
     // UNITED KINGDOM
@@ -639,12 +649,12 @@ class CoinIdentificationService {
     'mexico_modern': CoinPeriodInfo(
       period: 'Mexico (Modern)',
       dateRange: '1993 - Present',
-      characteristics: ['Nuevo Peso', 'Eagle and serpent', 'Aztec calendar', 'Angel of Independence', 'Bi-metallic', 'Estados Unidos Mexicanos'],
-      regions: ['Mexico', 'Casa de Moneda de México'],
-      materials: ['Stainless Steel', 'Bronze', 'Bi-metallic', 'Silver (Commemorative)'],
-      denominations: ['5 Centavos', '10 Centavos', '20 Centavos', '50 Centavos', '1 Peso', '2 Pesos', '5 Pesos', '10 Pesos', '20 Pesos'],
-      rulers: ['Eagle with Serpent', 'Aztec Sunstone', 'Miguel Hidalgo', 'Benito Juárez', 'José María Morelos'],
-      weight: 0.45,
+      characteristics: ['Nuevo Peso', 'PESOS', 'Peso', 'Centavos', 'Eagle and serpent', 'Golden eagle', 'Aztec calendar', 'Aztec sunstone', 'Angel of Independence', 'Estados Unidos Mexicanos', 'Mexico', 'Mexican eagle'],
+      regions: ['Mexico', 'Casa de Moneda de México', 'Mexican Mint'],
+      materials: ['Stainless Steel', 'Bronze', 'Bi-metallic (Bronze/Stainless)', 'Silver (Commemorative)'],
+      denominations: ['5 Centavos', '10 Centavos', '20 Centavos', '50 Centavos', '1 Peso', '2 Pesos', '5 Pesos', '10 Pesos', '20 Pesos', '50 Pesos', '100 Pesos'],
+      rulers: ['Eagle with Serpent', 'Aztec Sunstone', 'Miguel Hidalgo', 'Benito Juárez', 'José María Morelos', 'Cuauhtémoc'],
+      weight: 0.35,  // Lower weight - less common outside Americas
     ),
 
     // RUSSIA
