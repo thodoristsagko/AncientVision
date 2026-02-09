@@ -26,6 +26,7 @@ class _Model3DViewerState extends State<Model3DViewer> {
   double _pointSize = 3.0;
   bool _showColors = true;
   bool _autoRotate = false;
+  bool _measureMode = false;
   final GlobalKey<PointCloudViewerState> _viewerKey = GlobalKey();
 
   PointCloud? get _pointCloud {
@@ -188,13 +189,15 @@ class _Model3DViewerState extends State<Model3DViewer> {
               bottom: widget.onCompleteForm != null ? 200 : 120,
               left: 16,
               right: 16,
-              child: const Center(
+              child: Center(
                 child: Text(
-                  'Drag to rotate • Pinch to zoom',
+                  _measureMode
+                      ? 'Tap two points to measure distance'
+                      : 'Drag to rotate • Pinch to zoom',
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: _measureMode ? const Color(0xFF00E5FF) : Colors.white70,
                     fontSize: 14,
-                    shadows: [
+                    shadows: const [
                       Shadow(color: Colors.black, blurRadius: 4),
                     ],
                   ),
@@ -402,6 +405,15 @@ class _Model3DViewerState extends State<Model3DViewer> {
                 label: 'Reset View',
                 onTap: () {
                   _viewerKey.currentState?.resetView();
+                },
+              ),
+              _buildControlButton(
+                icon: _measureMode ? Icons.straighten : Icons.straighten_outlined,
+                label: 'Measure',
+                isActive: _measureMode,
+                onTap: () {
+                  setState(() => _measureMode = !_measureMode);
+                  _viewerKey.currentState?.toggleMeasureMode();
                 },
               ),
             ],

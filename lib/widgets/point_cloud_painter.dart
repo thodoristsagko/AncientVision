@@ -10,6 +10,7 @@ class _ProjectedPoint {
   final double z;
   final double scale;
   final ({double r, double g, double b, double a}) color;
+  final int originalIndex;
 
   _ProjectedPoint({
     required this.x,
@@ -17,6 +18,7 @@ class _ProjectedPoint {
     required this.z,
     required this.scale,
     required this.color,
+    required this.originalIndex,
   });
 }
 
@@ -26,12 +28,16 @@ class PointCloudPainter extends CustomPainter {
   final Matrix4 transform;
   final double pointSize;
   final bool showColors;
+  final List<int> measurePointIndices;
+  final double? measureDistance;
 
   PointCloudPainter({
     required this.pointCloud,
     required this.transform,
     this.pointSize = 3.0,
     this.showColors = true,
+    this.measurePointIndices = const [],
+    this.measureDistance,
   });
 
   @override
@@ -60,7 +66,8 @@ class PointCloudPainter extends CustomPainter {
     final List<_ProjectedPoint> projectedPoints = [];
     final focalLength = 500.0;
 
-    for (final point in pointCloud.points) {
+    for (int i = 0; i < pointCloud.points.length; i++) {
+      final point = pointCloud.points[i];
       // Center the point
       final centeredPoint = vector.Vector3(
         point.position.x - center.x,
@@ -93,6 +100,7 @@ class PointCloudPainter extends CustomPainter {
         z: transformedPoint.z,
         scale: scale,
         color: (r: point.color.r, g: point.color.g, b: point.color.b, a: point.color.a),
+        originalIndex: i,
       ));
     }
 
@@ -144,6 +152,71 @@ class PointCloudPainter extends CustomPainter {
       );
     }
 
+    // Draw measurement markers and line
+    if (measurePointIndices.isNotEmpty) {
+      final markerPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..color = const Color(0xFF00E5FF);
+      final fillPaint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = const Color(0xFF00E5FF).withValues(alpha: 0.4);
+
+      final measureProjected = <_ProjectedPoint>[];
+      for (final idx in measurePointIndices) {
+        for (final p in projectedPoints) {
+          if (p.originalIndex == idx) {
+            measureProjected.add(p);
+            break;
+          }
+        }
+      }
+
+      for (final mp in measureProjected) {
+        canvas.drawCircle(Offset(mp.x, mp.y), 10, fillPaint);
+        canvas.drawCircle(Offset(mp.x, mp.y), 10, markerPaint);
+        // Crosshair
+        canvas.drawLine(Offset(mp.x - 14, mp.y), Offset(mp.x + 14, mp.y), markerPaint);
+        canvas.drawLine(Offset(mp.x, mp.y - 14), Offset(mp.x, mp.y + 14), markerPaint);
+      }
+
+      if (measureProjected.length == 2) {
+        final linePaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0
+          ..color = const Color(0xFF00E5FF);
+        canvas.drawLine(
+          Offset(measureProjected[0].x, measureProjected[0].y),
+          Offset(measureProjected[1].x, measureProjected[1].y),
+          linePaint,
+        );
+
+        if (measureDistance != null) {
+          final midX = (measureProjected[0].x + measureProjected[1].x) / 2;
+          final midY = (measureProjected[0].y + measureProjected[1].y) / 2;
+          final distText = '${measureDistance!.toStringAsFixed(2)} units';
+          final bgPaint = Paint()
+            ..style = PaintingStyle.fill
+            ..color = Colors.black.withValues(alpha: 0.7);
+          final textPainter2 = TextPainter(
+            text: TextSpan(
+              text: distText,
+              style: const TextStyle(color: Color(0xFF00E5FF), fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            textDirection: TextDirection.ltr,
+          );
+          textPainter2.layout();
+          final textRect = Rect.fromCenter(
+            center: Offset(midX, midY - 16),
+            width: textPainter2.width + 12,
+            height: textPainter2.height + 8,
+          );
+          canvas.drawRRect(RRect.fromRectAndRadius(textRect, const Radius.circular(4)), bgPaint);
+          textPainter2.paint(canvas, Offset(midX - textPainter2.width / 2, midY - 16 - textPainter2.height / 2));
+        }
+      }
+    }
+
     final visiblePoints = projectedPoints.length;
 
     // Draw info overlay
@@ -168,7 +241,9 @@ class PointCloudPainter extends CustomPainter {
   bool shouldRepaint(PointCloudPainter oldDelegate) {
     return oldDelegate.transform != transform ||
         oldDelegate.pointSize != pointSize ||
-        oldDelegate.showColors != showColors;
+        oldDelegate.showColors != showColors ||
+        oldDelegate.measurePointIndices != measurePointIndices ||
+        oldDelegate.measureDistance != measureDistance;
   }
 }
 
@@ -198,6 +273,9 @@ class PointCloudViewerState extends State<PointCloudViewer>
   Offset _lastFocalPoint = Offset.zero;
   late AnimationController _autoRotateController;
   bool _autoRotate = false;
+  bool _measureMode = false;
+  List<int> _measurePointIndices = [];
+  double? _measureDistance;
 
   @override
   void initState() {
@@ -239,43 +317,109 @@ class PointCloudViewerState extends State<PointCloudViewer>
     super.dispose();
   }
 
+  void _handleTapForMeasure(Offset tapPosition, Size size) {
+    if (!_measureMode) return;
+
+    final center = widget.pointCloud.getCenter();
+    const focalLength = 500.0;
+    double bestDist = 30.0; // Max tap distance in pixels
+    int bestIndex = -1;
+
+    for (int i = 0; i < widget.pointCloud.points.length; i++) {
+      final point = widget.pointCloud.points[i];
+      final centeredPoint = vector.Vector3(
+        point.position.x - center.x,
+        point.position.y - center.y,
+        point.position.z - center.z,
+      );
+      final tp = _transform.transform3(centeredPoint);
+      final scale = focalLength / (focalLength + tp.z);
+      if (scale <= 0) continue;
+
+      final x = size.width / 2 + tp.x * scale;
+      final y = size.height / 2 - tp.y * scale;
+      final dist = math.sqrt(math.pow(x - tapPosition.dx, 2) + math.pow(y - tapPosition.dy, 2));
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex < 0) return;
+
+    setState(() {
+      if (_measurePointIndices.length >= 2) {
+        _measurePointIndices = [bestIndex];
+        _measureDistance = null;
+      } else {
+        _measurePointIndices.add(bestIndex);
+      }
+
+      if (_measurePointIndices.length == 2) {
+        final p1 = widget.pointCloud.points[_measurePointIndices[0]].position;
+        final p2 = widget.pointCloud.points[_measurePointIndices[1]].position;
+        _measureDistance = (p1 - p2).length;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onScaleStart: (details) {
-        _lastFocalPoint = details.focalPoint;
-        if (_autoRotate) {
-          setState(() => _autoRotate = false);
-          _autoRotateController.stop();
-        }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewSize = Size(constraints.maxWidth, constraints.maxHeight);
+        return GestureDetector(
+          onScaleStart: (details) {
+            _lastFocalPoint = details.focalPoint;
+            if (_autoRotate) {
+              setState(() => _autoRotate = false);
+              _autoRotateController.stop();
+            }
+          },
+          onScaleUpdate: (details) {
+            setState(() {
+              if (details.scale != 1.0) {
+                _zoom *= details.scale;
+                _zoom = _zoom.clamp(0.5, 5.0);
+              } else {
+                final delta = details.focalPoint - _lastFocalPoint;
+                _rotationY += delta.dx * 0.01;
+                _rotationX += delta.dy * 0.01;
+                _rotationX = _rotationX.clamp(-math.pi / 2, math.pi / 2);
+              }
+              _lastFocalPoint = details.focalPoint;
+              _updateTransform();
+            });
+          },
+          onTapUp: _measureMode
+              ? (details) => _handleTapForMeasure(details.localPosition, viewSize)
+              : null,
+          child: CustomPaint(
+            painter: PointCloudPainter(
+              pointCloud: widget.pointCloud,
+              transform: _transform,
+              pointSize: widget.initialPointSize,
+              showColors: widget.initialShowColors,
+              measurePointIndices: _measurePointIndices,
+              measureDistance: _measureDistance,
+            ),
+            size: Size.infinite,
+          ),
+        );
       },
-      onScaleUpdate: (details) {
-        setState(() {
-          if (details.scale != 1.0) {
-            // Pinch to zoom
-            _zoom *= details.scale;
-            _zoom = _zoom.clamp(0.5, 5.0);
-          } else {
-            // Drag to rotate
-            final delta = details.focalPoint - _lastFocalPoint;
-            _rotationY += delta.dx * 0.01;
-            _rotationX += delta.dy * 0.01;
-            _rotationX = _rotationX.clamp(-math.pi / 2, math.pi / 2);
-          }
-          _lastFocalPoint = details.focalPoint;
-          _updateTransform();
-        });
-      },
-      child: CustomPaint(
-        painter: PointCloudPainter(
-          pointCloud: widget.pointCloud,
-          transform: _transform,
-          pointSize: widget.initialPointSize,
-          showColors: widget.initialShowColors,
-        ),
-        size: Size.infinite,
-      ),
     );
+  }
+
+  bool get isMeasuring => _measureMode;
+
+  void toggleMeasureMode() {
+    setState(() {
+      _measureMode = !_measureMode;
+      if (!_measureMode) {
+        _measurePointIndices = [];
+        _measureDistance = null;
+      }
+    });
   }
 
   void toggleAutoRotate() {
