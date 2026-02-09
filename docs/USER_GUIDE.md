@@ -318,15 +318,37 @@ Tap any finding to see:
 | 60-80% | Wet | Saturation warning |
 | >80% | Critical | Collapse risk |
 
-### Alert Indicators
+### Alert System
 
+**Full-Screen Alerts**
+- Critical alerts appear as full-screen overlays on ALL tabs, not just the Safety tab
+- Includes haptic feedback (phone vibration)
+- Voice alerts via text-to-speech announce the danger
+- Alarm sound plays on critical alerts
+
+**Push Notifications**
+- Safety notifications fire regardless of which screen you're on
+- Works even when the app is minimized
+
+**Alert Indicators**
 - **Green** - All safe
-- **Yellow** - Warning level
+- **Yellow/Orange** - Warning level
 - **Red** - Critical - take action!
+
+### Global Mute Button
+
+- A mute button is visible in the bottom navigation bar on ALL tabs
+- Pressing it toggles all alert sounds, alarms, TTS, and full-screen overlays
+- The mute state is synchronized across the entire app
+- Green speaker icon = unmuted, Red speaker-off icon = muted
+
+### BLE Connection Persistence
+
+The Bluetooth connection to the M5StickC sensor stays alive even when you switch to other tabs (Home, Findings, Tools). You don't need to stay on the Safety tab to keep receiving sensor data.
 
 ### Alert History
 
-Scroll down to see:
+Scroll down on the Safety tab to see:
 - Past alerts with timestamps
 - Vibration/moisture at time of alert
 - Trend patterns

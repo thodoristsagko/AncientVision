@@ -3,7 +3,6 @@ import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'coin_identification_service.dart';
 
 /// Advanced AI-powered artifact classification using Google ML Kit
@@ -478,7 +477,7 @@ class AIClassificationService {
     );
   }
 
-  /// Enhanced coin classification with advanced period detection
+  /// Enhanced coin classification with Numista API + fallback to heuristics
   Future<CoinClassificationResult> classifyCoin(File imageFile, {String? detectedMaterial}) async {
     final coinService = CoinIdentificationService();
 
@@ -496,8 +495,8 @@ class AIClassificationService {
     // Pass color data to coin service for enhanced analysis
     final colorData = imageAnalysis['colorAnalysis'] as Map<String, dynamic>? ?? {};
 
-    // Analyze coin using comprehensive period database
-    final periodResult = coinService.analyzeByCharacteristics(
+    // Use smart identification (Numista API first, then heuristics)
+    final periodResult = await coinService.identifyCoinSmart(
       material: material,
       keywords: keywords,
       colorData: colorData,
@@ -515,6 +514,10 @@ class AIClassificationService {
       alternativePeriods: periodResult.alternativePeriods ?? [],
       colorAnalysis: colorData,
       textureAnalysis: imageAnalysis['textureAnalysis'] as Map<String, dynamic>? ?? {},
+      numistaId: periodResult.numistaId,
+      numistaUrl: periodResult.numistaUrl,
+      obverseImage: periodResult.obverseImage,
+      reverseImage: periodResult.reverseImage,
     );
   }
 
@@ -638,6 +641,17 @@ class CoinClassificationResult {
   final Map<String, dynamic> colorAnalysis;
   final Map<String, dynamic> textureAnalysis;
 
+  // Numista API integration fields
+  final int? numistaId;
+  final String? numistaUrl;
+  final String? obverseImage;
+  final String? reverseImage;
+
+  // Gemini AI fields
+  final String? denomination;
+  final String? ruler;
+  final String? detailedDescription;
+
   CoinClassificationResult({
     required this.isCoin,
     required this.material,
@@ -650,6 +664,13 @@ class CoinClassificationResult {
     required this.alternativePeriods,
     required this.colorAnalysis,
     this.textureAnalysis = const {},
+    this.numistaId,
+    this.numistaUrl,
+    this.obverseImage,
+    this.reverseImage,
+    this.denomination,
+    this.ruler,
+    this.detailedDescription,
   });
 
   Map<String, dynamic> toJson() => {
@@ -662,6 +683,13 @@ class CoinClassificationResult {
     'regions': regions,
     'materials': materials,
     'alternativePeriods': alternativePeriods,
+    'numistaId': numistaId,
+    'numistaUrl': numistaUrl,
+    'obverseImage': obverseImage,
+    'reverseImage': reverseImage,
+    'denomination': denomination,
+    'ruler': ruler,
+    'detailedDescription': detailedDescription,
   };
 
   String get description {

@@ -245,7 +245,7 @@ class AppWidgets {
 
   /// Divider
   static Widget divider() {
-    return Divider(
+    return const Divider(
       color: AppColors.cardBorder,
       height: 1,
     );

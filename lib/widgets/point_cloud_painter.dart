@@ -64,7 +64,7 @@ class PointCloudPainter extends CustomPainter {
 
     // Project and collect all points with their depth for sorting
     final List<_ProjectedPoint> projectedPoints = [];
-    final focalLength = 500.0;
+    const focalLength = 500.0;
 
     for (int i = 0; i < pointCloud.points.length; i++) {
       final point = pointCloud.points[i];
@@ -139,9 +139,9 @@ class PointCloudPainter extends CustomPainter {
         Offset(proj.x, proj.y),
         adaptiveSize * 1.2,
         paint..color = Color.fromRGBO(
-          baseColor.r.toInt(),
-          baseColor.g.toInt(),
-          baseColor.b.toInt(),
+          (baseColor.r * 255).toInt(),
+          (baseColor.g * 255).toInt(),
+          (baseColor.b * 255).toInt(),
           0.3,
         ),
       );

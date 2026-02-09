@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -503,7 +502,7 @@ class ExportService {
         '${point.position.x.toStringAsFixed(6)} '
         '${point.position.y.toStringAsFixed(6)} '
         '${point.position.z.toStringAsFixed(6)} '
-        '${point.color.red} ${point.color.green} ${point.color.blue} '
+        '${(point.color.r * 255).round()} ${(point.color.g * 255).round()} ${(point.color.b * 255).round()} '
         '${point.confidence.toStringAsFixed(4)}',
       );
     }
@@ -526,7 +525,7 @@ class ExportService {
         'v ${point.position.x.toStringAsFixed(6)} '
         '${point.position.y.toStringAsFixed(6)} '
         '${point.position.z.toStringAsFixed(6)} '
-        '${point.color.red / 255} ${point.color.green / 255} ${point.color.blue / 255}',
+        '${point.color.r} ${point.color.g} ${point.color.b}',
       );
     }
 
@@ -549,9 +548,9 @@ class ExportService {
     for (final point in pointCloud.points) {
       positions.addAll([point.position.x, point.position.y, point.position.z]);
       colors.addAll([
-        point.color.red / 255,
-        point.color.green / 255,
-        point.color.blue / 255,
+        point.color.r,
+        point.color.g,
+        point.color.b,
         1.0,
       ]);
 
@@ -767,7 +766,7 @@ class ExportService {
         '${point.position.x.toStringAsFixed(6)} '
         '${point.position.y.toStringAsFixed(6)} '
         '${point.position.z.toStringAsFixed(6)} '
-        '${point.color.red} ${point.color.green} ${point.color.blue}',
+        '${(point.color.r * 255).round()} ${(point.color.g * 255).round()} ${(point.color.b * 255).round()}',
       );
     }
 
@@ -1106,7 +1105,7 @@ class ExportService {
 
         for (final finding in findings) {
           final photos = finding['photos'] as List<dynamic>? ?? [];
-          final findingId = finding['id'] ?? 'unknown_${processedCount}';
+          final findingId = finding['id'] ?? 'unknown_$processedCount';
 
           for (int i = 0; i < photos.length; i++) {
             final photoUrl = photos[i] as String?;

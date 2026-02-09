@@ -359,7 +359,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       if (context.mounted && file != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Analytics exported successfully'),
+            content: const Text('Analytics exported successfully'),
             backgroundColor: const Color(0xFF4CAF50),
             action: SnackBarAction(
               label: 'Share',

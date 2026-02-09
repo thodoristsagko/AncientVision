@@ -1,3 +1,4 @@
+// ignore_for_file: non_constant_identifier_names
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -46,7 +47,6 @@ class ReconstructionService {
         final androidInfo = await deviceInfo.androidInfo;
 
         // Get actual device RAM (in GB)
-        final totalMemMB = androidInfo.systemFeatures.contains('android.hardware.ram.normal') ? 2 : 4;
         // Android doesn't expose exact RAM, estimate based on device tier
         // High-end devices (2020+) typically have 6-12GB, mid-range 4-6GB, low-end 2-4GB
         final sdkInt = androidInfo.version.sdkInt;
@@ -235,8 +235,8 @@ class ReconstructionService {
       }
 
       // Use non-null locals for post-processing
-      var currentCloud = pointCloud!;
-      var currentPoses = cameraPoses!;
+      var currentCloud = pointCloud;
+      var currentPoses = cameraPoses;
 
       // Step 6: Bundle Adjustment - refine poses and points together (80%)
       onProgress?.call(0.80, 'Optimizing reconstruction...');
@@ -271,7 +271,7 @@ class ReconstructionService {
         currentCloud = await _multiViewColorSampling(
           currentCloud,
           currentPoses,
-          colorImages!,
+          colorImages,
         );
         debugPrint(' Multi-view color sampling complete');
       } catch (e) {
@@ -299,7 +299,7 @@ class ReconstructionService {
       }
 
       // Clear intermediate data
-      colorImages?.clear();
+      colorImages.clear();
       features.clear();
       matches.clear();
 
@@ -369,7 +369,7 @@ class ReconstructionService {
 
         if (image != null) {
           // Downsample to fit within 1024x1024 while preserving aspect ratio
-          final maxDim = 1024;
+          const maxDim = 1024;
           img.Image downsampled;
           if (image.width > maxDim || image.height > maxDim) {
             if (image.width >= image.height) {
@@ -1165,9 +1165,13 @@ class ReconstructionService {
             final errorBefore = errX * errX + errY * errY;
             final errorAfter = errXs * errXs + errYs * errYs;
             final grad = (errorAfter - errorBefore) / delta;
-            if (axis == 0) gradX += grad;
-            else if (axis == 1) gradY += grad;
-            else gradZ += grad;
+            if (axis == 0) {
+              gradX += grad;
+            } else if (axis == 1) {
+              gradY += grad;
+            } else {
+              gradZ += grad;
+            }
           }
           views++;
         }
@@ -1744,7 +1748,7 @@ class ReconstructionService {
       centroid /= neighbors.length.toDouble();
 
       // Compute covariance matrix
-      double cxx = 0, cxy = 0, cxz = 0, cyy = 0, cyz = 0, czz = 0;
+      double cxx = 0, cxy = 0, cxz = 0, cyy = 0, cyz = 0;
       for (final n in neighbors) {
         final d = n.position - centroid;
         cxx += d.x * d.x;
@@ -1752,7 +1756,6 @@ class ReconstructionService {
         cxz += d.x * d.z;
         cyy += d.y * d.y;
         cyz += d.y * d.z;
-        czz += d.z * d.z;
       }
 
       // Simple normal estimation using cross product of principal directions

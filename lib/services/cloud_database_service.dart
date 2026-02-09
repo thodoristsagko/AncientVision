@@ -421,16 +421,12 @@ class CloudDatabaseService {
   Future<void> clearNotificationHistory() async {
     if (userId == null) return;
     try {
-      final batch = _firestore.batch();
       final snapshot = await _firestore
           .collection('users')
           .doc(userId)
           .collection('notifications')
           .get();
-      for (final doc in snapshot.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
+      await _batchDelete(snapshot.docs);
     } catch (e) {
       debugPrint('Error clearing notification history: $e');
     }
@@ -484,15 +480,24 @@ class CloudDatabaseService {
             .doc(userId)
             .collection(collection)
             .get();
-        final batch = _firestore.batch();
-        for (final doc in snapshot.docs) {
-          batch.delete(doc.reference);
-        }
-        await batch.commit();
+        await _batchDelete(snapshot.docs);
       }
       debugPrint('All user data cleared');
     } catch (e) {
       debugPrint('Error clearing user data: $e');
+    }
+  }
+
+  /// Delete documents in chunks of 500 to respect Firestore batch limits
+  Future<void> _batchDelete(List<QueryDocumentSnapshot> docs) async {
+    const batchLimit = 500;
+    for (int i = 0; i < docs.length; i += batchLimit) {
+      final batch = _firestore.batch();
+      final end = (i + batchLimit < docs.length) ? i + batchLimit : docs.length;
+      for (int j = i; j < end; j++) {
+        batch.delete(docs[j].reference);
+      }
+      await batch.commit();
     }
   }
 }

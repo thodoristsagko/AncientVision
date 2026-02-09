@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'dart:ui' as ui;
 import 'dart:convert';
 import 'dart:io';
@@ -24,7 +25,6 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'services/auth_service.dart';
 import 'services/local_storage_service.dart';
 import 'services/reconstruction_service.dart';
@@ -102,11 +102,11 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     if (!_initialized) {
-      return MaterialApp(
+      return const MaterialApp(
         debugShowCheckedModeBanner: false,
         home: Scaffold(
-          backgroundColor: const Color(0xFF0D3A39),
-          body: const Center(
+          backgroundColor: Color(0xFF0D3A39),
+          body: Center(
             child: CircularProgressIndicator(color: Color(0xFFFFC107)),
           ),
         ),
@@ -288,7 +288,7 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
             children: [
               Text(
                 'Create a 4-8 digit PIN for quick access when biometrics are unavailable.',
-                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+                style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 14),
               ),
               const SizedBox(height: 20),
               TextField(
@@ -300,11 +300,11 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
                 textAlign: TextAlign.center,
                 decoration: InputDecoration(
                   labelText: 'Enter PIN',
-                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  labelStyle: TextStyle(color: Colors.white.withAlpha(179)),
                   counterText: '',
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                    borderSide: BorderSide(color: Colors.white.withAlpha(77)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -322,11 +322,11 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
                 textAlign: TextAlign.center,
                 decoration: InputDecoration(
                   labelText: 'Confirm PIN',
-                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  labelStyle: TextStyle(color: Colors.white.withAlpha(179)),
                   counterText: '',
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                    borderSide: BorderSide(color: Colors.white.withAlpha(77)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -348,7 +348,7 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
               onPressed: () => Navigator.pop(context, false),
               child: Text(
                 'Cancel',
-                style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                style: TextStyle(color: Colors.white.withAlpha(179)),
               ),
             ),
             ElevatedButton(
@@ -411,7 +411,7 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
             children: [
               Text(
                 'Enter your PIN to unlock AncientVision',
-                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+                style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 14),
               ),
               const SizedBox(height: 20),
               TextField(
@@ -424,11 +424,11 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
                 textAlign: TextAlign.center,
                 decoration: InputDecoration(
                   labelText: 'PIN',
-                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  labelStyle: TextStyle(color: Colors.white.withAlpha(179)),
                   counterText: '',
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                    borderSide: BorderSide(color: Colors.white.withAlpha(77)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -476,7 +476,7 @@ class _BiometricGateState extends State<_BiometricGate> with WidgetsBindingObser
               onPressed: () => Navigator.pop(context, false),
               child: Text(
                 'Cancel',
-                style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                style: TextStyle(color: Colors.white.withAlpha(179)),
               ),
             ),
             ElevatedButton(
@@ -651,7 +651,7 @@ class _BiometricLockScreenState extends State<_BiometricLockScreen> {
               Text(
                 'Unlock with $_biometricType',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withAlpha(179),
                   fontSize: 16,
                 ),
               ),
@@ -769,11 +769,11 @@ class _LoginScreenState extends State<LoginScreen> {
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFF1C2523),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
+          title: const Row(
             children: [
-              const Icon(Icons.fingerprint, color: Color(0xFFFFC107), size: 28),
-              const SizedBox(width: 12),
-              const Expanded(
+              Icon(Icons.fingerprint, color: Color(0xFFFFC107), size: 28),
+              SizedBox(width: 12),
+              Expanded(
                 child: Text(
                   'Enable Quick Unlock?',
                   style: TextStyle(color: Colors.white, fontSize: 18),
@@ -783,14 +783,14 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           content: Text(
             'Use $biometricType to sign in faster next time. Your data stays secure.',
-            style: TextStyle(color: Colors.white.withOpacity(0.8)),
+            style: TextStyle(color: Colors.white.withAlpha(204)),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: Text(
                 'Not now',
-                style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                style: TextStyle(color: Colors.white.withAlpha(153)),
               ),
             ),
             ElevatedButton(
@@ -1082,14 +1082,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
           content: Text(
             'Use $biometricType to sign in faster next time. Your data stays secure.',
-            style: TextStyle(color: Colors.white.withOpacity(0.8)),
+            style: TextStyle(color: Colors.white.withAlpha(204)),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: Text(
                 'Not now',
-                style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                style: TextStyle(color: Colors.white.withAlpha(153)),
               ),
             ),
             ElevatedButton(
@@ -1317,7 +1317,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 //
 
 class _BigLogo extends StatelessWidget {
-  const _BigLogo({super.key});
+  const _BigLogo();
 
   @override
   Widget build(BuildContext context) {
@@ -1335,7 +1335,7 @@ class _BigLogo extends StatelessWidget {
 class _GlassPanel extends StatelessWidget {
   final Widget child;
 
-  const _GlassPanel({required this.child, super.key});
+  const _GlassPanel({required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -1347,10 +1347,10 @@ class _GlassPanel extends StatelessWidget {
           width: 340,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.12),
+            color: Colors.white.withAlpha(31),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withOpacity(0.35),
+              color: Colors.white.withAlpha(89),
               width: 1,
             ),
           ),
@@ -1376,7 +1376,6 @@ class _GlassTextField extends StatelessWidget {
     this.controller,
     this.errorText,
     this.keyboardType,
-    super.key,
   });
 
   @override
@@ -1387,7 +1386,7 @@ class _GlassTextField extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.9),
+            color: Colors.white.withAlpha(230),
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -1401,12 +1400,12 @@ class _GlassTextField extends StatelessWidget {
               height: 50,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withAlpha(38),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
                   color: errorText != null
-                      ? Colors.red.withOpacity(0.7)
-                      : Colors.white.withOpacity(0.4),
+                      ? Colors.red.withAlpha(179)
+                      : Colors.white.withAlpha(102),
                   width: 1,
                 ),
               ),
@@ -1444,7 +1443,6 @@ class _PrimaryButton extends StatelessWidget {
   final void Function(BuildContext context) onTap;
 
   const _PrimaryButton({
-    super.key,
     required this.text,
     required this.onTap,
   });
@@ -1466,7 +1464,7 @@ class _PrimaryButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.25),
+              color: Colors.black.withAlpha(64),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -1490,7 +1488,7 @@ class _PrimaryButton extends StatelessWidget {
 class _GoogleSignInButton extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _GoogleSignInButton({required this.onTap, super.key});
+  const _GoogleSignInButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1504,7 +1502,7 @@ class _GoogleSignInButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.25),
+              color: Colors.black.withAlpha(64),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -1692,7 +1690,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 //
 
 class _DashboardHomeView extends StatefulWidget {
-  const _DashboardHomeView({super.key});
+  const _DashboardHomeView();
 
   @override
   State<_DashboardHomeView> createState() => _DashboardHomeViewState();
@@ -1901,7 +1899,7 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
                             child: Text(
                               'Sign Out',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.6),
+                                color: Colors.white.withAlpha(153),
                                 fontSize: 14,
                                 decoration: TextDecoration.underline,
                               ),
@@ -1925,9 +1923,9 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withAlpha(26),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withOpacity(0.2)),
+                        border: Border.all(color: Colors.white.withAlpha(51)),
                       ),
                       child: Stack(
                         children: [
@@ -1997,7 +1995,7 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFC107).withOpacity(0.2),
+                    color: const Color(0xFFFFC107).withAlpha(51),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFFFFC107), width: 1),
                   ),
@@ -2031,7 +2029,7 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
                             Text(
                               '$_offlineDataCount finding${_offlineDataCount > 1 ? 's' : ''} pending upload',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.8),
+                                color: Colors.white.withAlpha(204),
                                 fontSize: 12,
                               ),
                             ),
@@ -2196,9 +2194,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
+              color: Colors.white.withAlpha(13),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: Colors.white.withAlpha(26)),
             ),
             child: Row(
               children: [
@@ -2237,16 +2235,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.notifications_off_outlined, size: 64, color: Colors.white.withOpacity(0.3)),
+                            Icon(Icons.notifications_off_outlined, size: 64, color: Colors.white.withAlpha(77)),
                             const SizedBox(height: 16),
                             Text(
                               'No notifications yet',
-                              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16),
+                              style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 16),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'You\'ll be notified when cloud processing completes',
-                              style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14),
+                              style: TextStyle(color: Colors.white.withAlpha(77), fontSize: 14),
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -2261,14 +2259,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.05),
+                              color: Colors.white.withAlpha(13),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: notification.isSuccess
-                                    ? const Color(0xFF4CAF50).withOpacity(0.3)
+                                    ? const Color(0xFF4CAF50).withAlpha(77)
                                     : notification.isError
-                                        ? const Color(0xFFF44336).withOpacity(0.3)
-                                        : Colors.white.withOpacity(0.1),
+                                        ? const Color(0xFFF44336).withAlpha(77)
+                                        : Colors.white.withAlpha(26),
                               ),
                             ),
                             child: Row(
@@ -2278,10 +2276,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
                                     color: notification.isSuccess
-                                        ? const Color(0xFF4CAF50).withOpacity(0.2)
+                                        ? const Color(0xFF4CAF50).withAlpha(51)
                                         : notification.isError
-                                            ? const Color(0xFFF44336).withOpacity(0.2)
-                                            : Colors.white.withOpacity(0.1),
+                                            ? const Color(0xFFF44336).withAlpha(51)
+                                            : Colors.white.withAlpha(26),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Icon(
@@ -2345,7 +2343,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 //
 
 class _LogoCard extends StatelessWidget {
-  const _LogoCard({super.key});
+  const _LogoCard();
 
   @override
   Widget build(BuildContext context) {
@@ -2362,7 +2360,7 @@ class _StatCard extends StatelessWidget {
   final String title;
   final String value;
 
-  const _StatCard({required this.title, required this.value, super.key});
+  const _StatCard({required this.title, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -2371,58 +2369,12 @@ class _StatCard extends StatelessWidget {
       child: BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
-          height: 120,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.35)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.85),
-                    fontSize: 14,
-                  )),
-              const Spacer(),
-              Text(
-                value,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 36,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FullStatCard extends StatelessWidget {
-  final String title;
-  final String value;
-
-  const _FullStatCard({required this.title, required this.value, super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
           height: 120,
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withAlpha(90)),
+            border: Border.all(color: Colors.white.withAlpha(89)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2451,7 +2403,7 @@ class _FullStatCard extends StatelessWidget {
 
 /// Dynamic Active Devices card that shows connected BLE devices
 class _ActiveDevicesCard extends StatefulWidget {
-  const _ActiveDevicesCard({super.key});
+  const _ActiveDevicesCard();
 
   @override
   State<_ActiveDevicesCard> createState() => _ActiveDevicesCardState();
@@ -2481,7 +2433,7 @@ class _ActiveDevicesCardState extends State<_ActiveDevicesCard> {
 
   Future<void> _checkConnectedDevices() async {
     try {
-      final devices = await FlutterBluePlus.connectedDevices;
+      final devices = FlutterBluePlus.connectedDevices;
       if (mounted) {
         setState(() {
           _connectedCount = devices.length;
@@ -2591,7 +2543,7 @@ class _ActiveDevicesCardState extends State<_ActiveDevicesCard> {
 // ---- Quick actions row (AI + Photogrammetry) ----
 
 class _QuickActionsRow extends StatelessWidget {
-  const _QuickActionsRow({super.key});
+  const _QuickActionsRow();
 
   @override
   Widget build(BuildContext context) {
@@ -2652,7 +2604,6 @@ class _GlassActionButton extends StatelessWidget {
     required this.title,
     required this.onTap,
     this.subtitle,
-    super.key,
   });
 
   @override
@@ -2666,10 +2617,10 @@ class _GlassActionButton extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.10),
+              color: Colors.white.withAlpha(26),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: Colors.white.withOpacity(0.35),
+                color: Colors.white.withAlpha(89),
                 width: 1,
               ),
             ),
@@ -2684,10 +2635,10 @@ class _GlassActionButton extends StatelessWidget {
                       width: 32,
                       height: 32,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.10),
+                        color: Colors.white.withAlpha(26),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.35),
+                          color: Colors.white.withAlpha(89),
                           width: 1,
                         ),
                       ),
@@ -2697,9 +2648,9 @@ class _GlassActionButton extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFC107).withOpacity(0.2),
+                          color: const Color(0xFFFFC107).withAlpha(51),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFFFC107).withOpacity(0.5)),
+                          border: Border.all(color: const Color(0xFFFFC107).withAlpha(128)),
                         ),
                         child: Text(
                           subtitle!,
@@ -2735,7 +2686,7 @@ class _GlassActionButton extends StatelessWidget {
 class _LastFindingsCard extends StatelessWidget {
   final List<Map<String, dynamic>> findings;
 
-  const _LastFindingsCard({super.key, required this.findings});
+  const _LastFindingsCard({required this.findings});
 
   String _formatTime(dynamic createdAt) {
     if (createdAt == null) return '--:--';
@@ -2757,10 +2708,10 @@ class _LastFindingsCard extends StatelessWidget {
           height: 160,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withOpacity(0.35),
+              color: Colors.white.withAlpha(89),
               width: 1,
             ),
           ),
@@ -2780,7 +2731,7 @@ class _LastFindingsCard extends StatelessWidget {
                 Text(
                   'No findings yet',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withAlpha(128),
                     fontSize: 13,
                   ),
                 )
@@ -2807,7 +2758,6 @@ class _FindingRow extends StatelessWidget {
   final String site;
 
   const _FindingRow({
-    super.key,
     required this.time,
     required this.type,
     required this.site,
@@ -2820,7 +2770,7 @@ class _FindingRow extends StatelessWidget {
         Text(
           time,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.7),
+            color: Colors.white.withAlpha(179),
             fontSize: 12,
           ),
         ),
@@ -2838,7 +2788,7 @@ class _FindingRow extends StatelessWidget {
         Text(
           site,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.7),
+            color: Colors.white.withAlpha(179),
             fontSize: 12,
           ),
         ),
@@ -2989,7 +2939,7 @@ class _Finding {
 class _FindingDetailsPage extends StatelessWidget {
   final _Finding finding;
 
-  const _FindingDetailsPage({super.key, required this.finding});
+  const _FindingDetailsPage({required this.finding});
 
   @override
   Widget build(BuildContext context) {
@@ -3277,11 +3227,11 @@ class _FindingDetailsPage extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: const Color(0xFF7C4DFF), width: 1),
                 ),
-                child: Row(
+                child: const Row(
                   children: [
-                    const Icon(Icons.view_in_ar, color: Color(0xFF7C4DFF), size: 32),
-                    const SizedBox(width: 16),
-                    const Expanded(
+                    Icon(Icons.view_in_ar, color: Color(0xFF7C4DFF), size: 32),
+                    SizedBox(width: 16),
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -3300,7 +3250,7 @@ class _FindingDetailsPage extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const Icon(Icons.arrow_forward_ios, color: Color(0xFF7C4DFF), size: 20),
+                    Icon(Icons.arrow_forward_ios, color: Color(0xFF7C4DFF), size: 20),
                   ],
                 ),
               ),
@@ -3406,7 +3356,7 @@ class _FindingDetailsPage extends StatelessWidget {
 }
 
 class _FindingsView extends StatefulWidget {
-  const _FindingsView({super.key});
+  const _FindingsView();
 
   @override
   State<_FindingsView> createState() => _FindingsViewState();
@@ -3423,7 +3373,6 @@ class _FindingsViewState extends State<_FindingsView> {
   // Batch selection mode
   bool _isSelectionMode = false;
   final Set<String> _selectedIds = {};
-  bool _isExporting = false;
 
   @override
   void initState() {
@@ -3482,16 +3431,6 @@ class _FindingsViewState extends State<_FindingsView> {
     });
   }
 
-  void _toggleSelection(String id) {
-    setState(() {
-      if (_selectedIds.contains(id)) {
-        _selectedIds.remove(id);
-      } else {
-        _selectedIds.add(id);
-      }
-    });
-  }
-
   void _selectAll() {
     setState(() {
       _selectedIds.addAll(_filteredFindings.map((f) => f.id));
@@ -3526,7 +3465,6 @@ class _FindingsViewState extends State<_FindingsView> {
 
     if (format == null || !mounted) return;
 
-    setState(() => _isExporting = true);
 
     try {
       // Convert findings to export format
@@ -3576,7 +3514,6 @@ class _FindingsViewState extends State<_FindingsView> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isExporting = false);
       }
     }
   }
@@ -3590,10 +3527,10 @@ class _FindingsViewState extends State<_FindingsView> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? color : Colors.white.withOpacity(0.1),
+          color: isSelected ? color : Colors.white.withAlpha(26),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? color : Colors.white.withOpacity(0.2),
+            color: isSelected ? color : Colors.white.withAlpha(51),
             width: 1,
           ),
         ),
@@ -3603,13 +3540,13 @@ class _FindingsViewState extends State<_FindingsView> {
             Icon(
               icon,
               size: 16,
-              color: isSelected ? Colors.white : Colors.white.withOpacity(0.7),
+              color: isSelected ? Colors.white : Colors.white.withAlpha(179),
             ),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.white : Colors.white.withOpacity(0.7),
+                color: isSelected ? Colors.white : Colors.white.withAlpha(179),
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
@@ -3655,8 +3592,8 @@ class _FindingsViewState extends State<_FindingsView> {
           site: data['site'] ?? '',
           date: data['date'] ?? '',
           description: data['description'] ?? '',
-          latitude: (data['latitude'] ?? 37.9715).toDouble(),
-          longitude: (data['longitude'] ?? 23.7267).toDouble(),
+          latitude: (data['latitude'] ?? 0.0).toDouble(),
+          longitude: (data['longitude'] ?? 0.0).toDouble(),
           imageUrl: data['imageUrl'],
           photoGallery: gallery,
           model3dUrl: data['model3dUrl'],
@@ -3764,10 +3701,10 @@ class _FindingsViewState extends State<_FindingsView> {
                 // SEARCH BAR
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withAlpha(26),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withAlpha(51),
                       width: 1,
                     ),
                   ),
@@ -3778,12 +3715,12 @@ class _FindingsViewState extends State<_FindingsView> {
                     decoration: InputDecoration(
                       hintText: 'Search by name, type, site, or ID...',
                       hintStyle: TextStyle(
-                        color: Colors.white.withOpacity(0.4),
+                        color: Colors.white.withAlpha(102),
                         fontSize: 14,
                       ),
                       prefixIcon: Icon(
                         Icons.search_rounded,
-                        color: Colors.white.withOpacity(0.5),
+                        color: Colors.white.withAlpha(128),
                         size: 20,
                       ),
                       suffixIcon: _searchController.text.isNotEmpty
@@ -3794,7 +3731,7 @@ class _FindingsViewState extends State<_FindingsView> {
                               },
                               child: Icon(
                                 Icons.clear_rounded,
-                                color: Colors.white.withOpacity(0.5),
+                                color: Colors.white.withAlpha(128),
                                 size: 20,
                               ),
                             )
@@ -4033,10 +3970,10 @@ class _FindingsViewState extends State<_FindingsView> {
                     child: Container(
                       padding: const EdgeInsets.all(40),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.10),
+                        color: Colors.white.withAlpha(26),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.35),
+                          color: Colors.white.withAlpha(89),
                           width: 1,
                         ),
                       ),
@@ -4056,10 +3993,10 @@ class _FindingsViewState extends State<_FindingsView> {
                     child: Container(
                       padding: const EdgeInsets.all(32),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.10),
+                        color: Colors.white.withAlpha(26),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.35),
+                          color: Colors.white.withAlpha(89),
                           width: 1,
                         ),
                       ),
@@ -4070,10 +4007,10 @@ class _FindingsViewState extends State<_FindingsView> {
                             width: 80,
                             height: 80,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFC107).withOpacity(0.15),
+                              color: const Color(0xFFFFC107).withAlpha(38),
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: const Color(0xFFFFC107).withOpacity(0.3),
+                                color: const Color(0xFFFFC107).withAlpha(77),
                                 width: 2,
                               ),
                             ),
@@ -4097,7 +4034,7 @@ class _FindingsViewState extends State<_FindingsView> {
                             'No archaeological findings recorded yet.\nDocument your first discovery!',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.6),
+                              color: Colors.white.withAlpha(153),
                               fontSize: 13,
                               height: 1.4,
                             ),
@@ -4128,7 +4065,7 @@ class _FindingsViewState extends State<_FindingsView> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.1),
+                                color: Colors.white.withAlpha(26),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Row(
@@ -4136,14 +4073,14 @@ class _FindingsViewState extends State<_FindingsView> {
                                 children: [
                                   Icon(
                                     Icons.lock_outline,
-                                    color: Colors.white.withOpacity(0.5),
+                                    color: Colors.white.withAlpha(128),
                                     size: 16,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
                                     'Sign in to add findings',
                                     style: TextStyle(
-                                      color: Colors.white.withOpacity(0.5),
+                                      color: Colors.white.withAlpha(128),
                                       fontSize: 13,
                                     ),
                                   ),
@@ -4164,10 +4101,10 @@ class _FindingsViewState extends State<_FindingsView> {
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.10),
+                        color: Colors.white.withAlpha(26),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.35),
+                          color: Colors.white.withAlpha(89),
                           width: 1,
                         ),
                       ),
@@ -4188,12 +4125,12 @@ class _FindingsViewState extends State<_FindingsView> {
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: isSelected
-                                        ? const Color(0xFFFFC107).withOpacity(0.2)
-                                        : Colors.white.withOpacity(0.05),
+                                        ? const Color(0xFFFFC107).withAlpha(51)
+                                        : Colors.white.withAlpha(13),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
                                       color: isSelected
-                                          ? const Color(0xFFFFC107).withOpacity(0.5)
+                                          ? const Color(0xFFFFC107).withAlpha(128)
                                           : Colors.transparent,
                                       width: 1,
                                     ),
@@ -4220,7 +4157,7 @@ class _FindingsViewState extends State<_FindingsView> {
                                                 Text(
                                                   f.id,
                                                   style: TextStyle(
-                                                    color: Colors.white.withOpacity(0.5),
+                                                    color: Colors.white.withAlpha(128),
                                                     fontSize: 10,
                                                     fontWeight: FontWeight.w600,
                                                   ),
@@ -4243,7 +4180,7 @@ class _FindingsViewState extends State<_FindingsView> {
                                             Text(
                                               '${f.type} • ${f.site} • ${f.date}',
                                               style: TextStyle(
-                                                color: Colors.white.withOpacity(0.6),
+                                                color: Colors.white.withAlpha(153),
                                                 fontSize: 11,
                                               ),
                                               overflow: TextOverflow.ellipsis,
@@ -4256,7 +4193,7 @@ class _FindingsViewState extends State<_FindingsView> {
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFF7C4DFF).withOpacity(0.3),
+                                            color: const Color(0xFF7C4DFF).withAlpha(77),
                                             borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: const Text(
@@ -4281,7 +4218,7 @@ class _FindingsViewState extends State<_FindingsView> {
                                         child: Container(
                                           padding: const EdgeInsets.all(8),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFFFC107).withOpacity(0.2),
+                                            color: const Color(0xFFFFC107).withAlpha(51),
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: const Icon(
@@ -4312,10 +4249,10 @@ class _FindingsViewState extends State<_FindingsView> {
                     child: Container(
                       height: 300,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.10),
+                        color: Colors.white.withAlpha(26),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.35),
+                          color: Colors.white.withAlpha(89),
                           width: 1,
                         ),
                       ),
@@ -4341,7 +4278,7 @@ class _FindingsViewState extends State<_FindingsView> {
 class _FindingDetailCard extends StatelessWidget {
   final _Finding finding;
 
-  const _FindingDetailCard({super.key, required this.finding});
+  const _FindingDetailCard({required this.finding});
 
   Widget _buildFindingImage(String imageUrl) {
     return Image.network(
@@ -4389,10 +4326,10 @@ class _FindingDetailCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withOpacity(0.35),
+              color: Colors.white.withAlpha(89),
               width: 1,
             ),
           ),
@@ -4407,10 +4344,10 @@ class _FindingDetailCard extends StatelessWidget {
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.08),
+                      color: Colors.white.withAlpha(20),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: typeColor.withOpacity(0.6),
+                        color: typeColor.withAlpha(153),
                         width: 2,
                       ),
                     ),
@@ -4420,7 +4357,7 @@ class _FindingDetailCard extends StatelessWidget {
                           ? _buildFindingImage(finding.imageUrl!)
                           : Icon(
                               Icons.image_outlined,
-                              color: typeColor.withOpacity(0.5),
+                              color: typeColor.withAlpha(128),
                               size: 36,
                             ),
                     ),
@@ -4459,7 +4396,7 @@ class _FindingDetailCard extends StatelessWidget {
                         Text(
                           '${finding.type} • ${finding.site} • ${finding.date}',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.8),
+                            color: Colors.white.withAlpha(204),
                             fontSize: 12,
                           ),
                         ),
@@ -4493,10 +4430,10 @@ class _FindingDetailCard extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                              color: const Color(0xFF7C4DFF).withAlpha(51),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: const Color(0xFF7C4DFF).withOpacity(0.5),
+                                color: const Color(0xFF7C4DFF).withAlpha(128),
                                 width: 1,
                               ),
                             ),
@@ -4526,18 +4463,18 @@ class _FindingDetailCard extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withAlpha(26),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.photo_library_outlined, color: Colors.white.withOpacity(0.7), size: 16),
+                              Icon(Icons.photo_library_outlined, color: Colors.white.withAlpha(179), size: 16),
                               const SizedBox(width: 6),
                               Text(
                                 '${finding.photoGallery.length} photos',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.7),
+                                  color: Colors.white.withAlpha(179),
                                   fontSize: 12,
                                 ),
                               ),
@@ -4560,7 +4497,6 @@ class _FindingsMap extends StatefulWidget {
   final int selectedIndex;
 
   const _FindingsMap({
-    super.key,
     required this.findings,
     required this.selectedIndex,
   });
@@ -4676,17 +4612,17 @@ class _FindingsMapState extends State<_FindingsMap> {
                   height: 48,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: typeColor.withOpacity(0.3),
+                    color: typeColor.withAlpha(77),
                   ),
                 ),
               // Main marker icon
               Icon(
                 Icons.location_pin,
                 size: isSelected ? 40 : 32,
-                color: isSelected ? typeColor : typeColor.withOpacity(0.85),
+                color: isSelected ? typeColor : typeColor.withAlpha(217),
                 shadows: [
                   Shadow(
-                    color: Colors.black.withOpacity(0.5),
+                    color: Colors.black.withAlpha(128),
                     blurRadius: 4,
                   ),
                 ],
@@ -4748,7 +4684,7 @@ class _FindingsMapState extends State<_FindingsMap> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
+              color: Colors.black.withAlpha(179),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -4792,7 +4728,7 @@ class _FindingsMapState extends State<_FindingsMap> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withAlpha(77),
                     blurRadius: 8,
                     spreadRadius: 1,
                   ),
@@ -4880,8 +4816,8 @@ Future<void> _handleQuickCaptureResult(BuildContext context, Map<String, dynamic
     'site': 'Field Site',
     'date': DateTime.now().toIso8601String().split('T')[0],
     'description': description ?? '',
-    'latitude': location?['latitude'] ?? 37.9715,
-    'longitude': location?['longitude'] ?? 23.7267,
+    'latitude': location?['latitude'] ?? 0.0,
+    'longitude': location?['longitude'] ?? 0.0,
     'imageUrl': persistedPath, // Use local path
     'photoGallery': persistedPath != null ? [persistedPath] : <String>[],
     'createdAt': DateTime.now().toIso8601String(),
@@ -4952,18 +4888,21 @@ Future<void> _syncQuickCaptureToCloud(Map<String, dynamic> findingData, List<dyn
       }
     }
 
-    // Update finding data with cloud URLs if available
+    // Create a copy for cloud upload to avoid mutating the original local data
+    final cloudData = Map<String, dynamic>.from(findingData);
+
+    // Update cloud data with cloud URLs if available
     if (photoUrls.isNotEmpty) {
-      findingData['imageUrl'] = photoUrls.first;
-      findingData['photoGallery'] = photoUrls;
+      cloudData['imageUrl'] = photoUrls.first;
+      cloudData['photoGallery'] = photoUrls;
     }
-    findingData['createdAt'] = FieldValue.serverTimestamp();
+    cloudData['createdAt'] = FieldValue.serverTimestamp();
 
     // Try to save to Firestore
     await FirebaseFirestore.instance
         .collection('findings')
-        .doc(findingData['id'] as String)
-        .set(findingData)
+        .doc(cloudData['id'] as String)
+        .set(cloudData)
         .timeout(const Duration(seconds: 10));
 
     debugPrint('QuickCapture: Synced to cloud');
@@ -4973,161 +4912,8 @@ Future<void> _syncQuickCaptureToCloud(Map<String, dynamic> findingData, List<dyn
   }
 }
 
-/// Handle QR Scanner result - view finding details or create new
-void _handleQRScanResult(BuildContext context, Map<String, dynamic> result) {
-  final action = result['action'] as String?;
-
-  switch (action) {
-    case 'view':
-      // Show finding details
-      final finding = result['finding'] as Map<String, dynamic>?;
-      if (finding != null) {
-        showModalBottomSheet(
-          context: context,
-          backgroundColor: const Color(0xFF1C2523),
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          builder: (context) => _QRFindingDetailsSheet(finding: finding),
-        );
-      }
-      break;
-    case 'create':
-      // Navigate to manual entry with pre-filled ID
-      final id = result['id'] as String?;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Create finding with ID: $id'),
-          action: SnackBarAction(
-            label: 'Create',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
-              );
-            },
-          ),
-        ),
-      );
-      break;
-    case 'link':
-      // Link external code to a finding
-      final code = result['code'] as String?;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('External code: $code'),
-          backgroundColor: const Color(0xFF2196F3),
-        ),
-      );
-      break;
-  }
-}
-
-/// Bottom sheet to show scanned finding details
-class _QRFindingDetailsSheet extends StatelessWidget {
-  final Map<String, dynamic> finding;
-
-  const _QRFindingDetailsSheet({required this.finding});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFC107),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  finding['artifactId'] ?? 'Unknown',
-                  style: const TextStyle(
-                    color: Color(0xFF0D3A39),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white54),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            finding['name'] ?? finding['description'] ?? 'Unnamed Finding',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (finding['site'] != null)
-            _buildDetailRow(Icons.location_on_outlined, 'Site', finding['site']),
-          if (finding['type'] != null)
-            _buildDetailRow(Icons.category_outlined, 'Type', finding['type']),
-          if (finding['material'] != null)
-            _buildDetailRow(Icons.texture_outlined, 'Material', finding['material']),
-          if (finding['period'] != null)
-            _buildDetailRow(Icons.history_outlined, 'Period', finding['period']),
-          if (finding['date'] != null)
-            _buildDetailRow(Icons.calendar_today_outlined, 'Date', finding['date']),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                // Navigate to full finding view if needed
-              },
-              icon: const Icon(Icons.visibility_outlined),
-              label: const Text('View Full Record'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFC107),
-                foregroundColor: const Color(0xFF0D3A39),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white54, size: 18),
-          const SizedBox(width: 8),
-          Text(
-            '$label: ',
-            style: const TextStyle(color: Colors.white54, fontSize: 14),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ToolsView extends StatelessWidget {
-  const _ToolsView({super.key});
+  const _ToolsView();
 
   bool get _isGuest => AuthService.currentUser == null;
 
@@ -5169,7 +4955,7 @@ class _ToolsView extends StatelessWidget {
                           ? 'Sign in to unlock all features'
                           : 'Industry-leading archaeological field tools',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.70),
+                        color: Colors.white.withAlpha(179),
                         fontSize: 13,
                       ),
                     ),
@@ -5336,131 +5122,6 @@ class _ToolsView extends StatelessWidget {
     );
   }
 
-  Widget _buildHeroFeature(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF6A1B9A),
-              Color(0xFF8E24AA),
-              Color(0xFFAB47BC),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF8E24AA).withOpacity(0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.view_in_ar_rounded, color: Colors.white, size: 28),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFC107),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    '⚡ HERO FEATURE',
-                    style: TextStyle(
-                      color: Color(0xFF0D3A39),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '3D Reconstruction',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'On-device photogrammetry with RANSAC & Essential Matrix. Industry-grade Structure from Motion in 10-30 seconds.',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.90),
-                fontSize: 13,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                _buildFeatureBadge('RANSAC'),
-                const SizedBox(width: 8),
-                _buildFeatureBadge('Triple Validation'),
-                const SizedBox(width: 8),
-                _buildFeatureBadge('85-95% Success'),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Text(
-                  'Start 3D Capture',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeatureBadge(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
   Widget _buildCategoryHeader(String title) {
     return Text(
       title,
@@ -5582,9 +5243,9 @@ class _ToolsView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withAlpha(13),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: Colors.white.withAlpha(26)),
       ),
       child: Row(
         children: [
@@ -5594,13 +5255,13 @@ class _ToolsView extends StatelessWidget {
             child: Text(
               title,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.4),
+                color: Colors.white.withAlpha(102),
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          Icon(Icons.lock_outline_rounded, color: Colors.white38, size: 20),
+          const Icon(Icons.lock_outline_rounded, color: Colors.white38, size: 20),
         ],
       ),
     );
@@ -5630,7 +5291,7 @@ class _ToolsView extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Choose an export format for your findings',
-              style: TextStyle(color: Colors.white.withOpacity(0.7)),
+              style: TextStyle(color: Colors.white.withAlpha(179)),
             ),
             const SizedBox(height: 20),
             _ExportOptionTile(
@@ -5762,14 +5423,14 @@ class _ExportOptionTile extends StatelessWidget {
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.2),
+          color: color.withAlpha(51),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, color: color, size: 24),
       ),
       title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
-      trailing: Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.5)),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12)),
+      trailing: Icon(Icons.chevron_right, color: Colors.white.withAlpha(128)),
       onTap: onTap,
     );
   }
@@ -5858,165 +5519,6 @@ class _ToolCard extends StatelessWidget {
   }
 }
 
-// Guest version of add option card - blurred with sign in required text
-class _GuestAddOptionCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-
-  const _GuestAddOptionCard({
-    required this.icon,
-    required this.title,
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.15)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: Colors.white38, size: 24),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.4),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Sign in required',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.3),
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.lock_outline_rounded,
-                color: Colors.white.withOpacity(0.3),
-                size: 20,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AddOptionCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String description;
-  final VoidCallback onTap;
-
-  const _AddOptionCard({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.onTap,
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.35),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFC107).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: const Color(0xFFFFC107),
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        description,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: Colors.white.withOpacity(0.5),
-                  size: 18,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 //
 // --------------------- MANUAL ENTRY FORM SCREEN ---------------------
 //
@@ -6055,7 +5557,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isGettingLocation = false;
-  bool _isPhotogrammetryMode = false;
 
   // ========== COIN-SPECIFIC FIELDS ==========
   final _denominationController = TextEditingController();
@@ -6074,7 +5575,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
 
   // Auto-save functionality
   Timer? _autoSaveTimer;
-  DateTime? _lastAutoSave;
+  Timer? _editDebounceTimer;
 
   // Random example hints
   late String _nameHint;
@@ -6106,7 +5607,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     // Initialize with data from photogrammetry if available
     if (widget.photoGallery != null && widget.photoGallery!.isNotEmpty) {
       _photoGallery.addAll(widget.photoGallery!);
-      _isPhotogrammetryMode = true;
     }
 
     // Initialize cloud model URL if provided
@@ -6135,9 +5635,9 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   }
 
   void _scheduleAutoSave() {
-    // Schedule auto-save for 2 seconds after last edit
-    _autoSaveTimer?.cancel();
-    _autoSaveTimer = Timer(const Duration(seconds: 2), _autoSave);
+    // Schedule auto-save for 2 seconds after last edit (separate from periodic timer)
+    _editDebounceTimer?.cancel();
+    _editDebounceTimer = Timer(const Duration(seconds: 2), _autoSave);
   }
 
   Future<void> _autoSave() async {
@@ -6145,7 +5645,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
       return; // Don't save empty forms
     }
 
-    _lastAutoSave = DateTime.now();
     final storage = LocalStorageService();
     await storage.saveFormDraft(
       formId: 'manual_entry',
@@ -6203,15 +5702,19 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         _wallThicknessController.text = draft['wallThickness'] ?? '';
       });
 
-      // Show notification
+      // Show notification (post-frame to avoid initState context issue)
       if (_nameController.text.isNotEmpty || _typeController.text.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('📝 Draft restored'),
-            backgroundColor: Color(0xFF2196F3),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Draft restored'),
+                backgroundColor: Color(0xFF2196F3),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        });
       }
     }
   }
@@ -6387,10 +5890,12 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
           .get();
 
       if (snapshot.docs.isEmpty) {
-        setState(() {
-          _nextId = 'A-001';
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _nextId = 'A-001';
+            _isLoading = false;
+          });
+        }
         return;
       }
 
@@ -6424,15 +5929,19 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         maxNum = snapshot.docs.length;
       }
 
-      setState(() {
-        _nextId = 'A-${(maxNum + 1).toString().padLeft(3, '0')}';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _nextId = 'A-${(maxNum + 1).toString().padLeft(3, '0')}';
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _nextId = 'A-001';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _nextId = 'A-001';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -6497,8 +6006,8 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     setState(() => _isSaving = true);
 
     // Parse coordinates from controllers, fallback to defaults if empty
-    final lat = double.tryParse(_latController.text) ?? 37.9715;
-    final lng = double.tryParse(_lngController.text) ?? 23.7267;
+    final lat = double.tryParse(_latController.text) ?? 0.0;
+    final lng = double.tryParse(_lngController.text) ?? 0.0;
 
     try {
 
@@ -6728,6 +6237,8 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
 
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
+    _editDebounceTimer?.cancel();
     _nameController.dispose();
     _typeController.dispose();
     _siteController.dispose();
@@ -6736,6 +6247,14 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     _latController.dispose();
     _lngController.dispose();
     _model3dUrlController.dispose();
+    _denominationController.dispose();
+    _mintController.dispose();
+    _rulerController.dispose();
+    _obverseLegendController.dispose();
+    _reverseLegendController.dispose();
+    _dieAxisController.dispose();
+    _rimDiameterController.dispose();
+    _wallThicknessController.dispose();
     super.dispose();
   }
 
@@ -6752,7 +6271,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
       if (image != null) {
         setState(() {
           _photoGallery.add(image);
-          _isPhotogrammetryMode = true;
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -6778,9 +6296,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   void _removeGalleryPhoto(int index) {
     setState(() {
       _photoGallery.removeAt(index);
-      if (_photoGallery.isEmpty) {
-        _isPhotogrammetryMode = false;
-      }
     });
   }
 
@@ -6817,10 +6332,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withAlpha(26),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
+                              color: Colors.white.withAlpha(77),
                               width: 1,
                             ),
                           ),
@@ -6851,10 +6366,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFC107).withOpacity(0.2),
+                            color: const Color(0xFFFFC107).withAlpha(51),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(0xFFFFC107).withOpacity(0.5),
+                              color: const Color(0xFFFFC107).withAlpha(128),
                               width: 1,
                             ),
                           ),
@@ -6871,7 +6386,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                   Text(
                     'Add a new finding to the database',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.75),
+                      color: Colors.white.withAlpha(191),
                       fontSize: 14,
                     ),
                   ),
@@ -6884,10 +6399,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                       filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.10),
+                          color: Colors.white.withAlpha(26),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.35),
+                            color: Colors.white.withAlpha(89),
                             width: 1,
                           ),
                         ),
@@ -6899,7 +6414,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.1),
+                                  color: Colors.white.withAlpha(26),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: const Icon(
@@ -6918,7 +6433,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                         Text(
                                           'ID',
                                           style: TextStyle(
-                                            color: Colors.white.withOpacity(0.7),
+                                            color: Colors.white.withAlpha(179),
                                             fontSize: 12,
                                           ),
                                         ),
@@ -6926,7 +6441,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFFFC107).withOpacity(0.2),
+                                            color: const Color(0xFFFFC107).withAlpha(51),
                                             borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: const Text(
@@ -7025,10 +6540,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                       filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.10),
+                          color: Colors.white.withAlpha(26),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.35),
+                            color: Colors.white.withAlpha(89),
                             width: 1,
                           ),
                         ),
@@ -7043,7 +6558,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                     width: 40,
                                     height: 40,
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.1),
+                                      color: Colors.white.withAlpha(26),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: const Icon(
@@ -7062,7 +6577,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                             Text(
                                               'Coordinates',
                                               style: TextStyle(
-                                                color: Colors.white.withOpacity(0.7),
+                                                color: Colors.white.withAlpha(179),
                                                 fontSize: 12,
                                               ),
                                             ),
@@ -7070,13 +6585,13 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: Colors.white.withOpacity(0.1),
+                                                color: Colors.white.withAlpha(26),
                                                 borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: Text(
                                                 'Optional',
                                                 style: TextStyle(
-                                                  color: Colors.white.withOpacity(0.5),
+                                                  color: Colors.white.withAlpha(128),
                                                   fontSize: 10,
                                                 ),
                                               ),
@@ -7090,7 +6605,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                               : 'Location set',
                                           style: TextStyle(
                                             color: _latController.text.isEmpty && _lngController.text.isEmpty
-                                                ? Colors.white.withOpacity(0.4)
+                                                ? Colors.white.withAlpha(102)
                                                 : Colors.white,
                                             fontSize: 16,
                                           ),
@@ -7109,7 +6624,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                     child: Text(
                                       'Latitude',
                                       style: TextStyle(
-                                        color: Colors.white.withOpacity(0.7),
+                                        color: Colors.white.withAlpha(179),
                                         fontSize: 12,
                                       ),
                                     ),
@@ -7118,10 +6633,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 12),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.1),
+                                        color: Colors.white.withAlpha(26),
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
-                                          color: Colors.white.withOpacity(0.2),
+                                          color: Colors.white.withAlpha(51),
                                           width: 1,
                                         ),
                                       ),
@@ -7135,7 +6650,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                         decoration: InputDecoration(
                                           hintText: 'e.g., 37.9715',
                                           hintStyle: TextStyle(
-                                            color: Colors.white.withOpacity(0.4),
+                                            color: Colors.white.withAlpha(102),
                                             fontSize: 14,
                                           ),
                                           border: InputBorder.none,
@@ -7156,7 +6671,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                     child: Text(
                                       'Longitude',
                                       style: TextStyle(
-                                        color: Colors.white.withOpacity(0.7),
+                                        color: Colors.white.withAlpha(179),
                                         fontSize: 12,
                                       ),
                                     ),
@@ -7165,10 +6680,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 12),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.1),
+                                        color: Colors.white.withAlpha(26),
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
-                                          color: Colors.white.withOpacity(0.2),
+                                          color: Colors.white.withAlpha(51),
                                           width: 1,
                                         ),
                                       ),
@@ -7182,7 +6697,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                         decoration: InputDecoration(
                                           hintText: 'e.g., 23.7267',
                                           hintStyle: TextStyle(
-                                            color: Colors.white.withOpacity(0.4),
+                                            color: Colors.white.withAlpha(102),
                                             fontSize: 14,
                                           ),
                                           border: InputBorder.none,
@@ -7202,10 +6717,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFFFC107).withOpacity(0.2),
+                                    color: const Color(0xFFFFC107).withAlpha(51),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: const Color(0xFFFFC107).withOpacity(0.5),
+                                      color: const Color(0xFFFFC107).withAlpha(128),
                                       width: 1,
                                     ),
                                   ),
@@ -7255,10 +6770,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                       filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.10),
+                          color: Colors.white.withAlpha(26),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.35),
+                            color: Colors.white.withAlpha(89),
                             width: 1,
                           ),
                         ),
@@ -7273,7 +6788,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                     width: 40,
                                     height: 40,
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.1),
+                                      color: Colors.white.withAlpha(26),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: const Icon(
@@ -7292,7 +6807,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                             Text(
                                               'Picture',
                                               style: TextStyle(
-                                                color: Colors.white.withOpacity(0.7),
+                                                color: Colors.white.withAlpha(179),
                                                 fontSize: 12,
                                               ),
                                             ),
@@ -7300,13 +6815,13 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: Colors.white.withOpacity(0.1),
+                                                color: Colors.white.withAlpha(26),
                                                 borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: Text(
                                                 'Optional',
                                                 style: TextStyle(
-                                                  color: Colors.white.withOpacity(0.5),
+                                                  color: Colors.white.withAlpha(128),
                                                   fontSize: 10,
                                                 ),
                                               ),
@@ -7317,7 +6832,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                         Text(
                                           _hasImage ? 'Image selected' : 'No image selected',
                                           style: TextStyle(
-                                            color: _hasImage ? Colors.white : Colors.white.withOpacity(0.4),
+                                            color: _hasImage ? Colors.white : Colors.white.withAlpha(102),
                                             fontSize: 16,
                                           ),
                                         ),
@@ -7335,10 +6850,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(vertical: 12),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.1),
+                                          color: Colors.white.withAlpha(26),
                                           borderRadius: BorderRadius.circular(12),
                                           border: Border.all(
-                                            color: Colors.white.withOpacity(0.2),
+                                            color: Colors.white.withAlpha(51),
                                             width: 1,
                                           ),
                                         ),
@@ -7370,10 +6885,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(vertical: 12),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.1),
+                                          color: Colors.white.withAlpha(26),
                                           borderRadius: BorderRadius.circular(12),
                                           border: Border.all(
-                                            color: Colors.white.withOpacity(0.2),
+                                            color: Colors.white.withAlpha(51),
                                             width: 1,
                                           ),
                                         ),
@@ -7416,10 +6931,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                       filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.10),
+                          color: Colors.white.withAlpha(26),
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
-                            color: const Color(0xFF7C4DFF).withOpacity(0.35),
+                            color: const Color(0xFF7C4DFF).withAlpha(89),
                             width: 1,
                           ),
                         ),
@@ -7434,7 +6949,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                     width: 40,
                                     height: 40,
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                                      color: const Color(0xFF7C4DFF).withAlpha(51),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: const Icon(
@@ -7462,7 +6977,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                                                color: const Color(0xFF7C4DFF).withAlpha(51),
                                                 borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: const Text(
@@ -7482,7 +6997,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                               ? 'Take multiple photos for 3D model'
                                               : '${_photoGallery.length} photos captured',
                                           style: TextStyle(
-                                            color: Colors.white.withOpacity(0.6),
+                                            color: Colors.white.withAlpha(153),
                                             fontSize: 12,
                                           ),
                                         ),
@@ -7510,7 +7025,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                             decoration: BoxDecoration(
                                               borderRadius: BorderRadius.circular(12),
                                               border: Border.all(
-                                                color: const Color(0xFF7C4DFF).withOpacity(0.5),
+                                                color: const Color(0xFF7C4DFF).withAlpha(128),
                                                 width: 2,
                                               ),
                                             ),
@@ -7553,10 +7068,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                                    color: const Color(0xFF7C4DFF).withAlpha(51),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: const Color(0xFF7C4DFF).withOpacity(0.5),
+                                      color: const Color(0xFF7C4DFF).withAlpha(128),
                                       width: 1,
                                     ),
                                   ),
@@ -7583,7 +7098,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                               Text(
                                 'Tip: Take 10-20 photos from different angles for best 3D reconstruction',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.4),
+                                  color: Colors.white.withAlpha(102),
                                   fontSize: 11,
                                   fontStyle: FontStyle.italic,
                                 ),
@@ -7613,7 +7128,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                               borderRadius: BorderRadius.circular(24),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFFFFC107).withOpacity(0.3),
+                                  color: const Color(0xFFFFC107).withAlpha(77),
                                   blurRadius: 16,
                                   spreadRadius: 0,
                                 ),
@@ -7666,10 +7181,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withOpacity(0.35),
+              color: Colors.white.withAlpha(89),
               width: 1,
             ),
           ),
@@ -7681,7 +7196,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withAlpha(26),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -7698,7 +7213,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                       Text(
                         label,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
+                          color: Colors.white.withAlpha(179),
                           fontSize: 12,
                         ),
                       ),
@@ -7915,10 +7430,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withOpacity(0.35),
+              color: Colors.white.withAlpha(89),
               width: 1,
             ),
           ),
@@ -7930,7 +7445,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withAlpha(26),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, color: const Color(0xFFFFC107), size: 20),
@@ -7943,7 +7458,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                       Text(
                         label,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
+                          color: Colors.white.withAlpha(179),
                           fontSize: 12,
                         ),
                       ),
@@ -7985,9 +7500,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
 //
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const String _bleIMUCharUUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-const String _bleMoistureCharUUID = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
-const String _bleAlertCharUUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa";
 
 class _SafetyView extends StatefulWidget {
   final bool isMuted;
@@ -7998,7 +7510,6 @@ class _SafetyView extends StatefulWidget {
     required this.isMuted,
     required this.onToggleMute,
     required this.onAlert,
-    super.key,
   });
 
   @override
@@ -8037,11 +7548,6 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
   double _ppvPeakHold = 0.0;   // 5-second peak hold
   DateTime _ppvPeakTime = DateTime.now();
 
-  // v3.0 app-side alert hysteresis
-  int _alertPersistence = 0;
-  int _alertCooldownCount = 0;
-  String _pendingAlertLevel = 'safe';
-
   // PPV history for trend graph (DIN 4150-3)
   final List<Map<String, dynamic>> _ppvHistory = [];
 
@@ -8057,9 +7563,9 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
 
   StreamSubscription? _scanSubscription;
   StreamSubscription? _connectionSubscription;
-  List<StreamSubscription> _charSubscriptions = [];
+  final List<StreamSubscription> _charSubscriptions = [];
 
-  bool _isSimulating = false;
+  final bool _isSimulating = false;
   Timer? _simulationTimer;
   Timer? _firebaseLogTimer;
   List<Map<String, dynamic>> _sensorHistory = [];
@@ -8125,7 +7631,9 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
         } else {
           final name = device.platformName.toLowerCase();
           if (!(name.contains('ancientvision') || name.contains('ancient') ||
-              name.contains('m5stick') || name.contains('m5-') || name.startsWith('m5'))) continue;
+              name.contains('m5stick') || name.contains('m5-') || name.startsWith('m5'))) {
+            continue;
+          }
         }
         debugPrint('>>> ALREADY CONNECTED: ${device.platformName} - subscribing to data...');
         setState(() {
@@ -8197,6 +7705,7 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
           if (matched) {
             debugPrint('>>> MATCHED DEVICE: $name (${r.device.remoteId}) - connecting...');
             FlutterBluePlus.stopScan();
+            _scanSubscription?.cancel();
             _connectToDevice(r.device);
             return; // Exit the listener
           }
@@ -8285,6 +7794,7 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
 
   /// Handle device disconnection with smart reconnect
   void _handleDisconnection() {
+    if (!mounted) return;
     final deviceName = _connectedDevice?.platformName ?? 'Sensor';
 
     setState(() {
@@ -8314,7 +7824,7 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
     _reconnectAttempts++;
 
     setState(() {
-      _connectionStatus = 'Reconnecting in ${delaySeconds}s... (${_reconnectAttempts}/$_maxReconnectAttempts)';
+      _connectionStatus = 'Reconnecting in ${delaySeconds}s... ($_reconnectAttempts/$_maxReconnectAttempts)';
     });
 
     _reconnectTimer?.cancel();
@@ -8752,230 +8262,6 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
     }
   }
 
-  void _startSimulation() {
-    setState(() {
-      _isSimulating = true;
-      _connectionStatus = 'Simulating';
-    });
-
-    final random = Random();
-    _simulationTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      setState(() {
-        // Generate realistic sensor data
-        _accX = -0.1 + random.nextDouble() * 0.2;
-        _accY = -0.1 + random.nextDouble() * 0.2;
-        _accZ = 0.95 + random.nextDouble() * 0.1;
-
-        // Simulate v3.0 vibration analysis
-        // Normal background: PPV 0.05-0.25 mm/s, freq 1-5 Hz (footsteps/ambient)
-        _ppv = 0.05 + random.nextDouble() * 0.2;
-        _rms = 0.001 + random.nextDouble() * 0.01;
-        _dominantFreq = 1.0 + random.nextDouble() * 4.0;
-        _crestFactor = 1.5 + random.nextDouble() * 1.5;
-        _centroid = 2.0 + random.nextDouble() * 4.0;
-        _kurtosis = -0.5 + random.nextDouble() * 2.0;
-        _staLtaRatio = 0.5 + random.nextDouble() * 1.0;
-        _vibration = _rms;
-        _hazardType = 'none';
-
-        // Occasionally simulate hazard events
-        int eventRoll = random.nextInt(80);
-        if (eventRoll == 0) {
-          // Simulate seismic event: low freq, high PPV
-          _ppv = 3.5 + random.nextDouble() * 8.0;
-          _dominantFreq = 2.0 + random.nextDouble() * 6.0;
-          _crestFactor = 2.0 + random.nextDouble() * 2.0;
-          _rms = 0.05 + random.nextDouble() * 0.3;
-          _centroid = 1.0 + random.nextDouble() * 5.0;
-          _kurtosis = 1.0 + random.nextDouble() * 3.0;
-          _staLtaRatio = 4.0 + random.nextDouble() * 6.0;
-          _vibration = _rms;
-          _hazardType = 'seismic';
-        } else if (eventRoll == 1) {
-          // Simulate machinery: mid freq, moderate PPV
-          _ppv = 2.0 + random.nextDouble() * 3.0;
-          _dominantFreq = 15.0 + random.nextDouble() * 30.0;
-          _crestFactor = 2.0 + random.nextDouble() * 1.5;
-          _rms = 0.02 + random.nextDouble() * 0.1;
-          _centroid = 15.0 + random.nextDouble() * 20.0;
-          _kurtosis = 0.5 + random.nextDouble() * 2.0;
-          _staLtaRatio = 2.0 + random.nextDouble() * 2.0;
-          _vibration = _rms;
-          _hazardType = 'machinery';
-        } else if (eventRoll == 2) {
-          // Simulate impact: high crest factor
-          _ppv = 1.5 + random.nextDouble() * 3.0;
-          _dominantFreq = 5.0 + random.nextDouble() * 20.0;
-          _crestFactor = 5.5 + random.nextDouble() * 3.0;
-          _rms = 0.01 + random.nextDouble() * 0.05;
-          _centroid = 10.0 + random.nextDouble() * 20.0;
-          _kurtosis = 5.0 + random.nextDouble() * 5.0;
-          _staLtaRatio = 6.0 + random.nextDouble() * 4.0;
-          _vibration = _rms;
-          _hazardType = 'impact';
-        }
-
-        // PPV smoothing & peak hold (simulation)
-        _ppvSmoothed = 0.3 * _ppv + 0.7 * _ppvSmoothed;
-        if (_ppv > _ppvPeakHold) {
-          _ppvPeakHold = _ppv;
-          _ppvPeakTime = DateTime.now();
-        } else if (DateTime.now().difference(_ppvPeakTime).inSeconds >= 5) {
-          _ppvPeakHold = _ppv;
-          _ppvPeakTime = DateTime.now();
-        }
-
-        // PPV history for trend graph
-        _ppvHistory.add({
-          'ppv': _ppv,
-          'freq': _dominantFreq,
-          'crest': _crestFactor,
-          'rms': _rms,
-          'cent': _centroid,
-          'kurt': _kurtosis,
-          'stalta': _staLtaRatio,
-          'timestamp': DateTime.now(),
-        });
-        if (_ppvHistory.length > 60) _ppvHistory.removeAt(0);
-
-        // Moisture varies slowly
-        _moisturePercent = 35 + random.nextInt(30);
-        if (random.nextInt(30) == 0) {
-          _moisturePercent = random.nextBool() ? 20 + random.nextInt(10) : 65 + random.nextInt(15);
-        }
-
-        _lastUpdate = _formatTime(DateTime.now());
-
-        // DIN 4150-3 compliant alert logic with v3.0 STA/LTA
-        String candidateLevel = 'safe';
-        String newMessage = '';
-
-        if (_ppv > 10.0) {
-          candidateLevel = 'critical';
-          newMessage = 'Structural damage risk - EVACUATE';
-        } else if (_ppv > 3.0 && _dominantFreq <= 10.0) {
-          candidateLevel = 'critical';
-          newMessage = 'Seismic activity detected';
-        } else if (_staLtaRatio > 4.0 && _ppv > 1.0) {
-          candidateLevel = 'critical';
-          newMessage = 'Seismic event (STA/LTA)';
-        } else if (_ppv > 3.0 && _dominantFreq > 10.0) {
-          candidateLevel = 'warning';
-          newMessage = 'Heavy machinery nearby';
-        } else if (_crestFactor > 5.0 && _ppv > 1.0) {
-          candidateLevel = 'warning';
-          newMessage = 'Impact detected';
-        } else if (_ppv > 2.5) {
-          candidateLevel = 'warning';
-          newMessage = 'Continuous vibration high';
-        }
-
-        if (_moisturePercent > 60) {
-          candidateLevel = 'critical';
-          newMessage = 'Soil too wet - collapse risk!';
-          _hazardType = 'moisture_high';
-        } else if (_moisturePercent < 30 && candidateLevel == 'safe') {
-          candidateLevel = 'warning';
-          newMessage = 'Soil too dry';
-          _hazardType = 'moisture_low';
-        }
-
-        // Run ML anomaly detection in simulation too (v3.0: 7 features)
-        if (_mlModelLoaded) {
-          _lastAnomalyResult = _anomalyService.detect({
-            'rms': _rms,
-            'ppv': _ppv,
-            'freq': _dominantFreq,
-            'crest': _crestFactor,
-            'cent': _centroid,
-            'kurt': _kurtosis,
-            'stalta': _staLtaRatio,
-          });
-        }
-
-        // App-side alert hysteresis (v3.0)
-        // 3-sample persistence to trigger, 6-sample cooldown to clear
-        if (candidateLevel != 'safe' && candidateLevel != _alertLevel) {
-          if (candidateLevel == _pendingAlertLevel) {
-            _alertPersistence++;
-          } else {
-            _pendingAlertLevel = candidateLevel;
-            _alertPersistence = 1;
-          }
-          if (_alertPersistence >= 3) {
-            // Confirmed alert - fire it
-            _alerts.insert(0, _AlertData(
-              time: _lastUpdate,
-              level: candidateLevel == 'critical' ? _AlertLevel.critical : _AlertLevel.warning,
-              title: candidateLevel == 'critical' ? 'Critical Alert' : 'Warning',
-              message: newMessage,
-            ));
-            if (_alerts.length > 10) _alerts.removeLast();
-            _saveAlertToFirebase(candidateLevel, newMessage);
-            _sendAlertNotification(candidateLevel, newMessage);
-            if (candidateLevel == 'critical') {
-              _triggerFullScreenAlert(newMessage, candidateLevel);
-            }
-            _alertLevel = candidateLevel;
-            _alertMessage = newMessage;
-            _alertPersistence = 0;
-            _alertCooldownCount = 0;
-          }
-        } else if (candidateLevel == 'safe' && _alertLevel != 'safe') {
-          _alertCooldownCount++;
-          if (_alertCooldownCount >= 6) {
-            _alertLevel = 'safe';
-            _alertMessage = '';
-            _alertCooldownCount = 0;
-            _alertPersistence = 0;
-            _pendingAlertLevel = 'safe';
-          }
-        } else {
-          _alertPersistence = 0;
-          _alertCooldownCount = 0;
-          if (candidateLevel != 'safe') {
-            _alertLevel = candidateLevel;
-            _alertMessage = newMessage;
-          }
-        }
-      });
-    });
-  }
-
-  void _stopSimulation() {
-    _simulationTimer?.cancel();
-    setState(() {
-      _isSimulating = false;
-      _connectionStatus = 'Disconnected';
-      _accX = 0.0;
-      _accY = 0.0;
-      _accZ = 0.0;
-      _vibration = 0.0;
-      _ppv = 0.0;
-      _rms = 0.0;
-      _dominantFreq = 0.0;
-      _crestFactor = 0.0;
-      _centroid = 0.0;
-      _kurtosis = 0.0;
-      _staLtaRatio = 0.0;
-      _ppvSmoothed = 0.0;
-      _ppvPeakHold = 0.0;
-      _hazardType = 'none';
-      _moisturePercent = 0;
-      _alertLevel = 'safe';
-      _alertMessage = '';
-      _alertPersistence = 0;
-      _alertCooldownCount = 0;
-      _pendingAlertLevel = 'safe';
-      _lastUpdate = '--:--';
-    });
-  }
-
   String _formatTime(DateTime dt) {
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
@@ -9028,12 +8314,6 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
     if (_moisturePercent < 30) return 'Too Dry';
     if (_moisturePercent > 60) return 'Too Wet!';
     return 'Safe range';
-  }
-
-  Color _getStatusColor() {
-    if (_alertLevel == 'critical') return const Color(0xFFE53935);
-    if (_alertLevel == 'warning') return const Color(0xFFFFB300);
-    return const Color(0xFF4CAF50);
   }
 
   @override
@@ -9481,7 +8761,7 @@ class _CurrentAlertBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isCritical ? Colors.red.withOpacity(0.3) : Colors.orange.withOpacity(0.3),
+        color: isCritical ? Colors.red.withAlpha(77) : Colors.orange.withAlpha(77),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: isCritical ? Colors.red : Colors.orange, width: 2),
       ),
@@ -9531,9 +8811,9 @@ class _LiveChip extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.14),
+              color: Colors.white.withAlpha(36),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withOpacity(0.35), width: 1),
+              border: Border.all(color: Colors.white.withAlpha(89), width: 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -9570,7 +8850,6 @@ class _SafetyStatCard extends StatelessWidget {
     required this.value,
     required this.status,
     this.statusColor,
-    super.key,
   });
 
   @override
@@ -9583,18 +8862,18 @@ class _SafetyStatCard extends StatelessWidget {
           height: 125,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.35), width: 1),
+            border: Border.all(color: Colors.white.withAlpha(89), width: 1),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13, fontWeight: FontWeight.w500)),
+              Text(title, style: TextStyle(color: Colors.white.withAlpha(217), fontSize: 13, fontWeight: FontWeight.w500)),
               const Spacer(),
               Text(value, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              Text(status, style: TextStyle(color: statusColor ?? Colors.white.withOpacity(0.75), fontSize: 12)),
+              Text(status, style: TextStyle(color: statusColor ?? Colors.white.withAlpha(191), fontSize: 12)),
             ],
           ),
         ),
@@ -9624,7 +8903,6 @@ class _LiveSensorsCard extends StatelessWidget {
     this.crestFactor = 0.0,
     this.rms = 0.0,
     this.hazardType = 'none',
-    super.key,
   });
 
   @override
@@ -9662,9 +8940,9 @@ class _LiveSensorsCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.35), width: 1),
+            border: Border.all(color: Colors.white.withAlpha(89), width: 1),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -9714,7 +8992,7 @@ class _LiveSensorsCard extends StatelessWidget {
                 icon: Icons.water_drop_outlined,
               ),
               const SizedBox(height: 10),
-              Text('Last update: $lastUpdate', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11)),
+              Text('Last update: $lastUpdate', style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 11)),
             ],
           ),
         ),
@@ -9729,7 +9007,7 @@ class _SensorRow extends StatelessWidget {
   final IconData icon;
   final Color? valueColor;
 
-  const _SensorRow({required this.label, required this.value, required this.icon, this.valueColor, super.key});
+  const _SensorRow({required this.label, required this.value, required this.icon, this.valueColor});
 
   @override
   Widget build(BuildContext context) {
@@ -9738,9 +9016,9 @@ class _SensorRow extends StatelessWidget {
         Container(
           width: 32, height: 32,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withAlpha(20),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.35), width: 1),
+            border: Border.all(color: Colors.white.withAlpha(89), width: 1),
           ),
           child: Icon(icon, size: 18, color: Colors.white),
         ),
@@ -9751,7 +9029,7 @@ class _SensorRow extends StatelessWidget {
             children: [
               Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
               const SizedBox(height: 2),
-              Text(value, style: TextStyle(color: valueColor ?? Colors.white.withOpacity(0.8), fontSize: 11)),
+              Text(value, style: TextStyle(color: valueColor ?? Colors.white.withAlpha(204), fontSize: 11)),
             ],
           ),
         ),
@@ -9764,7 +9042,7 @@ class _SensorRow extends StatelessWidget {
 class _MLAnomalyIndicator extends StatelessWidget {
   final AnomalyResult result;
 
-  const _MLAnomalyIndicator({required this.result, super.key});
+  const _MLAnomalyIndicator({required this.result});
 
   Color _getColor() {
     switch (result.level) {
@@ -9898,7 +9176,7 @@ class _VibrationAnalysisCard extends StatelessWidget {
     required this.ppvColor, required this.isConnected,
     this.ppvSmoothed = 0, this.ppvPeakHold = 0, this.kurtosis = 0,
     this.staLtaRatio = 0, this.centroid = 0, this.damageAssessment = '',
-    this.onHistoryTap, super.key,
+    this.onHistoryTap,
   });
 
   String _getFreqBandLabel() {
@@ -10194,7 +9472,7 @@ class _VibrationAnalysisCard extends StatelessWidget {
 class _PPVTrendGraphCard extends StatelessWidget {
   final List<Map<String, dynamic>> ppvHistory;
 
-  const _PPVTrendGraphCard({required this.ppvHistory, super.key});
+  const _PPVTrendGraphCard({required this.ppvHistory});
 
   @override
   Widget build(BuildContext context) {
@@ -10390,7 +9668,7 @@ class _PPVGraphPainter extends CustomPainter {
 
     final fillPaint = Paint()
       ..shader = ui.Gradient.linear(
-        Offset(0, topPad),
+        const Offset(0, topPad),
         Offset(0, topPad + graphH),
         [const Color(0xFFFF5722).withAlpha(80), const Color(0xFFFF5722).withAlpha(10)],
       );
@@ -10451,13 +9729,13 @@ class _PPVGraphPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_PPVGraphPainter oldDelegate) => true;
+  bool shouldRepaint(_PPVGraphPainter oldDelegate) => oldDelegate.data.length != data.length;
 }
 
 class _SensorHistoryGraphCard extends StatelessWidget {
   final List<Map<String, dynamic>> sensorHistory;
 
-  const _SensorHistoryGraphCard({required this.sensorHistory, super.key});
+  const _SensorHistoryGraphCard({required this.sensorHistory});
 
   @override
   Widget build(BuildContext context) {
@@ -10744,13 +10022,13 @@ class _SensorGraphPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SensorGraphPainter oldDelegate) => true;
+  bool shouldRepaint(_SensorGraphPainter oldDelegate) => oldDelegate.data.length != data.length;
 }
 
 class _SafetyAlertsCard extends StatelessWidget {
   final List<_AlertData> alerts;
 
-  const _SafetyAlertsCard({required this.alerts, super.key});
+  const _SafetyAlertsCard({required this.alerts});
 
   @override
   Widget build(BuildContext context) {
@@ -10762,9 +10040,9 @@ class _SafetyAlertsCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.35), width: 1),
+            border: Border.all(color: Colors.white.withAlpha(89), width: 1),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -10772,7 +10050,7 @@ class _SafetyAlertsCard extends StatelessWidget {
               const Text('Alerts', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
               const SizedBox(height: 10),
               if (alerts.isEmpty)
-                Text('No alerts yet', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12))
+                Text('No alerts yet', style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12))
               else
                 ...alerts.take(5).map((alert) => Padding(
                   padding: const EdgeInsets.only(bottom: 6),
@@ -10803,7 +10081,7 @@ class _AlertRow extends StatelessWidget {
 
   const _AlertRow({
     required this.time, required this.level, required this.title,
-    required this.trench, required this.message, super.key,
+    required this.trench, required this.message,
   });
 
   Color _dotColor() {
@@ -10819,7 +10097,7 @@ class _AlertRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(time, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11)),
+        Text(time, style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 11)),
         const SizedBox(width: 10),
         Container(
           width: 8, height: 8,
@@ -10843,7 +10121,7 @@ class _AlertRow extends StatelessWidget {
 }
 
 class _SafetyInsightCard extends StatelessWidget {
-  const _SafetyInsightCard({super.key});
+  const _SafetyInsightCard();
 
   @override
   Widget build(BuildContext context) {
@@ -10855,9 +10133,9 @@ class _SafetyInsightCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withAlpha(20),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.30), width: 1),
+            border: Border.all(color: Colors.white.withAlpha(77), width: 1),
           ),
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -10893,7 +10171,6 @@ class _GlassBottomNavBar extends StatelessWidget {
     required this.onItemSelected,
     required this.isMuted,
     required this.onToggleMute,
-    super.key,
   });
 
   @override
@@ -10906,10 +10183,10 @@ class _GlassBottomNavBar extends StatelessWidget {
           height: 70,
           padding: const EdgeInsets.symmetric(horizontal: 20),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.10),
+            color: Colors.white.withAlpha(26),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withOpacity(0.35),
+              color: Colors.white.withAlpha(89),
               width: 1,
             ),
           ),
@@ -10952,8 +10229,8 @@ class _GlassBottomNavBar extends StatelessWidget {
                   height: 40,
                   decoration: BoxDecoration(
                     color: isMuted
-                        ? Colors.red.withOpacity(0.3)
-                        : Colors.green.withOpacity(0.3),
+                        ? Colors.red.withAlpha(77)
+                        : Colors.green.withAlpha(77),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -10984,7 +10261,6 @@ class _NavItem extends StatelessWidget {
     required this.index,
     required this.isSelected,
     required this.onTap,
-    super.key,
   });
 
   @override
@@ -11049,36 +10325,26 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   bool _isVideoMode = false; // Toggle between photo and video mode
   bool _isRecording = false; // Currently recording video
   XFile? _recordedVideo; // Recorded video file
-  bool _isExtractingFrames = false; // Processing video into frames
   int _extractedFrameCount = 0; // Number of frames extracted so far
 
   // AR-LIKE GUIDANCE - Device sensors
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
-  StreamSubscription<GyroscopeEvent>? _gyroscopeSubscription;
   StreamSubscription<MagnetometerEvent>? _magnetometerSubscription;
 
-  double _deviceTiltX = 0.0; // Phone tilt left/right
-  double _deviceTiltY = 0.0; // Phone tilt forward/back
   double _compassHeading = 0.0; // Compass bearing (0-360°)
-  bool _isDeviceLevel = false; // Is phone held level?
-  double _rotationSpeed = 0.0; // How fast user is rotating
 
   // CAPTURE SETTINGS
-  late stt.SpeechToText _speechToText; // Voice commands
-  late FlutterTts _flutterTts; // Text-to-speech feedback
+  stt.SpeechToText? _speechToText; // Voice commands
+  FlutterTts? _flutterTts; // Text-to-speech feedback
   bool _voiceEnabled = false; // Voice commands enabled
   bool _isListening = false; // Currently listening for voice command
   String _lastVoiceCommand = ''; // Last recognized voice command
   bool _autoAdvance = true; // Auto-advance to next angle after capture (default ON)
 
   // SESSION TRACKING
-  Map<String, dynamic> _smartSuggestions = {}; // Context-aware auto-fill suggestions
-  int _sessionFindCount = 0; // Finds documented this session
-  DateTime? _sessionStartTime; // Session start for analytics
 
   // 🎯 3D RECONSTRUCTION - Automated on-device photogrammetry
   final ReconstructionService _reconstructionService = ReconstructionService();
-  ReconstructionResult? _reconstructionResult; // Result from 3D reconstruction
   bool _isReconstructing = false; // Currently generating 3D model
   double _reconstructionProgress = 0.0; // Progress 0.0 to 1.0
   String _reconstructionStatus = ''; // Current status message
@@ -11123,8 +10389,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     _initializeVoiceCommands();
 
     // 🌟 Initialize World-Class AI & Analytics
-    _sessionStartTime = DateTime.now();
-    _sessionFindCount = 0;
     _loadSmartSuggestions();
   }
 
@@ -11132,67 +10396,57 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   void dispose() {
     _pulseController.dispose();
     _accelerometerSubscription?.cancel();
-    _gyroscopeSubscription?.cancel();
     _magnetometerSubscription?.cancel();
-    _speechToText.stop();
-    _flutterTts.stop();
+    _speechToText?.stop();
+    _flutterTts?.stop();
     super.dispose();
   }
 
   // Initialize device sensors for AR-like guidance
+  DateTime _lastSensorUpdate = DateTime.now();
   void _initializeSensors() {
-    // Accelerometer - detect phone tilt
+    // Accelerometer - detect phone tilt (throttled to ~15Hz)
     _accelerometerSubscription = accelerometerEventStream().listen((AccelerometerEvent event) {
-      setState(() {
-        _deviceTiltX = event.x;
-        _deviceTiltY = event.y;
-        // Check if device is level (within 20° of vertical)
-        _isDeviceLevel = (event.x.abs() < 2.0 && event.y.abs() < 2.0);
-      });
+      if (!mounted) return;
+      final now = DateTime.now();
+      if (now.difference(_lastSensorUpdate).inMilliseconds < 66) return;
+      _lastSensorUpdate = now;
     });
 
-    // Gyroscope - detect rotation speed
-    _gyroscopeSubscription = gyroscopeEventStream().listen((GyroscopeEvent event) {
-      setState(() {
-        // Calculate rotation speed magnitude (rad/s)
-        _rotationSpeed = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
-      });
-    });
-
-    // Magnetometer - compass heading
+    // Magnetometer - compass heading (throttled to ~15Hz)
     _magnetometerSubscription = magnetometerEventStream().listen((MagnetometerEvent event) {
-      setState(() {
-        // Calculate compass heading (0-360°)
-        _compassHeading = atan2(event.y, event.x) * 180 / pi;
-        if (_compassHeading < 0) _compassHeading += 360;
-      });
+      if (!mounted) return;
+      _compassHeading = atan2(event.y, event.x) * 180 / pi;
+      if (_compassHeading < 0) _compassHeading += 360;
     });
   }
 
   // ULTRA++ Initialize voice commands for hands-free operation
   Future<void> _initializeVoiceCommands() async {
-    _speechToText = stt.SpeechToText();
-    _flutterTts = FlutterTts();
+    final sttInstance = stt.SpeechToText();
+    final ttsInstance = FlutterTts();
+    _speechToText = sttInstance;
+    _flutterTts = ttsInstance;
 
     // Initialize speech-to-text
-    bool available = await _speechToText.initialize(
+    bool available = await sttInstance.initialize(
       onStatus: (status) {
-        if (status == 'notListening' && _voiceEnabled) {
+        if (status == 'notListening' && _voiceEnabled && mounted) {
           // Auto-restart listening if voice is enabled
           _startListening();
         }
       },
       onError: (error) {
         debugPrint('Voice recognition error: $error');
-        setState(() => _isListening = false);
+        if (mounted) setState(() => _isListening = false);
       },
     );
 
     // Configure text-to-speech
-    await _flutterTts.setLanguage('en-US');
-    await _flutterTts.setSpeechRate(0.5); // Slower for clarity in field
-    await _flutterTts.setVolume(1.0);
-    await _flutterTts.setPitch(1.0);
+    await ttsInstance.setLanguage('en-US');
+    await ttsInstance.setSpeechRate(0.5); // Slower for clarity in field
+    await ttsInstance.setVolume(1.0);
+    await ttsInstance.setPitch(1.0);
 
     if (available) {
       debugPrint(' Voice commands initialized successfully');
@@ -11203,13 +10457,12 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
   // Start listening for voice commands
   Future<void> _startListening() async {
-    if (!_voiceEnabled || _isListening) return;
+    if (!_voiceEnabled || _isListening || _speechToText == null) return;
 
-    bool available = await _speechToText.initialize();
-    if (available) {
+    if (mounted) {
       setState(() => _isListening = true);
 
-      _speechToText.listen(
+      _speechToText!.listen(
         onResult: (result) {
           setState(() {
             _lastVoiceCommand = result.recognizedWords.toLowerCase();
@@ -11232,8 +10485,8 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   // Stop listening for voice commands
   Future<void> _stopListening() async {
     if (_isListening) {
-      await _speechToText.stop();
-      setState(() => _isListening = false);
+      await _speechToText?.stop();
+      if (mounted) setState(() => _isListening = false);
     }
   }
 
@@ -11297,20 +10550,22 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
   // Text-to-speech helper
   Future<void> _speak(String text) async {
-    if (_voiceEnabled) {
-      await _flutterTts.speak(text);
-    }
+    await _flutterTts?.speak(text);
   }
 
   // Toggle voice commands on/off
   void _toggleVoiceCommands() {
+    final wasEnabled = _voiceEnabled;
     setState(() => _voiceEnabled = !_voiceEnabled);
     if (_voiceEnabled) {
       _startListening();
       _speak('Voice commands enabled');
     } else {
-      _speechToText.stop();
-      _speak('Voice commands disabled');
+      _speechToText?.stop();
+      // Speak confirmation before disabling (use wasEnabled check)
+      if (wasEnabled) {
+        _flutterTts?.speak('Voice commands disabled');
+      }
     }
   }
 
@@ -11320,69 +10575,10 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
   // Load context-aware smart suggestions
   Future<void> _loadSmartSuggestions() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Get user's most common entries for auto-suggestions
-    _smartSuggestions = {
-      'recentSites': prefs.getStringList('recent_sites') ?? ['Site A', 'Site B', 'Main Excavation'],
-      'recentExcavators': prefs.getStringList('recent_excavators') ?? ['Dr. Smith', 'Team Alpha'],
-      'recentUnits': prefs.getStringList('recent_units') ?? ['A1', 'A2', 'B1', 'Trench 1'],
-      'recentLayers': prefs.getStringList('recent_layers') ?? ['Layer 1', 'Layer 2', 'Context 001'],
-      'lastFindNumber': prefs.getInt('last_find_number') ?? 0,
-    };
+    // Placeholder for future smart suggestion loading
   }
 
   // 📈 SESSION ANALYTICS
-  Map<String, dynamic> _getSessionStats() {
-    final duration = DateTime.now().difference(_sessionStartTime ?? DateTime.now());
-    final avgTimePerFind = _sessionFindCount > 0
-        ? duration.inSeconds / _sessionFindCount
-        : 0;
-
-    return {
-      'duration': duration.inMinutes,
-      'findCount': _sessionFindCount,
-      'avgTimePerFind': avgTimePerFind.toInt(),
-      'photosCapture': _captures.length,
-      'voiceUsed': _voiceEnabled,
-    };
-  }
-
-  // Get guidance feedback based on current angle and device orientation
-  String _getAngleGuidance() {
-    final targetAngle = _currentAngle.angle;
-    final targetElevation = _currentAngle.elevation;
-
-    // Calculate angle difference
-    double angleDiff = (targetAngle - _compassHeading).abs();
-    if (angleDiff > 180) angleDiff = 360 - angleDiff;
-
-    // Provide text guidance
-    if (_rotationSpeed > 1.0) {
-      return '⚠️ Slow down - rotate slowly for better quality';
-    } else if (!_isDeviceLevel && targetElevation == 0) {
-      return '📱 Hold phone level (horizontal)';
-    } else if (angleDiff > 30) {
-      return '🧭 Rotate ${angleDiff.toInt()}° to target angle';
-    } else if (angleDiff > 15) {
-      return '👍 Almost there - ${angleDiff.toInt()}° more';
-    } else {
-      return '✅ Perfect angle! Ready to capture';
-    }
-  }
-
-  // Visual indicator color based on guidance
-  Color _getGuidanceColor() {
-    final targetAngle = _currentAngle.angle;
-    double angleDiff = (targetAngle - _compassHeading).abs();
-    if (angleDiff > 180) angleDiff = 360 - angleDiff;
-
-    if (_rotationSpeed > 1.0) return Colors.orange;
-    if (angleDiff < 15) return Colors.green;
-    if (angleDiff < 30) return Colors.yellow;
-    return Colors.red;
-  }
-
   // Calculate progress percentage
   double get _progress => _captures.length / _captureAngles.length;
 
@@ -11413,11 +10609,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       if (finalImage != null) {
         // Analyze image quality
         final quality = await _analyzeImageQuality(finalImage);
-
-        // Track session
-        if (_captures.isEmpty) {
-          _sessionFindCount++;
-        }
 
         final capture = PhotogrammetryCapture(
           file: finalImage,
@@ -11542,20 +10733,20 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
           children: [
             Text(
               'Extract frames automatically?',
-              style: TextStyle(color: Colors.white.withOpacity(0.9)),
+              style: TextStyle(color: Colors.white.withAlpha(230)),
             ),
             const SizedBox(height: 16),
             Text(
               'The system will analyze your video and extract the best quality frames for photogrammetry.',
-              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13),
+              style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 13),
             ),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                color: const Color(0xFF7C4DFF).withAlpha(51),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF7C4DFF).withOpacity(0.5)),
+                border: Border.all(color: const Color(0xFF7C4DFF).withAlpha(128)),
               ),
               child: Row(
                 children: [
@@ -11565,7 +10756,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                     child: Text(
                       'Auto-extract ~20-30 frames with quality filtering',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withAlpha(230),
                         fontSize: 12,
                       ),
                     ),
@@ -11602,7 +10793,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     if (_recordedVideo == null) return;
 
     setState(() {
-      _isExtractingFrames = true;
       _extractedFrameCount = 0;
     });
 
@@ -11635,7 +10825,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                   const SizedBox(height: 8),
                   Text(
                     'This may take 30-60 seconds...',
-                    style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                    style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 12),
                   ),
                 ],
               ),
@@ -11653,7 +10843,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       debugPrint('Video recorded: ${duration.inSeconds}s');
 
       // Calculate frame timestamps (extract ~16 frames evenly spaced)
-      final targetFrames = 16;
+      const targetFrames = 16;
       final durationMs = duration.inMilliseconds;
       if (durationMs < 1000) {
         throw Exception('Video too short (${duration.inSeconds}s). Record at least 3 seconds.');
@@ -11743,7 +10933,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     } finally {
       dialogSetState.dispose();
       setState(() {
-        _isExtractingFrames = false;
         _recordedVideo = null;
       });
     }
@@ -11791,6 +10980,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
     if (image != null) {
       final quality = await _analyzeImageQuality(image);
+      if (!mounted) return;
 
       setState(() {
         _captures[index] = PhotogrammetryCapture(
@@ -11893,11 +11083,11 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      const Row(
                         children: [
-                          const Icon(Icons.folder_zip, color: Color(0xFFFFC107), size: 20),
-                          const SizedBox(width: 8),
-                          const Expanded(
+                          Icon(Icons.folder_zip, color: Color(0xFFFFC107), size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
                             child: Text(
                               'ZIP Archive Created',
                               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -11975,7 +11165,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       metadata.writeln('Total Photos: ${_captures.length}');
 
       // Calculate average quality
-      double avgQuality = _captures.fold(0.0, (sum, c) => sum + c.qualityScore) / _captures.length;
+      double avgQuality = _captures.fold(0.0, (acc, c) => acc + c.qualityScore) / _captures.length;
       metadata.writeln('Average Quality: ${(avgQuality * 100).toInt()}%');
       metadata.writeln('');
 
@@ -12083,13 +11273,13 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
               children: [
                 Text(
                   '${_captures.length} photos exported successfully!',
-                  style: TextStyle(color: Colors.white.withOpacity(0.8)),
+                  style: TextStyle(color: Colors.white.withAlpha(204)),
                 ),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                    color: const Color(0xFF7C4DFF).withAlpha(51),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -12104,7 +11294,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                         '1. Transfer photos to your computer\n'
                         '2. Use Meshroom (free) for 3D reconstruction\n'
                         '3. Upload the 3D model to Sketchfab',
-                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                        style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 12),
                       ),
                     ],
                   ),
@@ -12113,7 +11303,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withAlpha(26),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -12123,7 +11313,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                       Expanded(
                         child: Text(
                           exportDir.path,
-                          style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10),
+                          style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 10),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -12186,7 +11376,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [const Color(0xFF7C4DFF).withOpacity(0.3), const Color(0xFF448AFF).withOpacity(0.3)],
+                    colors: [const Color(0xFF7C4DFF).withAlpha(77), const Color(0xFF448AFF).withAlpha(77)],
                   ),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: const Color(0xFF7C4DFF), width: 2),
@@ -12223,7 +11413,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                       '• Textured 3D model output\n'
                       '• 5-15 min processing time\n'
                       '• Requires internet connection',
-                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12, height: 1.5),
+                      style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 12, height: 1.5),
                     ),
                   ],
                 ),
@@ -12237,23 +11427,23 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withAlpha(13),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withOpacity(0.2)),
+                  border: Border.all(color: Colors.white.withAlpha(51)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.phone_android_rounded, color: Colors.white.withOpacity(0.7), size: 32),
+                        Icon(Icons.phone_android_rounded, color: Colors.white.withAlpha(179), size: 32),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text('On-Device Preview', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                              Text('Quick sparse point cloud', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                              Text('Quick sparse point cloud', style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 12)),
                             ],
                           ),
                         ),
@@ -12265,7 +11455,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                       '• 1-3 min processing time\n'
                       '• Works offline\n'
                       '• Lower quality preview',
-                      style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12, height: 1.5),
+                      style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 12, height: 1.5),
                     ),
                   ],
                 ),
@@ -12276,7 +11466,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+            child: Text('Cancel', style: TextStyle(color: Colors.white.withAlpha(128))),
           ),
         ],
       ),
@@ -12391,7 +11581,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       );
 
       setState(() {
-        _reconstructionResult = result;
+
         _isReconstructing = false;
       });
 
@@ -12611,7 +11801,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       );
 
       setState(() {
-        _reconstructionResult = result;
+
         _isReconstructing = false;
       });
 
@@ -12704,7 +11894,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                   width: 120,
                   height: 120,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                    color: const Color(0xFF7C4DFF).withAlpha(51),
                     shape: BoxShape.circle,
                     border: Border.all(color: const Color(0xFF7C4DFF), width: 3),
                   ),
@@ -12725,7 +11915,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                 Text(
                   'Photogrammetry creates accurate 3D models by analyzing multiple photos taken from different angles.',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withAlpha(179),
                     fontSize: 14,
                   ),
                   textAlign: TextAlign.center,
@@ -12798,9 +11988,9 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withAlpha(26),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withAlpha(77)),
       ),
       child: Row(
         children: [
@@ -12808,7 +11998,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
+              color: color.withAlpha(51),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color, size: 24),
@@ -12820,7 +12010,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
               children: [
                 Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(height: 4),
-                Text(description, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                Text(description, style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 12)),
               ],
             ),
           ),
@@ -12843,10 +12033,10 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: isActive ? color.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+          color: isActive ? color.withAlpha(51) : Colors.white.withAlpha(13),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isActive ? color : Colors.white.withOpacity(0.2),
+            color: isActive ? color : Colors.white.withAlpha(51),
             width: 1.5,
           ),
         ),
@@ -12874,52 +12064,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   }
 
   // 🤖 AI Result Item Widget
-  Widget _buildAIResultItem({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 14),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildCaptureScreen() {
     return Scaffold(
       body: Stack(
@@ -12959,7 +12103,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                           ),
                           Text(
                             '${_captures.length}/${_captureAngles.length} photos captured',
-                            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                            style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12),
                           ),
                         ],
                       ),
@@ -12998,18 +12142,18 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withAlpha(13),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  border: Border.all(color: Colors.white.withAlpha(26)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
-                        const Icon(Icons.settings, color: Color(0xFF4CAF50), size: 16),
-                        const SizedBox(width: 6),
-                        const Text(
+                        Icon(Icons.settings, color: Color(0xFF4CAF50), size: 16),
+                        SizedBox(width: 6),
+                        Text(
                           'Capture Settings',
                           style: TextStyle(color: Color(0xFF4CAF50), fontSize: 12, fontWeight: FontWeight.bold),
                         ),
@@ -13075,7 +12219,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                         if (!_isComplete)
                           Text(
                             'Next: ${_currentAngle.name}',
-                            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                            style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12),
                           ),
                         if (_isComplete)
                           const Text(
@@ -13094,9 +12238,9 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                   margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF7C4DFF).withOpacity(0.2),
+                    color: const Color(0xFF7C4DFF).withAlpha(51),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF7C4DFF).withOpacity(0.5)),
+                    border: Border.all(color: const Color(0xFF7C4DFF).withAlpha(128)),
                   ),
                   child: Row(
                     children: [
@@ -13108,8 +12252,8 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                             height: 50,
                             decoration: BoxDecoration(
                               color: Color.lerp(
-                                const Color(0xFF7C4DFF).withOpacity(0.3),
-                                const Color(0xFF7C4DFF).withOpacity(0.6),
+                                const Color(0xFF7C4DFF).withAlpha(77),
+                                const Color(0xFF7C4DFF).withAlpha(153),
                                 _pulseController.value,
                               ),
                               shape: BoxShape.circle,
@@ -13139,7 +12283,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                               _isVideoMode
                                   ? 'Walk smoothly around the object in a complete circle. Keep steady movement.'
                                   : _getAngleInstruction(_currentAngle),
-                              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                              style: TextStyle(color: Colors.white.withAlpha(179), fontSize: 12),
                             ),
                           ],
                         ),
@@ -13155,11 +12299,11 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.photo_library_outlined, size: 64, color: Colors.white.withOpacity(0.3)),
+                            Icon(Icons.photo_library_outlined, size: 64, color: Colors.white.withAlpha(77)),
                             const SizedBox(height: 16),
                             Text(
                               'Tap the capture button to start',
-                              style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                              style: TextStyle(color: Colors.white.withAlpha(128)),
                             ),
                           ],
                         ),
@@ -13212,13 +12356,13 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                                     right: 0,
                                     child: Container(
                                       padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
+                                      decoration: const BoxDecoration(
                                         gradient: LinearGradient(
                                           begin: Alignment.bottomCenter,
                                           end: Alignment.topCenter,
                                           colors: [Colors.black87, Colors.transparent],
                                         ),
-                                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+                                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
                                       ),
                                       child: Text(
                                         capture.angle.name,
@@ -13257,8 +12401,8 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         decoration: BoxDecoration(
                           color: _voiceEnabled
-                              ? const Color(0xFF4CAF50).withOpacity(0.2)
-                              : Colors.white.withOpacity(0.1),
+                              ? const Color(0xFF4CAF50).withAlpha(51)
+                              : Colors.white.withAlpha(26),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: _voiceEnabled ? const Color(0xFF4CAF50) : Colors.white30,
@@ -13291,7 +12435,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white.withAlpha(38),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
@@ -13300,7 +12444,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                             const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 16),
                             const SizedBox(width: 6),
                             Text(
-                              '"${_lastVoiceCommand.length > 20 ? _lastVoiceCommand.substring(0, 20) + '...' : _lastVoiceCommand}"',
+                              '"${_lastVoiceCommand.length > 20 ? '${_lastVoiceCommand.substring(0, 20)}...' : _lastVoiceCommand}"',
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 11,
@@ -13321,7 +12465,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
+                      color: Colors.white.withAlpha(26),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -13338,7 +12482,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                             ),
                             child: Row(
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.camera_alt,
                                   color: Colors.white,
                                   size: 20,
@@ -13367,7 +12511,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                             ),
                             child: Row(
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.videocam,
                                   color: Colors.white,
                                   size: 20,
@@ -13430,7 +12574,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF7C4DFF).withOpacity(0.4),
+                                  color: const Color(0xFF7C4DFF).withAlpha(102),
                                   blurRadius: 20,
                                   spreadRadius: 2,
                                 ),
@@ -13707,7 +12851,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
             ),
             Text(
               'Quality: ${(_captures[index].qualityScore * 100).toInt()}%',
-              style: TextStyle(color: Colors.white.withOpacity(0.6)),
+              style: TextStyle(color: Colors.white.withAlpha(153)),
             ),
             const SizedBox(height: 24),
             Row(
@@ -13767,6 +12911,7 @@ class _AngleProgressPainter extends CustomPainter {
     required this.progress,
   });
 
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
@@ -13774,7 +12919,7 @@ class _AngleProgressPainter extends CustomPainter {
 
     // Background ring
     final bgPaint = Paint()
-      ..color = Colors.white.withOpacity(0.1)
+      ..color = Colors.white.withAlpha(26)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 8;
     canvas.drawCircle(center, radius, bgPaint);
@@ -13795,14 +12940,14 @@ class _AngleProgressPainter extends CustomPainter {
             ? const Color(0xFF4CAF50)
             : isCurrent
                 ? const Color(0xFF7C4DFF)
-                : Colors.white.withOpacity(0.3)
+                : Colors.white.withAlpha(77)
         ..style = PaintingStyle.fill;
 
       canvas.drawCircle(Offset(markerX, markerY), isCurrent ? 8 : 6, markerPaint);
 
       if (isCurrent) {
         final outerPaint = Paint()
-          ..color = const Color(0xFF7C4DFF).withOpacity(0.3)
+          ..color = const Color(0xFF7C4DFF).withAlpha(77)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2;
         canvas.drawCircle(Offset(markerX, markerY), 12, outerPaint);
@@ -13826,7 +12971,10 @@ class _AngleProgressPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _AngleProgressPainter oldDelegate) =>
+      oldDelegate.currentAngle != currentAngle ||
+      oldDelegate.progress != progress ||
+      oldDelegate.captures.length != captures.length;
 }
 
 
@@ -13945,12 +13093,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         final isCurrentUser = uid == AuthService.currentUser?.uid;
 
                         return Card(
-                          color: Colors.white.withOpacity(0.1),
+                          color: Colors.white.withAlpha(26),
                           margin: const EdgeInsets.only(bottom: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                             side: BorderSide(
-                              color: _getRoleColor(role).withOpacity(0.5),
+                              color: _getRoleColor(role).withAlpha(128),
                               width: 1,
                             ),
                           ),
@@ -13994,7 +13142,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.blue.withOpacity(0.3),
+                                                    color: Colors.blue.withAlpha(77),
                                                     borderRadius: BorderRadius.circular(8),
                                                   ),
                                                   child: const Text(
@@ -14007,7 +13155,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                           Text(
                                             email,
                                             style: TextStyle(
-                                              color: Colors.white.withOpacity(0.6),
+                                              color: Colors.white.withAlpha(153),
                                               fontSize: 13,
                                             ),
                                             overflow: TextOverflow.ellipsis,
@@ -14024,7 +13172,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                       decoration: BoxDecoration(
-                                        color: _getRoleColor(role).withOpacity(0.2),
+                                        color: _getRoleColor(role).withAlpha(51),
                                         borderRadius: BorderRadius.circular(8),
                                         border: Border.all(color: _getRoleColor(role), width: 1),
                                       ),
@@ -14043,8 +13191,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                       decoration: BoxDecoration(
                                         color: status == 'active'
-                                            ? Colors.green.withOpacity(0.2)
-                                            : Colors.red.withOpacity(0.2),
+                                            ? Colors.green.withAlpha(51)
+                                            : Colors.red.withAlpha(51),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(

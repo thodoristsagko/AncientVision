@@ -25,7 +25,7 @@ Deep dive into system design, algorithms, and implementation details.
 ┌─────────────────────────────────────────────────────────────┐
 │                     PRESENTATION LAYER                       │
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐           │
-│  │Dashboard│ │Findings │ │  Tools  │ │ Safety  │           │
+│  │Dashboard│ │Findings │ │  Tools  │ │ Safety  │  (IndexedStack) │
 │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘           │
 │       │           │           │           │                  │
 │  ┌────┴───────────┴───────────┴───────────┴────┐           │
@@ -446,7 +446,7 @@ lib/
 │   ├── _DashboardHomeView       # Statistics & overview
 │   ├── _FindingsView            # Gallery & map
 │   ├── _ToolsView               # Feature hub
-│   ├── _SafetyView              # Sensor monitoring
+│   ├── _SafetyView              # Sensor monitoring (BLE persistent via IndexedStack)
 │   ├── ManualEntryFormScreen    # Documentation form
 │   ├── PhotogrammetryScreen     # 3D capture
 │   ├── PDFExportScreen          # Report generation

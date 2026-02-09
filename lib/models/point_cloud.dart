@@ -19,10 +19,10 @@ class Point3D {
         'x': position.x,
         'y': position.y,
         'z': position.z,
-        'r': color.r,
-        'g': color.g,
-        'b': color.b,
-        'a': color.a,
+        'r': (color.r * 255).round(),
+        'g': (color.g * 255).round(),
+        'b': (color.b * 255).round(),
+        'a': (color.a * 255).round(),
         'confidence': confidence,
         if (normal != null) 'nx': normal!.x,
         if (normal != null) 'ny': normal!.y,
@@ -36,10 +36,10 @@ class Point3D {
           json['z'] as double,
         ),
         color: Color.fromARGB(
-          json['a'] as int,
-          json['r'] as int,
-          json['g'] as int,
-          json['b'] as int,
+          (json['a'] is double ? (json['a'] as double).round() : json['a'] as int),
+          (json['r'] is double ? (json['r'] as double).round() : json['r'] as int),
+          (json['g'] is double ? (json['g'] as double).round() : json['g'] as int),
+          (json['b'] is double ? (json['b'] as double).round() : json['b'] as int),
         ),
         confidence: json['confidence'] as double? ?? 1.0,
         normal: json['nx'] != null
@@ -127,9 +127,9 @@ class PointCloud {
         '${point.position.x.toStringAsFixed(6)} '
         '${point.position.y.toStringAsFixed(6)} '
         '${point.position.z.toStringAsFixed(6)} '
-        '${point.color.r} '
-        '${point.color.g} '
-        '${point.color.b} '
+        '${(point.color.r * 255).round()} '
+        '${(point.color.g * 255).round()} '
+        '${(point.color.b * 255).round()} '
         '${point.confidence.toStringAsFixed(4)}',
       );
     }

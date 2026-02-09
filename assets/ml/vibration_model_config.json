@@ -1,0 +1,20 @@
+{
+  "model_version": "1.0",
+  "input_features": [
+    "rms",
+    "ppv",
+    "freq",
+    "crest"
+  ],
+  "input_dim": 4,
+  "thresholds": {
+    "threshold_low": 1.0295724868774414,
+    "threshold_high": 2.418797731399536,
+    "mean_error": 0.2859453856945038,
+    "std_error": 0.47470328211784363
+  },
+  "training_samples": 2000,
+  "synthetic_data": true,
+  "description": "Autoencoder for archaeological site vibration anomaly detection",
+  "standard": "DIN 4150-3"
+}

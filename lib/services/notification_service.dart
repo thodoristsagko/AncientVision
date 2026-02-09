@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -394,7 +394,12 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     final history = prefs.getStringList('notification_history') ?? [];
 
-    final notification = '$type|${DateTime.now().toIso8601String()}|$title|$body';
+    final notification = jsonEncode({
+      'type': type,
+      'timestamp': DateTime.now().toIso8601String(),
+      'title': title,
+      'body': body,
+    });
     history.insert(0, notification);
 
     // Keep only last 50 notifications
@@ -411,21 +416,33 @@ class NotificationService {
     final history = prefs.getStringList('notification_history') ?? [];
 
     return history.map((item) {
-      final parts = item.split('|');
-      if (parts.length >= 4) {
+      try {
+        // Try JSON format first (new format)
+        final map = jsonDecode(item) as Map<String, dynamic>;
         return NotificationItem(
-          type: parts[0],
-          timestamp: DateTime.tryParse(parts[1]) ?? DateTime.now(),
-          title: parts[2],
-          body: parts[3],
+          type: map['type'] as String? ?? 'unknown',
+          timestamp: DateTime.tryParse(map['timestamp'] as String? ?? '') ?? DateTime.now(),
+          title: map['title'] as String? ?? 'Unknown',
+          body: map['body'] as String? ?? '',
+        );
+      } catch (_) {
+        // Fall back to legacy pipe-delimited format
+        final parts = item.split('|');
+        if (parts.length >= 4) {
+          return NotificationItem(
+            type: parts[0],
+            timestamp: DateTime.tryParse(parts[1]) ?? DateTime.now(),
+            title: parts[2],
+            body: parts.sublist(3).join('|'),
+          );
+        }
+        return NotificationItem(
+          type: 'unknown',
+          timestamp: DateTime.now(),
+          title: 'Unknown',
+          body: item,
         );
       }
-      return NotificationItem(
-        type: 'unknown',
-        timestamp: DateTime.now(),
-        title: 'Unknown',
-        body: item,
-      );
     }).toList();
   }
 

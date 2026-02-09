@@ -1,3 +1,4 @@
+// ignore_for_file: non_constant_identifier_names
 import 'dart:math' as math;
 import 'package:vector_math/vector_math_64.dart';
 import 'reconstruction_service.dart';
@@ -142,7 +143,7 @@ class RobustSfM {
   /// Solve Af=0 by finding the eigenvector of A^T*A with smallest eigenvalue.
   /// Uses inverse power iteration with Gaussian elimination.
   static Matrix3 _solveSVD(List<List<double>> A) {
-    final n = 9;
+    const n = 9;
 
     // Compute A^T * A (9x9 symmetric positive semi-definite)
     final AtA = List.generate(n, (_) => List.filled(n, 0.0));
@@ -160,7 +161,7 @@ class RobustSfM {
     // Add small shift to make it invertible (shifted inverse iteration)
     // We solve (A^T*A - sigma*I)^{-1} * v iteratively
     // sigma = 0 (or very small) finds smallest eigenvalue
-    final sigma = 1e-10;
+    const sigma = 1e-10;
     final M = List.generate(n, (i) => List.generate(n, (j) => AtA[i][j]));
     for (int i = 0; i < n; i++) {
       M[i][i] += sigma;
@@ -266,7 +267,6 @@ class RobustSfM {
     // Simpler approach: compute U columns from F * v_i / sigma_i
     final v0 = Vector3(V.entry(0, indices[0]), V.entry(1, indices[0]), V.entry(2, indices[0]));
     final v1 = Vector3(V.entry(0, indices[1]), V.entry(1, indices[1]), V.entry(2, indices[1]));
-    final v2 = Vector3(V.entry(0, indices[2]), V.entry(1, indices[2]), V.entry(2, indices[2]));
 
     Vector3 u0, u1, u2;
     if (s1 > 1e-10) {

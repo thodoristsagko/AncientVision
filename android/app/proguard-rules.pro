@@ -40,6 +40,20 @@
 -dontwarn com.google.mlkit.**
 
 #-------------------------------------------
+# Google Generative AI (Gemini)
+#-------------------------------------------
+-keep class com.google.ai.** { *; }
+-dontwarn com.google.ai.**
+
+#-------------------------------------------
+# TensorFlow Lite
+#-------------------------------------------
+-keep class org.tensorflow.lite.** { *; }
+-keep class org.tensorflow.lite.gpu.** { *; }
+-dontwarn org.tensorflow.lite.**
+-dontwarn org.tensorflow.lite.gpu.**
+
+#-------------------------------------------
 # Camera
 #-------------------------------------------
 -keep class androidx.camera.** { *; }
@@ -89,9 +103,32 @@
 }
 
 #-------------------------------------------
+# Flutter Local Notifications
+#-------------------------------------------
+-keep class com.dexterous.** { *; }
+-dontwarn com.dexterous.**
+
+#-------------------------------------------
+# Audioplayers
+#-------------------------------------------
+-keep class xyz.luan.audioplayers.** { *; }
+-dontwarn xyz.luan.audioplayers.**
+
+#-------------------------------------------
+# Flutter Background Service
+#-------------------------------------------
+-keep class id.flutter.flutter_background_service.** { *; }
+-dontwarn id.flutter.flutter_background_service.**
+
+#-------------------------------------------
+# Connectivity Plus
+#-------------------------------------------
+-keep class dev.fluttercommunity.plus.connectivity.** { *; }
+-dontwarn dev.fluttercommunity.plus.connectivity.**
+
+#-------------------------------------------
 # Kotlin
 #-------------------------------------------
--keep class kotlin.** { *; }
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
 -keepclassmembers class **$WhenMappings {

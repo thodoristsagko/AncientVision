@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
@@ -179,11 +180,11 @@ class BiometricService {
 
   // ==================== PIN Authentication ====================
 
-  /// Generate a random salt for PIN hashing
+  /// Generate a cryptographically secure random salt for PIN hashing
   String _generateSalt() {
-    final random = DateTime.now().microsecondsSinceEpoch.toString();
-    final bytes = utf8.encode(random);
-    return sha256.convert(bytes).toString().substring(0, 16);
+    final secureRandom = math.Random.secure();
+    final saltBytes = List<int>.generate(16, (_) => secureRandom.nextInt(256));
+    return sha256.convert(saltBytes).toString().substring(0, 16);
   }
 
   /// Hash a PIN with salt using SHA-256

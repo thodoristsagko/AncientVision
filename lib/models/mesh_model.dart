@@ -25,9 +25,9 @@ class MeshVertex {
         if (normal != null) 'nz': normal!.z,
         if (texCoord != null) 'u': texCoord!.x,
         if (texCoord != null) 'v': texCoord!.y,
-        if (color != null) 'r': color!.r,
-        if (color != null) 'g': color!.g,
-        if (color != null) 'b': color!.b,
+        if (color != null) 'r': (color!.r * 255).round(),
+        if (color != null) 'g': (color!.g * 255).round(),
+        if (color != null) 'b': (color!.b * 255).round(),
       };
 }
 
@@ -136,31 +136,29 @@ class MeshModel {
     }
     buffer.writeln();
 
-    // Normals (if available)
+    // Normals (if available) - write for ALL vertices to keep indices aligned
     final hasNormals = vertices.any((v) => v.normal != null);
     if (hasNormals) {
       for (final vertex in vertices) {
-        if (vertex.normal != null) {
-          buffer.writeln(
-            'vn ${vertex.normal!.x.toStringAsFixed(6)} '
-            '${vertex.normal!.y.toStringAsFixed(6)} '
-            '${vertex.normal!.z.toStringAsFixed(6)}',
-          );
-        }
+        final n = vertex.normal ?? Vector3(0, 1, 0);
+        buffer.writeln(
+          'vn ${n.x.toStringAsFixed(6)} '
+          '${n.y.toStringAsFixed(6)} '
+          '${n.z.toStringAsFixed(6)}',
+        );
       }
       buffer.writeln();
     }
 
-    // Texture coordinates (if available)
+    // Texture coordinates (if available) - write for ALL vertices to keep indices aligned
     final hasTexCoords = vertices.any((v) => v.texCoord != null);
     if (hasTexCoords) {
       for (final vertex in vertices) {
-        if (vertex.texCoord != null) {
-          buffer.writeln(
-            'vt ${vertex.texCoord!.x.toStringAsFixed(6)} '
-            '${vertex.texCoord!.y.toStringAsFixed(6)}',
-          );
-        }
+        final tc = vertex.texCoord ?? Vector2(0, 0);
+        buffer.writeln(
+          'vt ${tc.x.toStringAsFixed(6)} '
+          '${tc.y.toStringAsFixed(6)}',
+        );
       }
       buffer.writeln();
     }
@@ -238,9 +236,9 @@ class MeshModel {
 
       if (hasColors && vertex.color != null) {
         parts.addAll([
-          vertex.color!.r.toString(),
-          vertex.color!.g.toString(),
-          vertex.color!.b.toString(),
+          '${(vertex.color!.r * 255).round()}',
+          '${(vertex.color!.g * 255).round()}',
+          '${(vertex.color!.b * 255).round()}',
         ]);
       }
 

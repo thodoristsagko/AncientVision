@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -66,11 +67,11 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1C2523),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.wb_sunny, color: Color(0xFF87CEEB)),
-            const SizedBox(width: 8),
-            const Text('Current Weather', style: TextStyle(color: Colors.white)),
+            Icon(Icons.wb_sunny, color: Color(0xFF87CEEB)),
+            SizedBox(width: 8),
+            Text('Current Weather', style: TextStyle(color: Colors.white)),
           ],
         ),
         content: Column(
@@ -227,13 +228,15 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                 );
                 if (log != null && mounted) {
                   setState(() => _currentWeather = log);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Weather logged successfully'),
-                      backgroundColor: Color(0xFF4CAF50),
-                    ),
-                  );
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Weather logged successfully'),
+                        backgroundColor: Color(0xFF4CAF50),
+                      ),
+                    );
+                  }
                 }
               },
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107)),
@@ -248,6 +251,7 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _voiceService.dispose();
     super.dispose();
   }
 
@@ -333,7 +337,7 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Field Journal', style: AppTextStyles.h3),
+        title: const Text('Field Journal', style: AppTextStyles.h3),
         backgroundColor: Colors.transparent,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
@@ -352,7 +356,7 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.wb_sunny, color: AppColors.info, size: 16),
+                    const Icon(Icons.wb_sunny, color: AppColors.info, size: 16),
                     const SizedBox(width: 4),
                     Text(
                       _currentWeather!.temperatureString,
@@ -400,11 +404,11 @@ class _FieldJournalScreenState extends State<FieldJournalScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.book_outlined, size: 80, color: AppColors.textHint),
+          const Icon(Icons.book_outlined, size: 80, color: AppColors.textHint),
           const SizedBox(height: AppSpacing.lg),
           Text('No journal entries yet', style: AppTextStyles.h3.copyWith(color: AppColors.textSecondary)),
           const SizedBox(height: AppSpacing.sm),
-          Text(
+          const Text(
             'Start documenting your fieldwork',
             style: TextStyle(
               color: AppColors.textHint,

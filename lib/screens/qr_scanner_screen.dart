@@ -165,13 +165,13 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                       Icon(
                         Icons.qr_code_scanner_rounded,
                         size: 80,
-                        color: Colors.white.withOpacity(0.5),
+                        color: Colors.white.withAlpha(128),
                       ),
                     const SizedBox(height: 16),
                     Text(
                       _isProcessing ? 'Looking up...' : 'Scan artifact QR code',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withAlpha(204),
                         fontSize: 16,
                       ),
                     ),
@@ -193,7 +193,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
+                  color: Colors.black.withAlpha(179),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Column(
@@ -221,7 +221,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     final type = _scannedFinding!['type'] as String;
 
     return Container(
-      color: Colors.black.withOpacity(0.85),
+      color: Colors.black.withAlpha(217),
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -277,7 +277,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withAlpha(26),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -334,7 +334,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF1C2523),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFFC107).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFFFFC107).withAlpha(77)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -420,7 +420,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.3),
+        color: color.withAlpha(77),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(

@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/settings_service.dart';
@@ -58,7 +59,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Settings', style: AppTextStyles.h3),
+        title: const Text('Settings', style: AppTextStyles.h3),
         backgroundColor: Colors.transparent,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
@@ -302,10 +303,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildBackupTile() {
     return ListTile(
-      leading: Icon(Icons.backup, color: AppColors.textSecondary, size: AppSizes.iconMedium),
-      title: Text('Backup & Restore', style: AppTextStyles.body),
-      subtitle: Text('Save or restore your data', style: AppTextStyles.subtitleSmall),
-      trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      leading: const Icon(Icons.backup, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Backup & Restore', style: AppTextStyles.body),
+      subtitle: const Text('Save or restore your data', style: AppTextStyles.subtitleSmall),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
       onTap: _showBackupDialog,
     );
   }
@@ -316,9 +317,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         margin: const EdgeInsets.all(AppSpacing.md),
         decoration: AppDecorations.highlightCard,
         child: ListTile(
-          leading: Icon(Icons.fingerprint, color: AppColors.accent, size: AppSizes.iconLarge),
+          leading: const Icon(Icons.fingerprint, color: AppColors.accent, size: AppSizes.iconLarge),
           title: Text('Enable $_biometricType', style: AppTextStyles.body.copyWith(fontWeight: FontWeight.bold)),
-          subtitle: Text('Quick unlock for faster access', style: AppTextStyles.subtitleSmall),
+          subtitle: const Text('Quick unlock for faster access', style: AppTextStyles.subtitleSmall),
           trailing: ElevatedButton(
             onPressed: () async {
               final success = await _biometricService.enroll();
@@ -326,7 +327,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await _loadBiometricState();
                 setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
+                  const SnackBar(
                     content: Text('Quick unlock enabled!', style: AppTextStyles.body),
                     backgroundColor: AppColors.success,
                   ),
@@ -347,7 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       children: [
         ListTile(
-          leading: Icon(Icons.fingerprint, color: AppColors.accent, size: AppSizes.iconMedium),
+          leading: const Icon(Icons.fingerprint, color: AppColors.accent, size: AppSizes.iconMedium),
           title: Text('$_biometricType Unlock', style: AppTextStyles.body),
           subtitle: Text(
             _biometricEnabled ? 'Enabled' : 'Disabled',
@@ -388,14 +389,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         color: _hasGeminiKey ? AppColors.success : AppColors.textSecondary,
         size: AppSizes.iconMedium,
       ),
-      title: Text('Gemini AI Key', style: AppTextStyles.body),
+      title: const Text('Gemini AI Key', style: AppTextStyles.body),
       subtitle: Text(
         _hasGeminiKey ? 'Connected - AI coin identification' : 'Add key for smart recognition',
         style: AppTextStyles.subtitleSmall.copyWith(
           color: _hasGeminiKey ? AppColors.success : AppColors.textSecondary,
         ),
       ),
-      trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
       onTap: _showGeminiApiDialog,
     );
   }
@@ -407,12 +408,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.primaryDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
-        title: Text('Gemini AI API Key', style: AppTextStyles.h3),
+        title: const Text('Gemini AI API Key', style: AppTextStyles.h3),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'Get a FREE API key from Google AI Studio to enable AI-powered coin identification.',
               style: AppTextStyles.subtitle,
             ),
@@ -430,11 +431,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
-                  borderSide: BorderSide(color: AppColors.cardBorder),
+                  borderSide: const BorderSide(color: AppColors.cardBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
-                  borderSide: BorderSide(color: AppColors.accent),
+                  borderSide: const BorderSide(color: AppColors.accent),
                 ),
               ),
             ),
@@ -452,9 +453,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await _geminiService.clearApiKey();
                 Navigator.pop(context);
                 setState(() => _hasGeminiKey = false);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('API key removed')),
-                );
+                if (mounted) {
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(content: Text('API key removed')),
+                  );
+                }
               },
               child: Text('Remove', style: AppTextStyles.button.copyWith(color: AppColors.error)),
             ),
@@ -469,12 +472,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await _geminiService.setApiKey(key);
                 Navigator.pop(context);
                 setState(() => _hasGeminiKey = true);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('API key saved! AI coin recognition enabled.'),
-                    backgroundColor: AppColors.success,
-                  ),
-                );
+                if (mounted) {
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(
+                      content: Text('API key saved! AI coin recognition enabled.'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
               }
             },
             child: Text('Save', style: AppTextStyles.button.copyWith(color: AppColors.accent)),
@@ -491,14 +496,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         color: _hasNumistaKey ? AppColors.success : AppColors.textSecondary,
         size: AppSizes.iconMedium,
       ),
-      title: Text('Numista API Key', style: AppTextStyles.body),
+      title: const Text('Numista API Key', style: AppTextStyles.body),
       subtitle: Text(
         _hasNumistaKey ? 'Connected - Real coin database' : 'Add key for better recognition',
         style: AppTextStyles.subtitleSmall.copyWith(
           color: _hasNumistaKey ? AppColors.success : AppColors.textSecondary,
         ),
       ),
-      trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
       onTap: _showNumistaApiDialog,
     );
   }
@@ -510,12 +515,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.primaryDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
-        title: Text('Numista API Key', style: AppTextStyles.h3),
+        title: const Text('Numista API Key', style: AppTextStyles.h3),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'Get a FREE API key from numista.com to enable real coin database lookups.',
               style: AppTextStyles.subtitle,
             ),
@@ -533,11 +538,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
-                  borderSide: BorderSide(color: AppColors.cardBorder),
+                  borderSide: const BorderSide(color: AppColors.cardBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
-                  borderSide: BorderSide(color: AppColors.accent),
+                  borderSide: const BorderSide(color: AppColors.accent),
                 ),
               ),
             ),
@@ -555,9 +560,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _coinService.clearApiKey();
                 Navigator.pop(context);
                 setState(() => _hasNumistaKey = false);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('API key removed')),
-                );
+                if (mounted) {
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(content: Text('API key removed')),
+                  );
+                }
               },
               child: Text('Remove', style: AppTextStyles.button.copyWith(color: AppColors.error)),
             ),
@@ -572,12 +579,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _coinService.setApiKey(key);
                 Navigator.pop(context);
                 setState(() => _hasNumistaKey = true);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('API key saved! Coin recognition enhanced.'),
-                    backgroundColor: AppColors.success,
-                  ),
-                );
+                if (mounted) {
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(
+                      content: Text('API key saved! Coin recognition enhanced.'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                }
               }
             },
             child: Text('Save', style: AppTextStyles.button.copyWith(color: AppColors.accent)),
@@ -593,8 +602,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.primaryDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
-        title: Text('Remove Quick Unlock?', style: AppTextStyles.h3),
-        content: Text('You will need to sign in with your password next time.', style: AppTextStyles.subtitle),
+        title: const Text('Remove Quick Unlock?', style: AppTextStyles.h3),
+        content: const Text('You will need to sign in with your password next time.', style: AppTextStyles.subtitle),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -608,7 +617,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (mounted) {
                 setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Quick unlock removed', style: AppTextStyles.body)),
+                  const SnackBar(content: Text('Quick unlock removed', style: AppTextStyles.body)),
                 );
               }
             },
@@ -623,10 +632,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Center(
       child: OutlinedButton.icon(
         onPressed: _showResetConfirmation,
-        icon: Icon(Icons.restore, color: AppColors.warning, size: AppSizes.iconSmall),
+        icon: const Icon(Icons.restore, color: AppColors.warning, size: AppSizes.iconSmall),
         label: Text('Reset All Settings', style: AppTextStyles.button.copyWith(color: AppColors.warning)),
         style: OutlinedButton.styleFrom(
-          side: BorderSide(color: AppColors.warning),
+          side: const BorderSide(color: AppColors.warning),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         ),
       ),
@@ -642,13 +651,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Container(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: AppDecorations.circleBadge(AppColors.accent),
-            child: Icon(Icons.explore, color: AppColors.accent, size: AppSizes.iconXLarge),
+            child: const Icon(Icons.explore, color: AppColors.accent, size: AppSizes.iconXLarge),
           ),
           const SizedBox(height: AppSpacing.md),
-          Text('AncientVision', style: AppTextStyles.h3),
-          Text('Version 1.0.0', style: AppTextStyles.subtitleSmall),
+          const Text('AncientVision', style: AppTextStyles.h3),
+          const Text('Version 1.0.0', style: AppTextStyles.subtitleSmall),
           const SizedBox(height: AppSpacing.sm),
-          Text('Archaeological Field Documentation', style: AppTextStyles.caption),
+          const Text('Archaeological Field Documentation', style: AppTextStyles.caption),
           const SizedBox(height: AppSpacing.xs),
           Text('FLL Competition 2024', style: AppTextStyles.accentText.copyWith(fontSize: 11)),
         ],
@@ -684,10 +693,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: AppDecorations.iconContainer(AppColors.success),
-                child: Icon(Icons.backup, color: AppColors.success),
+                child: const Icon(Icons.backup, color: AppColors.success),
               ),
-              title: Text('Create Backup', style: AppTextStyles.body),
-              subtitle: Text('Save all your data', style: AppTextStyles.subtitleSmall),
+              title: const Text('Create Backup', style: AppTextStyles.body),
+              subtitle: const Text('Save all your data', style: AppTextStyles.subtitleSmall),
               onTap: () async {
                 Navigator.pop(context);
                 final backup = await _backupService.createBackup(data: {
@@ -708,17 +717,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: AppDecorations.iconContainer(AppColors.info),
-                child: Icon(Icons.restore, color: AppColors.info),
+                child: const Icon(Icons.restore, color: AppColors.info),
               ),
-              title: Text('Restore Backup', style: AppTextStyles.body),
-              subtitle: Text('Load from a backup file', style: AppTextStyles.subtitleSmall),
+              title: const Text('Restore Backup', style: AppTextStyles.body),
+              subtitle: const Text('Load from a backup file', style: AppTextStyles.subtitleSmall),
               onTap: () async {
                 Navigator.pop(context);
                 final backups = await _backupService.listBackups();
                 if (backups.isEmpty) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('No backups found', style: AppTextStyles.body)),
+                      const SnackBar(content: Text('No backups found', style: AppTextStyles.body)),
                     );
                   }
                 } else {
@@ -744,10 +753,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Select Backup', style: AppTextStyles.h3),
+            const Text('Select Backup', style: AppTextStyles.h3),
             const SizedBox(height: AppSpacing.lg),
             ...backups.take(5).map((backup) => ListTile(
-              leading: Icon(Icons.folder, color: AppColors.accent),
+              leading: const Icon(Icons.folder, color: AppColors.accent),
               title: Text(backup.filename, style: AppTextStyles.body),
               subtitle: Text('${backup.dateString} - ${backup.sizeString}', style: AppTextStyles.subtitleSmall),
               onTap: () async {
@@ -755,7 +764,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final data = await _backupService.restoreBackup(backup.path);
                 if (data != null && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
+                    const SnackBar(
                       content: Text('Backup restored successfully', style: AppTextStyles.body),
                       backgroundColor: AppColors.success,
                     ),
@@ -775,8 +784,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.primaryDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
-        title: Text('Reset Settings?', style: AppTextStyles.h3),
-        content: Text('All settings will return to their default values.', style: AppTextStyles.subtitle),
+        title: const Text('Reset Settings?', style: AppTextStyles.h3),
+        content: const Text('All settings will return to their default values.', style: AppTextStyles.subtitle),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -789,7 +798,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (mounted) {
                 setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Settings reset to defaults', style: AppTextStyles.body)),
+                  const SnackBar(content: Text('Settings reset to defaults', style: AppTextStyles.body)),
                 );
               }
             },

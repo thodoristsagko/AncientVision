@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -306,7 +307,7 @@ class VoiceService {
       // Save to preferences
       final prefs = await SharedPreferences.getInstance();
       final notes = prefs.getStringList('voice_notes') ?? [];
-      notes.add(note.toJson().toString());
+      notes.add(jsonEncode(note.toJson()));
 
       // Keep only last 100 notes
       if (notes.length > 100) {

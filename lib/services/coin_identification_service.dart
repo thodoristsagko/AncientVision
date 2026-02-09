@@ -55,10 +55,13 @@ class CoinIdentificationService {
   CoinIdentificationService._internal();
 
   static const String _baseUrl = 'https://api.numista.com/v3';
-  String? _apiKey;
+  // Pre-installed API key - Text search is FREE, only image search costs money
+  static const String _defaultApiKey = 'XssVfY6hv00lZbRYm6pzze9Se3OzM4zzBdg29tT8';
+  String? _apiKey = _defaultApiKey;
   final Map<String, CoinAnalysisResult> _cache = {};
 
   void setApiKey(String key) => _apiKey = key;
+  void clearApiKey() => _apiKey = null;
   bool get hasApiKey => _apiKey != null && _apiKey!.isNotEmpty;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -560,7 +563,7 @@ class CoinIdentificationService {
       materials: ['Nordic Gold', 'Copper-Nickel', 'Copper plated steel', 'Bi-metallic'],
       denominations: ['1 Cent', '2 Cent', '5 Cent', '10 Cent', '20 Cent', '50 Cent', '1 Euro', '2 Euro', 'Euro cent', 'Eurocent'],
       rulers: ['National symbols', 'Marianne (France)', 'Brandenburg Gate (Germany)', 'Dante (Italy)', 'King Felipe VI (Spain)', 'King Philippe (Belgium)', 'Harp (Ireland)', 'Mozart (Austria)', 'Oak twig (Germany)'],
-      weight: 0.7,  // Higher weight - very common coin
+      weight: 0.5,  // Balanced weight - same as other modern coins
     ),
 
     // UNITED KINGDOM
@@ -654,7 +657,7 @@ class CoinIdentificationService {
       materials: ['Stainless Steel', 'Bronze', 'Bi-metallic (Bronze/Stainless)', 'Silver (Commemorative)'],
       denominations: ['5 Centavos', '10 Centavos', '20 Centavos', '50 Centavos', '1 Peso', '2 Pesos', '5 Pesos', '10 Pesos', '20 Pesos', '50 Pesos', '100 Pesos'],
       rulers: ['Eagle with Serpent', 'Aztec Sunstone', 'Miguel Hidalgo', 'Benito Juárez', 'José María Morelos', 'Cuauhtémoc'],
-      weight: 0.35,  // Lower weight - less common outside Americas
+      weight: 0.45,  // Balanced weight
     ),
 
     // RUSSIA
@@ -795,7 +798,6 @@ class CoinIdentificationService {
     final radius = math.min(width, height) / 2 * 0.8;
 
     int edgePixelsOnCircle = 0;
-    int totalEdgePixels = 0;
     int sampledPoints = 0;
 
     // Sample points along a circle
@@ -827,20 +829,6 @@ class CoinIdentificationService {
     // Count total edge pixels in image
     for (int y = 1; y < height - 1; y += 3) {
       for (int x = 1; x < width - 1; x += 3) {
-        final current = image.getPixel(x, y);
-        final right = image.getPixel(x + 1, y);
-        final down = image.getPixel(x, y + 1);
-
-        final diffX = ((current.r - right.r).abs() +
-                       (current.g - right.g).abs() +
-                       (current.b - right.b).abs()) ~/ 3;
-        final diffY = ((current.r - down.r).abs() +
-                       (current.g - down.g).abs() +
-                       (current.b - down.b).abs()) ~/ 3;
-
-        if (diffX > 25 || diffY > 25) {
-          totalEdgePixels++;
-        }
       }
     }
 
@@ -1327,6 +1315,289 @@ class CoinIdentificationService {
   void clearCache() => _cache.clear();
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // NUMISTA API COIN IDENTIFICATION (REAL DATABASE LOOKUP)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Check if internet is available
+  Future<bool> _hasInternet() async {
+    try {
+      final result = await http.get(Uri.parse('https://api.numista.com/v3')).timeout(const Duration(seconds: 5));
+      return result.statusCode < 500;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Identify coin using Numista API - returns real numismatic data
+  /// Uses smart search strategies based on detected features
+  Future<NumistaIdentificationResult?> identifyWithNumista({
+    required String material,
+    required List<String> keywords,
+    Map<String, dynamic>? colorData,
+  }) async {
+    if (!hasApiKey) {
+      debugPrint('Numista: No API key set');
+      return null;
+    }
+
+    try {
+      // Strategy 1: Search by detected material
+      final materialQuery = _getMaterialSearchTerm(material, colorData);
+      debugPrint('Numista: Strategy 1 - Material search: "$materialQuery"');
+
+      var coins = await searchCoins(query: materialQuery, count: 10);
+
+      // Strategy 2: If no results, try broader search
+      if (coins.isEmpty && colorData != null) {
+        final colorQuery = _getColorBasedQuery(colorData);
+        debugPrint('Numista: Strategy 2 - Color search: "$colorQuery"');
+        coins = await searchCoins(query: colorQuery, count: 10);
+      }
+
+      // Strategy 3: Try with useful keywords
+      if (coins.isEmpty) {
+        final keywordQuery = _getKeywordQuery(keywords);
+        if (keywordQuery.isNotEmpty) {
+          debugPrint('Numista: Strategy 3 - Keyword search: "$keywordQuery"');
+          coins = await searchCoins(query: keywordQuery, count: 10);
+        }
+      }
+
+      if (coins.isEmpty) {
+        debugPrint('Numista: No results from any strategy');
+        return null;
+      }
+
+      debugPrint('Numista: Found ${coins.length} matches');
+
+      // Get details for the best match
+      final bestMatch = coins.first;
+      final details = await getCoinDetails(bestMatch.id);
+
+      return NumistaIdentificationResult(
+        success: true,
+        coin: bestMatch,
+        details: details,
+        allMatches: coins,
+        searchQuery: materialQuery,
+        confidence: _calculateNumistaConfidence(bestMatch, material, keywords),
+      );
+    } catch (e) {
+      debugPrint('Numista API error: $e');
+      return null;
+    }
+  }
+
+  /// Get search term based on material and color data
+  String _getMaterialSearchTerm(String material, Map<String, dynamic>? colorData) {
+    final mat = material.toLowerCase();
+
+    // Check for specific materials from text
+    if (mat.contains('gold')) return 'gold coin';
+    if (mat.contains('silver')) return 'silver coin';
+    if (mat.contains('bronze')) return 'bronze coin';
+    if (mat.contains('copper')) return 'copper coin';
+
+    // Use color data if available
+    if (colorData != null) {
+      final hue = (colorData['hue'] as num?)?.toDouble() ?? 0;
+      final saturation = (colorData['saturation'] as num?)?.toDouble() ?? 0;
+      final brightness = (colorData['brightness'] as num?)?.toDouble() ?? 0;
+      final dominantColor = (colorData['dominantColor'] as String? ?? '').toLowerCase();
+
+      // Check dominant color name first
+      if (dominantColor.contains('gold') || dominantColor.contains('yellow')) return 'gold coin';
+      if (dominantColor.contains('silver') || dominantColor.contains('grey')) return 'silver coin';
+      if (dominantColor.contains('bronze') || dominantColor.contains('brown')) return 'bronze coin';
+      if (dominantColor.contains('green')) return 'ancient bronze patina';
+
+      // Fall back to HSB analysis
+      // Gold: Yellow hue (35-55), high saturation
+      if ((hue >= 35 && hue <= 55) && saturation > 0.4) return 'gold coin';
+      // Silver: Low saturation, high brightness
+      if (saturation < 0.15 && brightness > 0.5) return 'silver coin';
+      // Bronze/Copper: Orange-brown hue (15-40)
+      if ((hue >= 15 && hue <= 40) && saturation > 0.2) return 'bronze coin';
+      // Green patina (80-160 hue)
+      if ((hue >= 80 && hue <= 160) && saturation > 0.2) return 'ancient bronze patina';
+    }
+
+    return 'coin';
+  }
+
+  /// Get query based on color analysis
+  String _getColorBasedQuery(Map<String, dynamic> colorData) {
+    final dominant = (colorData['dominantColor'] as String? ?? '').toLowerCase();
+
+    if (dominant.contains('yellow') || dominant.contains('gold')) return 'gold';
+    if (dominant.contains('silver') || dominant.contains('gray') || dominant.contains('grey')) return 'silver';
+    if (dominant.contains('brown') || dominant.contains('orange')) return 'bronze copper';
+    if (dominant.contains('green')) return 'ancient patina';
+
+    return 'coin';
+  }
+
+  /// Extract useful keywords
+  String _getKeywordQuery(List<String> keywords) {
+    final usefulKeywords = <String>[];
+    final skipWords = {'coin', 'metal', 'circle', 'round', 'object', 'currency', 'money',
+                       'cash', 'token', 'medallion', 'disc', 'disk'};
+
+    for (final k in keywords) {
+      final lower = k.toLowerCase();
+      if (!skipWords.contains(lower) && lower.length > 2) {
+        usefulKeywords.add(lower);
+      }
+    }
+
+    return usefulKeywords.take(3).join(' ');
+  }
+
+  /// Calculate confidence score for Numista result
+  double _calculateNumistaConfidence(NumistaCoin coin, String material, List<String> keywords) {
+    double confidence = 60.0; // Base confidence for finding a match
+
+    // Boost for material match
+    final title = coin.title.toLowerCase();
+    if (material.isNotEmpty) {
+      final matLower = material.toLowerCase();
+      if (title.contains('gold') && matLower.contains('gold')) confidence += 15;
+      if (title.contains('silver') && matLower.contains('silver')) confidence += 15;
+      if (title.contains('bronze') && matLower.contains('bronze')) confidence += 10;
+      if (title.contains('copper') && matLower.contains('copper')) confidence += 10;
+    }
+
+    // Boost for keyword matches in title
+    for (final keyword in keywords) {
+      if (title.contains(keyword.toLowerCase())) {
+        confidence += 5;
+      }
+    }
+
+    // Boost if has images (verified coin)
+    if (coin.obverseThumb != null || coin.reverseThumb != null) {
+      confidence += 5;
+    }
+
+    return confidence.clamp(40, 95);
+  }
+
+  /// Convert Numista result to standard CoinAnalysisResult format
+  CoinAnalysisResult numistaToAnalysisResult(NumistaIdentificationResult numista) {
+    final coin = numista.coin;
+    final details = numista.details;
+
+    // Extract period from issuer or title
+    String period = coin.issuer ?? 'Unknown';
+    String dateRange = '';
+
+    if (coin.minYear != null || coin.maxYear != null) {
+      final minYear = coin.minYear ?? coin.maxYear!;
+      final maxYear = coin.maxYear ?? coin.minYear!;
+      if (minYear == maxYear) {
+        dateRange = '$minYear';
+      } else {
+        dateRange = '$minYear - $maxYear';
+      }
+    }
+
+    // Build characteristics from details
+    final characteristics = <String>[];
+    if (details?.type != null) characteristics.add(details!.type!);
+    if (details?.material != null) characteristics.add(details!.material!);
+    if (details?.obverseDescription != null) characteristics.add('Obverse: ${details!.obverseDescription}');
+    if (details?.reverseDescription != null) characteristics.add('Reverse: ${details!.reverseDescription}');
+
+    // Build alternative periods from other matches
+    final alternatives = numista.allMatches
+        .skip(1)
+        .take(4)
+        .map((c) => '${c.title} (${c.issuer ?? "Unknown"})'.substring(0, math.min(50, '${c.title} (${c.issuer ?? "Unknown"})'.length)))
+        .toList();
+
+    return CoinAnalysisResult(
+      isIdentified: true,
+      confidence: numista.confidence,
+      period: period,
+      dateRange: dateRange,
+      characteristics: characteristics,
+      regions: [coin.issuer ?? 'Unknown region'],
+      materials: details?.material != null ? [details!.material!] : [],
+      denominations: [coin.title],
+      rulers: details?.ruler != null ? [details!.ruler!] : [],
+      alternativePeriods: alternatives,
+      numistaId: coin.id,
+      numistaUrl: 'https://en.numista.com/catalogue/pieces${coin.id}.html',
+      obverseImage: coin.obverseThumb,
+      reverseImage: coin.reverseThumb,
+    );
+  }
+
+  /// Main identification method - tries Numista first, falls back to heuristics
+  Future<CoinAnalysisResult> identifyCoinSmart({
+    required String material,
+    List<String>? keywords,
+    Map<String, dynamic>? colorData,
+    bool forceLocal = false,
+  }) async {
+    final kw = keywords ?? [];
+
+    // Only use Numista API - no fake heuristic data
+    if (hasApiKey) {
+      final hasNet = await _hasInternet();
+      if (hasNet) {
+        debugPrint('Searching Numista database...');
+        final numistaResult = await identifyWithNumista(
+          material: material,
+          keywords: kw,
+          colorData: colorData,
+        );
+
+        if (numistaResult != null && numistaResult.success) {
+          debugPrint('Numista: Found match!');
+          return numistaToAnalysisResult(numistaResult);
+        }
+      }
+    }
+
+    // No fake data - just return unknown
+    debugPrint('Could not identify coin');
+    return CoinAnalysisResult(
+      isIdentified: false,
+      confidence: 0,
+      period: null,
+      dateRange: null,
+      message: 'Could not identify. Try a clearer photo or different angle.',
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // OCRE API FOR ROMAN COINS (FREE & UNLIMITED)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  static const String _ocreBaseUrl = 'http://numismatics.org/ocre';
+
+  /// Search OCRE database for Roman Imperial coins
+  Future<List<OcreCoin>> searchOcreCoins(String query) async {
+    try {
+      // OCRE uses a different URL structure for search
+      final uri = Uri.parse('$_ocreBaseUrl/results?q=$query&format=json');
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data is List) {
+          return data.map((item) => OcreCoin.fromJson(item)).toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      debugPrint('OCRE API error: $e');
+      return [];
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // ADVANCED PATINA ANALYSIS SYSTEM
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1590,7 +1861,6 @@ class CoinIdentificationService {
     // Measure edge sharpness and detail retention
     int sharpEdges = 0;
     int mediumEdges = 0;
-    int softEdges = 0;
     int totalChecked = 0;
 
     for (int y = 2; y < image.height - 2; y += 2) {
@@ -1609,9 +1879,11 @@ class CoinIdentificationService {
         }
 
         totalChecked++;
-        if (maxDiff > 50) sharpEdges++;
-        else if (maxDiff > 25) mediumEdges++;
-        else softEdges++;
+        if (maxDiff > 50) {
+          sharpEdges++;
+        } else if (maxDiff > 25) {
+          mediumEdges++;
+        }
       }
     }
 
@@ -2428,6 +2700,11 @@ class CoinAnalysisResult {
   final List<String>? rulers;
   final List<String>? alternativePeriods;
   final String? message;
+  // Numista integration fields
+  final int? numistaId;
+  final String? numistaUrl;
+  final String? obverseImage;
+  final String? reverseImage;
 
   CoinAnalysisResult({
     required this.isIdentified,
@@ -2441,13 +2718,21 @@ class CoinAnalysisResult {
     this.rulers,
     this.alternativePeriods,
     this.message,
+    this.numistaId,
+    this.numistaUrl,
+    this.obverseImage,
+    this.reverseImage,
   });
+
+  bool get hasNumistaData => numistaId != null;
 
   Map<String, dynamic> toJson() => {
     'isIdentified': isIdentified, 'confidence': confidence, 'period': period,
     'dateRange': dateRange, 'characteristics': characteristics, 'regions': regions,
     'materials': materials, 'denominations': denominations, 'rulers': rulers,
     'alternativePeriods': alternativePeriods, 'message': message,
+    'numistaId': numistaId, 'numistaUrl': numistaUrl,
+    'obverseImage': obverseImage, 'reverseImage': reverseImage,
   };
 }
 
@@ -2494,5 +2779,64 @@ class NumistaCoinDetails {
     weight: json['weight']?.toString(), diameter: json['size']?.toString(),
     obverseDescription: json['obverse']?['description'], reverseDescription: json['reverse']?['description'],
     minYear: json['min_year'], maxYear: json['max_year'],
+  );
+}
+
+/// Result from Numista API identification
+class NumistaIdentificationResult {
+  final bool success;
+  final NumistaCoin coin;
+  final NumistaCoinDetails? details;
+  final List<NumistaCoin> allMatches;
+  final String searchQuery;
+  final double confidence;
+
+  NumistaIdentificationResult({
+    required this.success,
+    required this.coin,
+    this.details,
+    required this.allMatches,
+    required this.searchQuery,
+    required this.confidence,
+  });
+}
+
+/// Result from OCRE API for Roman coins
+class OcreCoin {
+  final String id;
+  final String title;
+  final String? emperor;
+  final String? denomination;
+  final String? mint;
+  final String? material;
+  final int? year;
+  final String? obverseDescription;
+  final String? reverseDescription;
+  final String? imageUrl;
+
+  OcreCoin({
+    required this.id,
+    required this.title,
+    this.emperor,
+    this.denomination,
+    this.mint,
+    this.material,
+    this.year,
+    this.obverseDescription,
+    this.reverseDescription,
+    this.imageUrl,
+  });
+
+  factory OcreCoin.fromJson(Map<String, dynamic> json) => OcreCoin(
+    id: json['id']?.toString() ?? '',
+    title: json['title'] ?? json['label'] ?? '',
+    emperor: json['authority']?['label'] ?? json['emperor'],
+    denomination: json['denomination']?['label'] ?? json['denomination'],
+    mint: json['mint']?['label'] ?? json['mint'],
+    material: json['material']?['label'] ?? json['material'],
+    year: json['year'] is int ? json['year'] : int.tryParse(json['year']?.toString() ?? ''),
+    obverseDescription: json['obverse']?['description'] ?? json['obverseDescription'],
+    reverseDescription: json['reverse']?['description'] ?? json['reverseDescription'],
+    imageUrl: json['image'] ?? json['thumbnail'],
   );
 }

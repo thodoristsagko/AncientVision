@@ -34,7 +34,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Help & Tutorials', style: AppTextStyles.h3),
+        title: const Text('Help & Tutorials', style: AppTextStyles.h3),
         backgroundColor: Colors.transparent,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
@@ -64,7 +64,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
                   decoration: InputDecoration(
                     hintText: 'Search help topics...',
                     hintStyle: AppTextStyles.subtitle,
-                    prefixIcon: Icon(Icons.search, color: AppColors.textSecondary),
+                    prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
                     filled: true,
                     fillColor: AppColors.cardBackground,
                     border: OutlineInputBorder(
@@ -73,7 +73,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
                     ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: Icon(Icons.clear, color: AppColors.textSecondary),
+                            icon: const Icon(Icons.clear, color: AppColors.textSecondary),
                             onPressed: () {
                               _searchController.clear();
                               setState(() => _searchQuery = '');
@@ -218,10 +218,10 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
                 width: 48,
                 height: 48,
                 decoration: AppDecorations.iconContainer(AppColors.accent),
-                child: Icon(Icons.temple_buddhist, color: AppColors.accent, size: AppSizes.iconLarge),
+                child: const Icon(Icons.temple_buddhist, color: AppColors.accent, size: AppSizes.iconLarge),
               ),
               const SizedBox(width: AppSpacing.md),
-              Expanded(
+              const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -335,7 +335,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: AppColors.textSecondary),
+            const Icon(Icons.chevron_right, color: AppColors.textSecondary),
           ],
         ),
       ),
@@ -403,7 +403,7 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
         child: Row(
           children: [
             Expanded(child: Text(article.title, style: AppTextStyles.body)),
-            Icon(Icons.chevron_right, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+            const Icon(Icons.chevron_right, color: AppColors.textSecondary, size: AppSizes.iconMedium),
           ],
         ),
       ),
@@ -578,7 +578,7 @@ class _TutorialViewerState extends State<_TutorialViewer> {
                   children: [
                     if (_currentStep > 0)
                       IconButton(
-                        icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+                        icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
                         onPressed: () {
                           _pageController.previousPage(
                             duration: const Duration(milliseconds: 300),

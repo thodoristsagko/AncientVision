@@ -46,7 +46,7 @@ class _OfflineIndicatorState extends State<OfflineIndicator>
 
   void _updateConnectionStatus(ConnectivityResult result) {
     final isOffline = result == ConnectivityResult.none;
-    if (isOffline != _isOffline) {
+    if (isOffline != _isOffline && mounted) {
       setState(() => _isOffline = isOffline);
       if (isOffline) {
         _animationController.forward();

@@ -127,7 +127,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                 ),
               )
             else
-              Center(
+              const Center(
                 child: CircularProgressIndicator(color: AppColors.accent),
               ),
 
@@ -237,7 +237,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.gps_fixed, color: AppColors.success, size: 12),
+                      const Icon(Icons.gps_fixed, color: AppColors.success, size: 12),
                       const SizedBox(width: 4),
                       Text(
                         '${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}',
@@ -382,7 +382,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.lightbulb_outline, color: AppColors.accent, size: 16),
+                  const Icon(Icons.lightbulb_outline, color: AppColors.accent, size: 16),
                   const SizedBox(width: 8),
                   Text(
                     'Take one clear photo of the artifact',
@@ -412,14 +412,14 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                       color: Colors.white,
                     ),
                     child: _isCapturing
-                        ? Padding(
-                            padding: const EdgeInsets.all(16),
+                        ? const Padding(
+                            padding: EdgeInsets.all(16),
                             child: CircularProgressIndicator(
                               strokeWidth: 3,
                               color: AppColors.accent,
                             ),
                           )
-                        : Icon(
+                        : const Icon(
                             Icons.camera_alt,
                             color: AppColors.accent,
                             size: 32,
@@ -442,12 +442,12 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () {
             setState(() => _capturedPhoto = null);
           },
         ),
-        title: Text(
+        title: const Text(
           'Review & Save',
           style: AppTextStyles.h3,
         ),
@@ -483,13 +483,13 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
             const SizedBox(height: AppSpacing.xl),
 
             // Type selector
-            Text('Artifact Type', style: AppTextStyles.h4),
+            const Text('Artifact Type', style: AppTextStyles.h4),
             const SizedBox(height: AppSpacing.sm),
             _buildTypeGrid(),
             const SizedBox(height: AppSpacing.xl),
 
             // Description
-            Text('Description', style: AppTextStyles.h4),
+            const Text('Description', style: AppTextStyles.h4),
             const SizedBox(height: AppSpacing.sm),
             TextField(
               maxLines: 3,
@@ -515,12 +515,12 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                 decoration: AppDecorations.card,
                 child: Row(
                   children: [
-                    Icon(Icons.gps_fixed, color: AppColors.success, size: 24),
+                    const Icon(Icons.gps_fixed, color: AppColors.success, size: 24),
                     const SizedBox(width: AppSpacing.md),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('GPS Location', style: AppTextStyles.subtitle),
+                        const Text('GPS Location', style: AppTextStyles.subtitle),
                         Text(
                           '${_currentPosition!.latitude.toStringAsFixed(6)}, ${_currentPosition!.longitude.toStringAsFixed(6)}',
                           style: AppTextStyles.caption,
@@ -648,7 +648,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Select Artifact Type', style: AppTextStyles.h3),
+            const Text('Select Artifact Type', style: AppTextStyles.h3),
             const SizedBox(height: AppSpacing.lg),
             Wrap(
               spacing: 8,
@@ -717,14 +717,9 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     final achievements = await _progressService.recordFinding();
     await _progressService.recordPhotos(1);
 
-    // Show achievement if earned
-    if (achievements.isNotEmpty && mounted) {
-      _showAchievementDialog(achievements.first);
-    }
-
     // Return data to parent screen
     if (mounted) {
-      Navigator.pop(context, {
+      final result = {
         'photo': _capturedPhoto,
         'persistedPath': persistedPath,
         'type': _selectedType,
@@ -735,11 +730,21 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                 'longitude': _currentPosition!.longitude,
               }
             : null,
-      });
+      };
+
+      // Show achievement if earned, then pop; otherwise just pop
+      if (achievements.isNotEmpty) {
+        _showAchievementDialog(achievements.first).then((_) {
+          if (mounted) Navigator.pop(context, result);
+        });
+      } else {
+        Navigator.pop(context, result);
+      }
     }
   }
 
-  void _showAchievementDialog(Achievement achievement) {
+  Future<void> _showAchievementDialog(Achievement achievement) {
+    return
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -775,7 +780,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Awesome!', style: TextStyle(color: AppColors.accent)),
+            child: const Text('Awesome!', style: TextStyle(color: AppColors.accent)),
           ),
         ],
       ),

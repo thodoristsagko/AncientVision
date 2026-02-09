@@ -52,3 +52,23 @@ nul
 
 # Kotlin cache
 /android/.kotlin/
+
+# Sensitive files - never commit
+**/google-services.json
+**/*.env
+**/*.jks
+**/*.keystore
+**/key.properties
+**/credentials.json
+devtools_options.yaml
+
+# Build artifacts
+*.apk
+*.aab
+
+# Training data (not part of runtime app)
+training_images/
+TM MODEL V1/
+
+# Analysis output
+analyze_output.txt

@@ -11,7 +11,7 @@ Complete documentation of all features and capabilities.
 3. [Findings Management](#3-findings-management)
 4. [3D Photogrammetry](#4-3d-photogrammetry)
 5. [Manual Entry Form](#5-manual-entry-form)
-6. [Environmental Monitoring & Safety](#6-environmental-monitoring--safety)
+6. [Trench Safety Monitoring](#6-trench-safety-monitoring)
 7. [Export & Reports](#7-export--reports)
 8. [Tools Menu](#8-tools-menu)
 9. [Analytics Dashboard](#9-analytics-dashboard)
@@ -349,58 +349,52 @@ Comprehensive archaeological documentation form with 25+ fields.
 
 ---
 
-## 6. Environmental Monitoring & Safety
+## 6. Trench Safety Monitoring
 
 ### Hardware Integration
-Connects to M5StickC Plus 2 microcontroller via Bluetooth Low Energy.
+Connects to M5StickC Plus 2 microcontroller via Bluetooth Low Energy (BLE).
 
 ### Sensors Monitored
 
-#### Temperature
-| Range | Status | Use Case |
-|-------|--------|----------|
-| 0-15°C | Cool | Preservation optimal |
-| 15-25°C | Normal | Standard conditions |
-| 25-35°C | Warm | Monitor artifacts |
-| >35°C | Hot | Heat damage risk |
+#### Vibration (IMU Accelerometer)
+| Value | Status | Meaning |
+|-------|--------|---------|
+| <0.3g | Stable | Normal conditions |
+| 0.3-0.8g | Warning | Ground movement detected |
+| >0.8g | Critical | Earthquake/collapse risk |
 
-#### Humidity
-| Level | Range | Meaning |
-|-------|-------|---------|
-| Low | <30% | Desiccation risk |
-| Optimal | 30-60% | Preservation ideal |
-| High | 60-80% | Monitor carefully |
-| Critical | >80% | Mold/corrosion risk |
+#### Soil Moisture (Capacitive Sensor)
+| Range | Status | Meaning |
+|-------|--------|---------|
+| 30-60% | Safe | Optimal range |
+| <30% | Warning | Soil too dry, cracking risk |
+| >60% | Critical | Soil too wet, collapse risk |
 
-#### Light Levels
-| Level | Lux | Application |
-|-------|-----|-------------|
-| Dark | <50 | Underground/caves |
-| Low | 50-200 | Indoor excavation |
-| Medium | 200-1000 | Shaded outdoor |
-| Bright | >1000 | Direct sunlight |
-
-#### Pressure
-- Atmospheric pressure monitoring
-- Weather change indicators
-- Altitude estimation
+### Alert System
+- **Full-screen alerts** appear on ALL tabs (not just Safety) when critical thresholds are exceeded
+- **Push notifications** fire even when on other screens
+- **Haptic feedback** (phone vibration) on alerts
+- **Voice alerts** via text-to-speech announce the danger
+- **Alarm sound** plays on critical alerts
+- **Global mute button** in bottom navigation bar controls all alert sounds across the entire app
 
 ### Display Features
-- **Live Values** - Real-time sensor readings with units
-- **Status Indicators** - Color-coded safety levels
-- **History Graph** - Environmental trends over time
-- **Per-Site Recording** - Each sensor linked to excavation site
+- **Live Values** - Real-time vibration and moisture readings
+- **Status Indicators** - Color-coded safety levels (green/orange/red)
+- **History Graph** - Live sensor trends (last 30 data points)
+- **Battery Level** - ESP device battery shown on M5StickC screen
 
 ### Connection Management
-- **Scan** - Discover nearby M5 StickC Plus 2 devices
-- **Connect** - Pair with selected sensor
-- **Disconnect** - Safely disconnect current sensor
-- **Auto-reconnect** - Automatic reconnection on signal loss
+- **Auto-scan** - Automatically finds nearby AncientVision-Sensor devices
+- **Persistent connection** - BLE stays connected when switching tabs (IndexedStack)
+- **Auto-reconnect** - Exponential backoff reconnection on signal loss (up to 10 attempts)
+- **Keep-alive monitor** - Detects stale connections after 15 seconds of no data
+- **MTU negotiation** - Requests 512-byte MTU to prevent JSON truncation
 
 ### Data Storage
-- Real-time data displayed on dashboard
-- Historical data stored in cloud (per site)
-- Export environmental logs with findings
+- Real-time data displayed on Safety tab
+- Alert history stored in Firebase (safety_alerts collection)
+- Sensor data logged to Firebase (sensor_data collection)
 
 ---
 
@@ -679,7 +673,7 @@ When saving incomplete records:
 | Cloud Processing | ✅ Complete | OpenScan API |
 | Photo Capture | ✅ Complete | Camera + Gallery |
 | PDF Export | ✅ Complete | Professional |
-| Environmental Sensors | ✅ Complete | M5 StickC Plus 2 |
+| Trench Safety Monitoring | ✅ Complete | M5StickC Plus 2 + Global Alerts |
 | Offline Support | ✅ Complete | Auto-save + Queue |
 | Cloud Database | ✅ Complete | Firebase Firestore |
 | Field Journal | ✅ Complete | Daily logging |

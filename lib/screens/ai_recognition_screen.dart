@@ -225,7 +225,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
                   'Add the back side for better accuracy',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withAlpha(128),
                     fontSize: 12,
                     fontStyle: FontStyle.italic,
                   ),
@@ -239,7 +239,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.2),
+                  color: Colors.red.withAlpha(51),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -291,8 +291,8 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: image != null
-                    ? const Color(0xFF4CAF50).withOpacity(0.6)
-                    : const Color(0xFFFFC107).withOpacity(0.3),
+                    ? const Color(0xFF4CAF50).withAlpha(153)
+                    : const Color(0xFFFFC107).withAlpha(77),
                 width: 2,
               ),
             ),
@@ -329,19 +329,19 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
                         Icon(
                           icon,
                           size: 40,
-                          color: Colors.white.withOpacity(0.25),
+                          color: Colors.white.withAlpha(64),
                         ),
                         const SizedBox(height: 8),
                         Icon(
                           Icons.camera_alt_rounded,
                           size: 24,
-                          color: Colors.white.withOpacity(0.4),
+                          color: Colors.white.withAlpha(102),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Tap to capture',
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.4),
+                            color: Colors.white.withAlpha(102),
                             fontSize: 11,
                           ),
                         ),
@@ -360,7 +360,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFC107).withOpacity(0.15),
+                      color: const Color(0xFFFFC107).withAlpha(38),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(Icons.camera_alt_rounded, color: Color(0xFFFFC107), size: 18),
@@ -374,10 +374,10 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.08),
+                      color: Colors.white.withAlpha(20),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.photo_library_rounded, color: Colors.white.withOpacity(0.6), size: 18),
+                    child: Icon(Icons.photo_library_rounded, color: Colors.white.withAlpha(153), size: 18),
                   ),
                 ),
               ),
@@ -395,9 +395,9 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(0.15),
+          color: Colors.orange.withAlpha(38),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.orange.withOpacity(0.4)),
+          border: Border.all(color: Colors.orange.withAlpha(102)),
         ),
         child: Column(
           children: [
@@ -413,7 +413,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
                   ? _coinResult!.characteristics.first
                   : 'This object does not appear to be a coin.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
+              style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 13),
             ),
           ],
         ),
@@ -425,9 +425,9 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.2),
+          color: Colors.grey.withAlpha(51),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.withOpacity(0.3)),
+          border: Border.all(color: Colors.grey.withAlpha(77)),
         ),
         child: Column(
           children: [
@@ -441,7 +441,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
             Text(
               'Try clearer photos with good lighting.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
+              style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 13),
             ),
           ],
         ),
@@ -457,15 +457,15 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF8B4513).withOpacity(0.3),
-            const Color(0xFFD4AF37).withOpacity(0.2),
+            const Color(0xFF8B4513).withAlpha(77),
+            const Color(0xFFD4AF37).withAlpha(51),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFFD4AF37).withOpacity(0.5),
+          color: const Color(0xFFD4AF37).withAlpha(128),
           width: 2,
         ),
       ),
@@ -478,7 +478,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD4AF37).withOpacity(0.3),
+                  color: const Color(0xFFD4AF37).withAlpha(77),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -507,7 +507,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
                           ? 'Identified by Gemini AI (both sides)'
                           : 'Identified by Gemini AI',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
+                        color: Colors.white.withAlpha(153),
                         fontSize: 11,
                       ),
                     ),
@@ -517,7 +517,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD4AF37).withOpacity(0.3),
+                  color: const Color(0xFFD4AF37).withAlpha(77),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -562,7 +562,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
             Text(
               'About This Coin',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withAlpha(179),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -571,7 +571,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
             Text(
               _coinResult!.detailedDescription!,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.85),
+                color: Colors.white.withAlpha(217),
                 fontSize: 13,
                 height: 1.5,
               ),
@@ -586,7 +586,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
             Text(
               'Notable Features',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withAlpha(179),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -600,7 +600,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF0D3A39),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
+                  border: Border.all(color: const Color(0xFFD4AF37).withAlpha(77)),
                 ),
                 child: Text(c, style: const TextStyle(color: Colors.white70, fontSize: 12)),
               )).toList(),
@@ -614,11 +614,11 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
   Widget _buildCoinInfoRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFFD4AF37).withOpacity(0.7), size: 18),
+        Icon(icon, color: const Color(0xFFD4AF37).withAlpha(179), size: 18),
         const SizedBox(width: 8),
         Text(
           '$label: ',
-          style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
+          style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 13),
         ),
         Expanded(
           child: Text(
@@ -634,9 +634,9 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF2196F3).withOpacity(0.1),
+        color: const Color(0xFF2196F3).withAlpha(26),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF2196F3).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFF2196F3).withAlpha(77)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -647,7 +647,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
             child: Text(
               'Capture both sides of the coin for the most accurate identification. Gemini AI analyzes inscriptions, portraits, symbols, and material to identify the coin.',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.8),
+                color: Colors.white.withAlpha(204),
                 fontSize: 12,
               ),
             ),
