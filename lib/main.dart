@@ -20,6 +20,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:archive/archive_io.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -2582,23 +2583,22 @@ class _QuickActionsRow extends StatelessWidget {
             },
           ),
         ),
-        // PHOTOGRAMMETRY BUTTON - HIDDEN BY REQUEST (code preserved)
-        // Uncomment to re-enable:
-        // const SizedBox(width: 12),
-        // Expanded(
-        //   child: _GlassActionButton(
-        //     icon: Icons.camera_alt_outlined,
-        //     title: 'Photogrammetry',
-        //     onTap: () {
-        //       Navigator.push(
-        //         context,
-        //         MaterialPageRoute(
-        //           builder: (_) => const PhotogrammetryScreen(),
-        //         ),
-        //       );
-        //     },
-        //   ),
-        // ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _GlassActionButton(
+            icon: Icons.camera_alt_outlined,
+            title: 'Photogrammetry',
+            subtitle: '3D Scanning',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PhotogrammetryScreen(),
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
@@ -11250,6 +11250,9 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   // Get the next recommended angle
   CaptureAngle get _currentAngle => _captureAngles[_currentAngleIndex];
 
+  // Check if enough photos for generation (minimum 4)
+  bool get _canGenerate => _captures.length >= 4;
+
   // Check if all required angles are captured
   bool get _isComplete => _captures.length >= _captureAngles.length;
 
@@ -11464,17 +11467,21 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       _extractedFrameCount = 0;
     });
 
+    // Key for updating dialog state
+    final dialogSetState = ValueNotifier<int>(0);
+
     try {
       // Show progress dialog
       if (mounted) {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => StatefulBuilder(
-            builder: (context, setDialogState) => AlertDialog(
+          builder: (context) => ValueListenableBuilder<int>(
+            valueListenable: dialogSetState,
+            builder: (context, _, __) => AlertDialog(
               backgroundColor: const Color(0xFF1C2523),
               title: const Text(
-                '⚙️ Processing Video',
+                'Processing Video',
                 style: TextStyle(color: Colors.white),
               ),
               content: Column(
@@ -11498,69 +11505,83 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         );
       }
 
-      // Initialize video player to get video info
+      // Get video duration
       final videoController = VideoPlayerController.file(File(_recordedVideo!.path));
       await videoController.initialize();
-
       final duration = videoController.value.duration;
       videoController.dispose();
+
+      debugPrint('Video recorded: ${duration.inSeconds}s');
+
+      // Calculate frame timestamps (extract ~16 frames evenly spaced)
+      final targetFrames = 16;
+      final durationMs = duration.inMilliseconds;
+      if (durationMs < 1000) {
+        throw Exception('Video too short (${duration.inSeconds}s). Record at least 3 seconds.');
+      }
+
+      final intervalMs = durationMs ~/ targetFrames;
+      final tempDir = await getTemporaryDirectory();
+      int extracted = 0;
+
+      for (int i = 0; i < targetFrames; i++) {
+        final timeMs = i * intervalMs;
+
+        try {
+          final thumbnailPath = await VideoThumbnail.thumbnailFile(
+            video: _recordedVideo!.path,
+            thumbnailPath: tempDir.path,
+            imageFormat: ImageFormat.JPEG,
+            maxWidth: 2048,
+            quality: 90,
+            timeMs: timeMs,
+          );
+
+          if (thumbnailPath != null) {
+            final file = File(thumbnailPath);
+            if (await file.exists()) {
+              final xFile = XFile(thumbnailPath);
+              final quality = await _analyzeImageQuality(xFile);
+
+              setState(() {
+                _captures.add(PhotogrammetryCapture(
+                  image: xFile,
+                  angle: (i * 360.0 / targetFrames),
+                  elevation: 0,
+                  quality: quality,
+                  timestamp: DateTime.now(),
+                ));
+                _extractedFrameCount = ++extracted;
+                if (_currentAngleIndex < _captureAngles.length - 1) {
+                  _currentAngleIndex = min(_captures.length, _captureAngles.length - 1);
+                }
+              });
+
+              // Update dialog
+              dialogSetState.value++;
+            }
+          }
+        } catch (e) {
+          debugPrint('Failed to extract frame at ${timeMs}ms: $e');
+        }
+      }
 
       // Close progress dialog
       if (mounted) {
         Navigator.pop(context);
       }
 
-      debugPrint('🎬 Video recorded: ${duration.inSeconds}s');
-
-      // Show info about video mode
       if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: const Color(0xFF1C2523),
-            title: const Text(
-              '📹 Video Recorded!',
-              style: TextStyle(color: Colors.white),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Video saved: ${duration.inSeconds} seconds',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'For best photogrammetry results:\n\n'
-                  '✅ Use Photo Mode for frame-by-frame capture\n'
-                  '✅ Photo mode provides real-time quality analysis\n'
-                  '✅ Better control over angles and coverage\n\n'
-                  'Video saved to gallery for manual processing.',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  setState(() => _isVideoMode = false);
-                },
-                child: const Text('Switch to Photo Mode', style: TextStyle(color: Color(0xFF7C4DFF))),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7C4DFF)),
-                child: const Text('OK'),
-              ),
-            ],
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Extracted $extracted frames from video'),
+            backgroundColor: extracted > 0 ? const Color(0xFF4CAF50) : Colors.orange,
           ),
         );
       }
 
     } catch (e) {
-      debugPrint(' Frame extraction error: $e');
+      debugPrint('Frame extraction error: $e');
 
       // Close progress dialog if open
       if (mounted) {
@@ -11576,6 +11597,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         );
       }
     } finally {
+      dialogSetState.dispose();
       setState(() {
         _isExtractingFrames = false;
         _recordedVideo = null;
@@ -11986,10 +12008,10 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
   /// Generate 3D model from captured photos - allows choice of method
   Future<void> _generate3DModel() async {
-    if (_captures.length < 8) {
+    if (_captures.length < 4) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Need at least 8 photos for 3D reconstruction'),
+          content: Text('Need at least 4 photos for 3D reconstruction'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -12800,10 +12822,10 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                     ),
                     // 3D Model button
                     IconButton(
-                      onPressed: _captures.length >= 8 && !_isReconstructing ? _generate3DModel : null,
+                      onPressed: _canGenerate && !_isReconstructing ? _generate3DModel : null,
                       icon: Icon(
                         Icons.view_in_ar,
-                        color: _captures.length >= 8 && !_isReconstructing
+                        color: _canGenerate && !_isReconstructing
                             ? const Color(0xFF7C4DFF)
                             : Colors.white30,
                       ),
@@ -13298,43 +13320,51 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
               ),
 
               // Completion actions - Share, See Model, Exit
-              if (_isComplete)
+              if (_canGenerate)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                   child: Column(
                     children: [
-                      // Congratulations message
+                      // Banner: different for partial vs full completion
                       Container(
                         padding: const EdgeInsets.all(16),
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [
-                              const Color(0xFF4CAF50).withAlpha(40),
-                              const Color(0xFF8BC34A).withAlpha(30),
-                            ],
+                            colors: _isComplete
+                                ? [const Color(0xFF4CAF50).withAlpha(40), const Color(0xFF8BC34A).withAlpha(30)]
+                                : [const Color(0xFF7C4DFF).withAlpha(40), const Color(0xFF448AFF).withAlpha(30)],
                           ),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFF4CAF50), width: 2),
+                          border: Border.all(
+                            color: _isComplete ? const Color(0xFF4CAF50) : const Color(0xFF7C4DFF),
+                            width: 2,
+                          ),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 32),
+                            Icon(
+                              _isComplete ? Icons.check_circle : Icons.auto_awesome,
+                              color: _isComplete ? const Color(0xFF4CAF50) : const Color(0xFF7C4DFF),
+                              size: 32,
+                            ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'Capture Complete!',
-                                    style: TextStyle(
+                                  Text(
+                                    _isComplete ? 'Capture Complete!' : 'Ready to Generate',
+                                    style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                   Text(
-                                    '${_captures.length} photos ready for 3D reconstruction',
+                                    _isComplete
+                                        ? '${_captures.length} photos ready for 3D reconstruction'
+                                        : '${_captures.length} photos — generate now or continue for better quality',
                                     style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 12),
                                   ),
                                 ],
@@ -13470,6 +13500,17 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () {
+                          _reconstructionService.cancelReconstruction();
+                          setState(() => _isReconstructing = false);
+                        },
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
                         ),
                       ),
                     ],

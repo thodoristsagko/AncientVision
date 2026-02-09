@@ -23,6 +23,8 @@ class ReconstructionService {
 
   final _uuid = const Uuid();
   bool _isCancelled = false;
+  int _imageWidth = 1024;
+  int _imageHeight = 1024;
 
   /// Cancel ongoing reconstruction
   void cancelReconstruction() {
@@ -366,15 +368,35 @@ class ReconstructionService {
         final image = img.decodeImage(bytes);
 
         if (image != null) {
-          // Downsample to 1024x1024 for faster processing while maintaining quality
-          final targetSize = 1024;
-          final downsampled = img.copyResize(
-            image,
-            width: targetSize,
-            height: targetSize,
-            interpolation: img.Interpolation.average,
-          );
+          // Downsample to fit within 1024x1024 while preserving aspect ratio
+          final maxDim = 1024;
+          img.Image downsampled;
+          if (image.width > maxDim || image.height > maxDim) {
+            if (image.width >= image.height) {
+              downsampled = img.copyResize(
+                image,
+                width: maxDim,
+                interpolation: img.Interpolation.average,
+              );
+            } else {
+              downsampled = img.copyResize(
+                image,
+                height: maxDim,
+                interpolation: img.Interpolation.average,
+              );
+            }
+          } else {
+            downsampled = image;
+          }
           images.add(downsampled);
+
+          // Store dimensions from first image for coordinate normalization
+          if (i == 0) {
+            _imageWidth = downsampled.width;
+            _imageHeight = downsampled.height;
+            RobustSfM.imageCenterX = _imageWidth / 2.0;
+            RobustSfM.imageCenterY = _imageHeight / 2.0;
+          }
 
           final progress = 0.05 + (i / imageFiles.length) * 0.10;
           onProgress?.call(progress, 'Loading image ${i + 1}/${imageFiles.length}...');
@@ -846,15 +868,17 @@ class ReconstructionService {
         totalTriangulated++;
 
         // Transform rays to world coordinates
+        final cx = _imageWidth / 2.0;
+        final cy = _imageHeight / 2.0;
         final ray1Dir = pose1.rotation.transposed().transform(Vector3(
-          (match.feature1.x - 512) / pose1.focalLength,
-          (match.feature1.y - 512) / pose1.focalLength,
+          (match.feature1.x - cx) / pose1.focalLength,
+          (match.feature1.y - cy) / pose1.focalLength,
           1.0,
         ).normalized());
 
         final ray2Dir = pose2.rotation.transposed().transform(Vector3(
-          (match.feature2.x - 512) / pose2.focalLength,
-          (match.feature2.y - 512) / pose2.focalLength,
+          (match.feature2.x - cx) / pose2.focalLength,
+          (match.feature2.y - cy) / pose2.focalLength,
           1.0,
         ).normalized());
 
@@ -967,8 +991,8 @@ class ReconstructionService {
     final pCam = pose.rotation.transform(point3D - pose.position);
 
     // Project to image plane
-    final x = (pCam.x / pCam.z) * pose.focalLength + 512;
-    final y = (pCam.y / pCam.z) * pose.focalLength + 512;
+    final x = (pCam.x / pCam.z) * pose.focalLength + _imageWidth / 2.0;
+    final y = (pCam.y / pCam.z) * pose.focalLength + _imageHeight / 2.0;
 
     return Vector2(x, y);
   }

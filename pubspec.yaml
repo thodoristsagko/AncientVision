@@ -30,6 +30,7 @@ dependencies:
   model_viewer_plus: ^1.7.0  # 3D model viewer (WebView-based)
   vector_math: ^2.1.4  # 3D math utilities for custom point cloud rendering
   video_player: ^2.8.2  # Video playback for frame extraction
+  video_thumbnail: ^0.5.3  # Extract frames from video for photogrammetry
   # ULTRA++ Advanced Features
   mobile_scanner: ^5.1.1  # QR/barcode scanning with MLKit (modern replacement for qr_code_scanner)
   device_info_plus: ^10.1.0  # Device info for RAM detection and hardware capabilities
@@ -49,11 +50,14 @@ dependencies:
   flutter_background_service: ^5.0.5  # Background service to keep app running
   flutter_background_service_android: ^6.2.2  # Android-specific background service
   fl_chart: ^0.66.0  # Charts for analytics visualization
+  fftea: ^1.5.0  # FFT for vibration frequency spectrum visualization
   connectivity_plus: ^5.0.2  # Network connectivity monitoring for offline indicator
   # AI & Machine Learning
   google_mlkit_image_labeling: ^0.12.0  # On-device AI image classification
   google_mlkit_object_detection: ^0.13.0  # Object detection for artifacts
   google_mlkit_commons: ^0.7.1  # Shared ML Kit utilities
+  tflite_flutter: ^0.11.0
+  google_generative_ai: ^0.4.6  # Gemini AI for coin recognition  # TensorFlow Lite for custom coin classifier
 
 dev_dependencies:
   flutter_test:
@@ -76,3 +80,4 @@ flutter:
   assets:
     - assets/
     - assets/audio/
+    - assets/ml/

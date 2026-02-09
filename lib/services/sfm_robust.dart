@@ -9,6 +9,10 @@ class RobustSfM {
   static const double ransacThreshold = 0.02; // Reprojection error threshold (relaxed)
   static const double minInlierRatio = 0.15; // 15% inliers required (more tolerant)
 
+  /// Image center coordinates (updated when image dimensions are known)
+  static double imageCenterX = 512;
+  static double imageCenterY = 512;
+
   /// Estimate essential matrix using RANSAC with 8-point algorithm
   static EssentialMatrixResult estimateEssentialMatrix(
     List<FeatureMatch> matches,
@@ -97,13 +101,13 @@ class RobustSfM {
 
     for (final match in matches) {
       pts1.add(Vector3(
-        (match.feature1.x - 512) / focalLength,
-        (match.feature1.y - 512) / focalLength,
+        (match.feature1.x - imageCenterX) / focalLength,
+        (match.feature1.y - imageCenterY) / focalLength,
         1.0,
       ));
       pts2.add(Vector3(
-        (match.feature2.x - 512) / focalLength,
-        (match.feature2.y - 512) / focalLength,
+        (match.feature2.x - imageCenterX) / focalLength,
+        (match.feature2.y - imageCenterY) / focalLength,
         1.0,
       ));
     }
@@ -126,49 +130,55 @@ class RobustSfM {
       A[i][8] = 1.0;
     }
 
-    // Solve using SVD (simplified - would use proper SVD in production)
+    // Solve Af=0 for the null space of A (smallest singular value's vector)
     final F = _solveSVD(A);
 
-    // Enforce Essential Matrix constraint: det(E) = 0 and two equal singular values
+    // Enforce Essential Matrix constraint: E = U*diag(1,1,0)*V^T
     final E = _enforceEssentialConstraint(F);
 
     return E;
   }
 
-  /// Solve linear system using simplified SVD (last row of V)
+  /// Solve Af=0 by finding the eigenvector of A^T*A with smallest eigenvalue.
+  /// Uses inverse power iteration with Gaussian elimination.
   static Matrix3 _solveSVD(List<List<double>> A) {
-    // Simplified: use the smallest eigenvalue solution
-    // In production, would use proper SVD library
+    final n = 9;
 
-    // For now, use least squares approximation
-    final AtA = List.generate(9, (_) => List.filled(9, 0.0));
-
-    // Compute A^T * A
-    for (int i = 0; i < 9; i++) {
-      for (int j = 0; j < 9; j++) {
+    // Compute A^T * A (9x9 symmetric positive semi-definite)
+    final AtA = List.generate(n, (_) => List.filled(n, 0.0));
+    for (int i = 0; i < n; i++) {
+      for (int j = i; j < n; j++) {
         double sum = 0;
-        for (int k = 0; k < 8; k++) {
+        for (int k = 0; k < A.length; k++) {
           sum += A[k][i] * A[k][j];
         }
         AtA[i][j] = sum;
+        AtA[j][i] = sum; // symmetric
       }
     }
 
-    // Find smallest eigenvalue's eigenvector (power iteration on inverse)
-    final v = List.filled(9, 1.0 / 3.0);
+    // Add small shift to make it invertible (shifted inverse iteration)
+    // We solve (A^T*A - sigma*I)^{-1} * v iteratively
+    // sigma = 0 (or very small) finds smallest eigenvalue
+    final sigma = 1e-10;
+    final M = List.generate(n, (i) => List.generate(n, (j) => AtA[i][j]));
+    for (int i = 0; i < n; i++) {
+      M[i][i] += sigma;
+    }
 
-    for (int iter = 0; iter < 100; iter++) {
-      final Av = List.filled(9, 0.0);
-      for (int i = 0; i < 9; i++) {
-        for (int j = 0; j < 9; j++) {
-          Av[i] += AtA[i][j] * v[j];
-        }
-      }
+    // Inverse power iteration
+    var v = List.filled(n, 1.0 / math.sqrt(n.toDouble()));
+
+    for (int iter = 0; iter < 50; iter++) {
+      // Solve M * w = v using Gaussian elimination
+      final w = _solveLinearSystem(M, v);
+      if (w == null) break; // singular, current v is good enough
 
       // Normalize
-      final norm = math.sqrt(Av.fold<double>(0, (s, x) => s + x * x));
-      for (int i = 0; i < 9; i++) {
-        v[i] = Av[i] / norm;
+      final norm = math.sqrt(w.fold<double>(0, (s, x) => s + x * x));
+      if (norm < 1e-15) break;
+      for (int i = 0; i < n; i++) {
+        v[i] = w[i] / norm;
       }
     }
 
@@ -179,19 +189,191 @@ class RobustSfM {
     );
   }
 
-  /// Enforce Essential Matrix constraints
-  static Matrix3 _enforceEssentialConstraint(Matrix3 F) {
-    // Simplified: normalize and ensure proper structure
-    // In production, would decompose to U*diag(1,1,0)*V^T
+  /// Solve Ax = b using Gaussian elimination with partial pivoting
+  static List<double>? _solveLinearSystem(List<List<double>> A, List<double> b) {
+    final n = A.length;
+    // Create augmented matrix [A|b]
+    final aug = List.generate(n, (i) => [...A[i], b[i]]);
 
-    final det = F.determinant();
-    if (det.abs() < 0.001) {
-      return F; // Already rank-2
+    // Forward elimination with partial pivoting
+    for (int col = 0; col < n; col++) {
+      // Find pivot
+      int maxRow = col;
+      double maxVal = aug[col][col].abs();
+      for (int row = col + 1; row < n; row++) {
+        if (aug[row][col].abs() > maxVal) {
+          maxVal = aug[row][col].abs();
+          maxRow = row;
+        }
+      }
+      if (maxVal < 1e-14) return null; // Singular
+
+      // Swap rows
+      if (maxRow != col) {
+        final temp = aug[col];
+        aug[col] = aug[maxRow];
+        aug[maxRow] = temp;
+      }
+
+      // Eliminate below
+      for (int row = col + 1; row < n; row++) {
+        final factor = aug[row][col] / aug[col][col];
+        for (int j = col; j <= n; j++) {
+          aug[row][j] -= factor * aug[col][j];
+        }
+      }
     }
 
-    // Scale to make determinant closer to 0
-    final scale = 1.0 / math.pow(det.abs(), 1.0 / 3.0);
-    return F.scaled(scale);
+    // Back substitution
+    final x = List.filled(n, 0.0);
+    for (int row = n - 1; row >= 0; row--) {
+      double sum = aug[row][n];
+      for (int j = row + 1; j < n; j++) {
+        sum -= aug[row][j] * x[j];
+      }
+      if (aug[row][row].abs() < 1e-14) return null;
+      x[row] = sum / aug[row][row];
+    }
+
+    return x;
+  }
+
+  /// Enforce Essential Matrix constraints using SVD-like decomposition.
+  /// Projects F onto the space of valid Essential Matrices: U*diag(s,s,0)*V^T
+  /// where s = (sigma1 + sigma2) / 2.
+  static Matrix3 _enforceEssentialConstraint(Matrix3 F) {
+    // Compute F^T * F
+    final FtF = F.transposed() * F;
+
+    // Find eigenvalues/eigenvectors of F^T*F using Jacobi iteration (3x3 symmetric)
+    final eigResult = _symmetricEigen3x3(FtF);
+    final eigenvalues = eigResult.values;
+    final V = eigResult.vectors;
+
+    // Sort eigenvalues descending (with corresponding eigenvectors)
+    final indices = [0, 1, 2];
+    indices.sort((a, b) => eigenvalues[b].compareTo(eigenvalues[a]));
+
+    final s1 = math.sqrt(math.max(0, eigenvalues[indices[0]]));
+    final s2 = math.sqrt(math.max(0, eigenvalues[indices[1]]));
+
+    // Average of two largest singular values
+    final s = (s1 + s2) / 2.0;
+    if (s < 1e-10) return F; // Degenerate
+
+    // Reconstruct with diag(s, s, 0)
+    // U = F * V * diag(1/s1, 1/s2, ...) but we need to be careful
+    // Simpler approach: compute U columns from F * v_i / sigma_i
+    final v0 = Vector3(V.entry(0, indices[0]), V.entry(1, indices[0]), V.entry(2, indices[0]));
+    final v1 = Vector3(V.entry(0, indices[1]), V.entry(1, indices[1]), V.entry(2, indices[1]));
+    final v2 = Vector3(V.entry(0, indices[2]), V.entry(1, indices[2]), V.entry(2, indices[2]));
+
+    Vector3 u0, u1, u2;
+    if (s1 > 1e-10) {
+      u0 = F.transform(v0) / s1;
+    } else {
+      u0 = Vector3(1, 0, 0);
+    }
+    if (s2 > 1e-10) {
+      u1 = F.transform(v1) / s2;
+    } else {
+      u1 = Vector3(0, 1, 0);
+    }
+    // u2 = u0 x u1 (ensure orthogonality)
+    u2 = u0.cross(u1);
+    u2.normalize();
+
+    // E = U * diag(s, s, 0) * V^T
+    // = s * (u0*v0^T + u1*v1^T)
+    final E = Matrix3.zero();
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        E.setEntry(i, j, s * (u0[i] * v0[j] + u1[i] * v1[j]));
+      }
+    }
+
+    // Normalize so Frobenius norm is sqrt(2)
+    double frobSq = 0;
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        frobSq += E.entry(i, j) * E.entry(i, j);
+      }
+    }
+    if (frobSq > 1e-10) {
+      final scale = math.sqrt(2.0 / frobSq);
+      return E.scaled(scale);
+    }
+    return E;
+  }
+
+  /// Eigendecomposition of a 3x3 symmetric matrix using Jacobi iteration.
+  /// Returns eigenvalues and eigenvector matrix (columns are eigenvectors).
+  static _EigenResult _symmetricEigen3x3(Matrix3 A) {
+    // Work with a mutable copy
+    final a = List.generate(3, (i) => List.generate(3, (j) => A.entry(i, j)));
+    // Eigenvector matrix starts as identity
+    final v = List.generate(3, (i) => List.generate(3, (j) => i == j ? 1.0 : 0.0));
+
+    // Jacobi rotations
+    for (int sweep = 0; sweep < 50; sweep++) {
+      // Check convergence: sum of off-diagonal squared
+      double offDiag = 0;
+      for (int i = 0; i < 3; i++) {
+        for (int j = i + 1; j < 3; j++) {
+          offDiag += a[i][j] * a[i][j];
+        }
+      }
+      if (offDiag < 1e-20) break;
+
+      for (int p = 0; p < 3; p++) {
+        for (int q = p + 1; q < 3; q++) {
+          if (a[p][q].abs() < 1e-15) continue;
+
+          // Compute rotation angle
+          final tau = (a[q][q] - a[p][p]) / (2.0 * a[p][q]);
+          final t = (tau >= 0 ? 1.0 : -1.0) /
+              (tau.abs() + math.sqrt(1.0 + tau * tau));
+          final c = 1.0 / math.sqrt(1.0 + t * t);
+          final s = t * c;
+
+          // Apply Jacobi rotation to A: A' = G^T * A * G
+          final app = a[p][p] - t * a[p][q];
+          final aqq = a[q][q] + t * a[p][q];
+          a[p][q] = 0;
+          a[q][p] = 0;
+          a[p][p] = app;
+          a[q][q] = aqq;
+
+          // Update off-diagonal elements
+          for (int r = 0; r < 3; r++) {
+            if (r == p || r == q) continue;
+            final arp = a[r][p];
+            final arq = a[r][q];
+            a[r][p] = c * arp - s * arq;
+            a[p][r] = a[r][p];
+            a[r][q] = s * arp + c * arq;
+            a[q][r] = a[r][q];
+          }
+
+          // Update eigenvectors
+          for (int r = 0; r < 3; r++) {
+            final vrp = v[r][p];
+            final vrq = v[r][q];
+            v[r][p] = c * vrp - s * vrq;
+            v[r][q] = s * vrp + c * vrq;
+          }
+        }
+      }
+    }
+
+    final eigenvalues = [a[0][0], a[1][1], a[2][2]];
+    final vectors = Matrix3(
+      v[0][0], v[0][1], v[0][2],
+      v[1][0], v[1][1], v[1][2],
+      v[2][0], v[2][1], v[2][2],
+    );
+
+    return _EigenResult(values: eigenvalues, vectors: vectors);
   }
 
   /// Calculate epipolar error for a match
@@ -202,13 +384,13 @@ class RobustSfM {
   ) {
     // Normalize points
     final p1 = Vector3(
-      (match.feature1.x - 512) / focalLength,
-      (match.feature1.y - 512) / focalLength,
+      (match.feature1.x - imageCenterX) / focalLength,
+      (match.feature1.y - imageCenterY) / focalLength,
       1.0,
     );
     final p2 = Vector3(
-      (match.feature2.x - 512) / focalLength,
-      (match.feature2.y - 512) / focalLength,
+      (match.feature2.x - imageCenterX) / focalLength,
+      (match.feature2.y - imageCenterY) / focalLength,
       1.0,
     );
 
@@ -226,15 +408,14 @@ class RobustSfM {
     double focalLength,
   ) {
     // Decompose Essential Matrix into rotation and translation
-    // E can decompose to 4 possible solutions: (R1,t), (R1,-t), (R2,t), (R2,-t)
+    // E = U * diag(1,1,0) * V^T
+    // Four solutions: R = U * W * V^T or U * W^T * V^T, t = +-u3
 
     final hypotheses = <CameraPoseHypothesis>[];
 
-    // Simplified decomposition (would use proper SVD)
-    // For now, generate plausible rotation matrices
-
-    final rotations = _extractRotationsFromE(E);
-    final translation = _extractTranslationFromE(E);
+    final decomp = _decomposeEssentialMatrix(E);
+    final rotations = decomp.rotations;
+    final translation = decomp.translation;
 
     for (final R in rotations) {
       for (final tSign in [1.0, -1.0]) {
@@ -273,28 +454,110 @@ class RobustSfM {
     return hypotheses;
   }
 
-  /// Extract possible rotations from Essential Matrix (simplified)
-  static List<Matrix3> _extractRotationsFromE(Matrix3 E) {
-    // Simplified: generate two plausible rotations
-    // In production, would use proper SVD decomposition
+  /// Decompose Essential Matrix into R1, R2 and t using proper SVD.
+  /// E = U * diag(1,1,0) * V^T
+  /// R1 = U * W * V^T, R2 = U * W^T * V^T, t = U[:, 2]
+  static _EssentialDecomposition _decomposeEssentialMatrix(Matrix3 E) {
+    // Compute E^T * E
+    final EtE = E.transposed() * E;
 
-    final rotations = <Matrix3>[];
+    // Eigendecomposition of E^T*E to get V and singular values
+    final eigResult = _symmetricEigen3x3(EtE);
 
-    // Identity rotation
-    rotations.add(Matrix3.identity());
+    // Sort eigenvalues descending
+    final indices = [0, 1, 2];
+    indices.sort((a, b) => eigResult.values[b].compareTo(eigResult.values[a]));
 
-    // Small rotation around Y axis (typical for circular capture)
-    final angle = 22.5 * (math.pi / 180);
-    rotations.add(Matrix3.rotationY(angle));
+    final s1 = math.sqrt(math.max(0, eigResult.values[indices[0]]));
+    final s2 = math.sqrt(math.max(0, eigResult.values[indices[1]]));
 
-    return rotations;
-  }
+    // V columns (right singular vectors) sorted by singular value
+    final v0 = Vector3(
+      eigResult.vectors.entry(0, indices[0]),
+      eigResult.vectors.entry(1, indices[0]),
+      eigResult.vectors.entry(2, indices[0]),
+    );
+    final v1 = Vector3(
+      eigResult.vectors.entry(0, indices[1]),
+      eigResult.vectors.entry(1, indices[1]),
+      eigResult.vectors.entry(2, indices[1]),
+    );
+    var v2 = Vector3(
+      eigResult.vectors.entry(0, indices[2]),
+      eigResult.vectors.entry(1, indices[2]),
+      eigResult.vectors.entry(2, indices[2]),
+    );
 
-  /// Extract translation direction from Essential Matrix (simplified)
-  static Vector3 _extractTranslationFromE(Matrix3 E) {
-    // Translation is the null space of E
-    // Simplified: use last column as approximation
-    return Vector3(E.entry(0, 2), E.entry(1, 2), E.entry(2, 2)).normalized();
+    // Ensure V is a proper rotation (det = +1)
+    final Vmat = Matrix3(
+      v0.x, v1.x, v2.x,
+      v0.y, v1.y, v2.y,
+      v0.z, v1.z, v2.z,
+    );
+    if (Vmat.determinant() < 0) {
+      v2 = -v2;
+    }
+    final V = Matrix3(
+      v0.x, v1.x, v2.x,
+      v0.y, v1.y, v2.y,
+      v0.z, v1.z, v2.z,
+    );
+
+    // Compute U columns: u_i = E * v_i / sigma_i
+    Vector3 u0, u1, u2;
+    if (s1 > 1e-10) {
+      u0 = E.transform(v0) / s1;
+    } else {
+      u0 = Vector3(1, 0, 0);
+    }
+    if (s2 > 1e-10) {
+      u1 = E.transform(v1) / s2;
+    } else {
+      u1 = Vector3(0, 1, 0);
+    }
+    u2 = u0.cross(u1);
+    u2.normalize();
+
+    // Ensure U is a proper rotation
+    var U = Matrix3(
+      u0.x, u1.x, u2.x,
+      u0.y, u1.y, u2.y,
+      u0.z, u1.z, u2.z,
+    );
+    if (U.determinant() < 0) {
+      u2 = -u2;
+      U = Matrix3(
+        u0.x, u1.x, u2.x,
+        u0.y, u1.y, u2.y,
+        u0.z, u1.z, u2.z,
+      );
+    }
+
+    // W matrix (90° rotation)
+    final W = Matrix3(
+      0, -1, 0,
+      1,  0, 0,
+      0,  0, 1,
+    );
+
+    // Two possible rotations: R1 = U * W * V^T, R2 = U * W^T * V^T
+    final Vt = V.transposed();
+    final R1 = U * W * Vt;
+    final R2 = U * W.transposed() * Vt;
+
+    // Ensure proper rotations (det = +1)
+    Matrix3 r1Final = R1;
+    Matrix3 r2Final = R2;
+    if (R1.determinant() < 0) r1Final = R1.scaled(-1);
+    if (R2.determinant() < 0) r2Final = R2.scaled(-1);
+
+    // Translation = third column of U
+    final t = Vector3(U.entry(0, 2), U.entry(1, 2), U.entry(2, 2)).normalized();
+
+    return _EssentialDecomposition(
+      rotations: [r1Final, r2Final],
+      translation: t,
+    );
   }
 
   /// Triangulate a single point with two camera poses
@@ -308,14 +571,14 @@ class RobustSfM {
   ) {
     // Normalize pixel coordinates
     final p1 = Vector3(
-      (match.feature1.x - 512) / focalLength,
-      (match.feature1.y - 512) / focalLength,
+      (match.feature1.x - imageCenterX) / focalLength,
+      (match.feature1.y - imageCenterY) / focalLength,
       1.0,
     ).normalized();
 
     final p2 = Vector3(
-      (match.feature2.x - 512) / focalLength,
-      (match.feature2.y - 512) / focalLength,
+      (match.feature2.x - imageCenterX) / focalLength,
+      (match.feature2.y - imageCenterY) / focalLength,
       1.0,
     ).normalized();
 
@@ -365,6 +628,20 @@ class RobustSfM {
     indices.shuffle();
     return indices.take(n).map((i) => matches[i]).toList();
   }
+}
+
+/// Internal: eigenvalues + eigenvectors result
+class _EigenResult {
+  final List<double> values;
+  final Matrix3 vectors;
+  _EigenResult({required this.values, required this.vectors});
+}
+
+/// Internal: Essential Matrix decomposition result
+class _EssentialDecomposition {
+  final List<Matrix3> rotations;
+  final Vector3 translation;
+  _EssentialDecomposition({required this.rotations, required this.translation});
 }
 
 /// Result from Essential Matrix estimation

@@ -95,20 +95,23 @@ class CloudPhotogrammetryService {
   /// Check server status by testing the API
   Future<Map<String, dynamic>> checkServerStatus() async {
     try {
-      // Try to reach the server with a simple request
+      // Try to reach the server with a simple request (short timeout for fast fallback)
       final response = await http.get(
         Uri.parse(_baseUrl),
         headers: {'Authorization': _authHeader},
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 8));
 
-      if (response.statusCode == 200 || response.statusCode == 404) {
-        // Server is reachable (404 is fine - endpoint might not exist but server is up)
+      if (response.statusCode == 200) {
         return {'ok': true, 'message': 'Server reachable'};
       } else {
+        // 404 means the API endpoint is dead - mark as unavailable
         return {
           'ok': false,
-          'message': 'Server returned status ${response.statusCode}',
+          'message': response.statusCode == 404
+              ? 'OpenScan Cloud API is currently unavailable (404). Use on-device processing instead.'
+              : 'Server returned status ${response.statusCode}',
           'statusCode': response.statusCode,
+          'suggest_ondevice': true,
         };
       }
     } on SocketException catch (e) {
@@ -116,18 +119,21 @@ class CloudPhotogrammetryService {
         'ok': false,
         'message': 'No internet connection',
         'error': e.toString(),
+        'suggest_ondevice': true,
       };
     } on http.ClientException catch (e) {
       return {
         'ok': false,
         'message': 'Connection failed',
         'error': e.toString(),
+        'suggest_ondevice': true,
       };
     } catch (e) {
       return {
         'ok': false,
-        'message': 'Network error: ${e.runtimeType}',
+        'message': 'Cloud service unavailable. Use on-device processing.',
         'error': e.toString(),
+        'suggest_ondevice': true,
       };
     }
   }

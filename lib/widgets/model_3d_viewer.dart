@@ -95,6 +95,8 @@ class _Model3DViewerState extends State<Model3DViewer> {
       );
     }
 
+    final showSparseWarning = pointCloud.points.length < 10;
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -130,10 +132,44 @@ class _Model3DViewerState extends State<Model3DViewer> {
             initialShowColors: _showColors,
           ),
 
-          // Info overlay
-          if (_showInfo)
+          // Sparse point cloud warning
+          if (showSparseWarning)
             Positioned(
               top: 16,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Very few points reconstructed. Try cloud processing or add more photos with better overlap for improved results.',
+                        style: TextStyle(color: Colors.orange, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Info overlay
+          if (_showInfo && !showSparseWarning)
+            Positioned(
+              top: 16,
+              left: 16,
+              child: _buildInfoPanel(),
+            ),
+          if (_showInfo && showSparseWarning)
+            Positioned(
+              top: 80,
               left: 16,
               child: _buildInfoPanel(),
             ),
