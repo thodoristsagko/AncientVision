@@ -424,19 +424,28 @@ class ReconstructionService {
         final image = img.decodeImage(bytes);
 
         if (image != null) {
-          // Smaller size for color extraction (512x512 is sufficient)
-          final downsampled = img.copyResize(
-            image,
-            width: 512,
-            height: 512,
-            interpolation: img.Interpolation.average,
-          );
+          // Smaller size for color extraction, preserving aspect ratio
+          const colorMaxDim = 512;
+          img.Image downsampled;
+          if (image.width >= image.height) {
+            downsampled = img.copyResize(
+              image,
+              width: colorMaxDim,
+              interpolation: img.Interpolation.average,
+            );
+          } else {
+            downsampled = img.copyResize(
+              image,
+              height: colorMaxDim,
+              interpolation: img.Interpolation.average,
+            );
+          }
           images.add(downsampled);
         }
       } catch (e) {
         debugPrint(' Error loading image ${i + 1} for color: $e');
         // Add placeholder if loading fails
-        images.add(img.Image(width: 512, height: 512));
+        images.add(img.Image(width: 512, height: 384));
       }
     }
 
@@ -609,14 +618,33 @@ class ReconstructionService {
     return det - k * trace * trace;
   }
 
-  /// Extract simple descriptor from 8x8 patch
+  /// Extract orientation-invariant descriptor from 8x8 patch
   static List<double> _extractDescriptor(img.Image gray, int x, int y) {
-    final descriptor = <double>[];
+    // Compute dominant gradient orientation in a 7x7 window
+    double gxSum = 0, gySum = 0;
+    for (int dy = -3; dy <= 3; dy++) {
+      for (int dx = -3; dx <= 3; dx++) {
+        final px = (x + dx).clamp(1, gray.width - 2);
+        final py = (y + dy).clamp(1, gray.height - 2);
+        final gx = gray.getPixel(px + 1, py).r.toDouble() - gray.getPixel(px - 1, py).r.toDouble();
+        final gy = gray.getPixel(px, py + 1).r.toDouble() - gray.getPixel(px, py - 1).r.toDouble();
+        gxSum += gx;
+        gySum += gy;
+      }
+    }
+    final angle = math.atan2(gySum, gxSum);
+    final cosA = math.cos(angle);
+    final sinA = math.sin(angle);
 
+    // Sample 8x8 patch rotated by dominant orientation
+    final descriptor = <double>[];
     for (int dy = -4; dy < 4; dy++) {
       for (int dx = -4; dx < 4; dx++) {
-        final px = x + dx;
-        final py = y + dy;
+        // Rotate sample position by -angle
+        final rx = (dx * cosA + dy * sinA).round();
+        final ry = (-dx * sinA + dy * cosA).round();
+        final px = x + rx;
+        final py = y + ry;
 
         if (px >= 0 && px < gray.width && py >= 0 && py < gray.height) {
           descriptor.add(gray.getPixel(px, py).r.toDouble());
@@ -641,13 +669,14 @@ class ReconstructionService {
     return descriptor;
   }
 
-  /// Match features between consecutive images
+  /// Match features between consecutive images + skip-one + loop closure
   Future<List<List<FeatureMatch>>> _matchFeatures(
     List<List<ImageFeature>> features,
     Function(double, String)? onProgress,
   ) async {
     final matches = <List<FeatureMatch>>[];
 
+    // Consecutive pairs (i, i+1)
     for (int i = 0; i < features.length - 1; i++) {
       final progress = 0.5 + (i / (features.length - 1)) * 0.15;
       onProgress?.call(progress, 'Matching images ${i + 1} and ${i + 2}...');
@@ -657,6 +686,35 @@ class ReconstructionService {
         {'features1': features[i], 'features2': features[i + 1]},
       );
       matches.add(pairMatches);
+    }
+
+    // Skip-one pairs (i, i+2) for wider baseline — merge into existing matches
+    if (features.length >= 3) {
+      for (int i = 0; i < features.length - 2; i++) {
+        onProgress?.call(0.65, 'Wide baseline match ${i + 1}-${i + 3}...');
+        final skipMatches = await compute(
+          _matchFeaturePair,
+          {'features1': features[i], 'features2': features[i + 2]},
+        );
+        // Merge skip-one matches into the consecutive pair for extra triangulation
+        if (skipMatches.length >= 8) {
+          matches[i] = [...matches[i], ...skipMatches];
+          debugPrint('  Skip-one ${i + 1}-${i + 3}: ${skipMatches.length} extra matches');
+        }
+      }
+    }
+
+    // Loop closure: match last image to first (for circular captures)
+    if (features.length >= 4) {
+      onProgress?.call(0.67, 'Loop closure matching...');
+      final loopMatches = await compute(
+        _matchFeaturePair,
+        {'features1': features.last, 'features2': features.first},
+      );
+      if (loopMatches.length >= 8) {
+        matches.add(loopMatches);
+        debugPrint('  Loop closure: ${loopMatches.length} matches (last→first)');
+      }
     }
 
     return matches;
@@ -754,7 +812,8 @@ class ReconstructionService {
     int imageCount,
   ) async {
     final poses = <CameraPose>[];
-    const focalLength = 1000.0; // Approximate for mobile camera
+    // Estimate focal length from image dimensions (~28mm equivalent on mobile)
+    final focalLength = math.max(_imageWidth, _imageHeight) * 0.85;
 
     // First camera at origin
     poses.add(CameraPose(
@@ -766,7 +825,9 @@ class ReconstructionService {
     debugPrint(' Starting ROBUST camera pose estimation with RANSAC...');
 
     // Estimate each subsequent camera pose using Essential Matrix + RANSAC
-    for (int i = 0; i < matches.length; i++) {
+    // Only process consecutive pairs (skip loop closure which is extra)
+    final poseMatchCount = math.min(matches.length, imageCount - 1);
+    for (int i = 0; i < poseMatchCount; i++) {
       final pairMatches = matches[i];
 
       if (pairMatches.length < 8) {
@@ -851,11 +912,25 @@ class ReconstructionService {
 
     debugPrint(' Starting ROBUST triangulation...');
 
-    // Triangulate points from consecutive image pairs
+    // Triangulate points from image pairs (consecutive + loop closure)
     for (int i = 0; i < matches.length; i++) {
       final pairMatches = matches[i];
-      final pose1 = poses[i];
-      final pose2 = poses[i + 1];
+      // For loop closure (last entry), use last and first poses
+      final CameraPose pose1;
+      final CameraPose pose2;
+      final int img1Idx;
+      if (i < poses.length - 1) {
+        pose1 = poses[i];
+        pose2 = poses[i + 1];
+        img1Idx = i;
+      } else if (i == matches.length - 1 && matches.length > poses.length - 1) {
+        // Loop closure: last→first
+        pose1 = poses.last;
+        pose2 = poses.first;
+        img1Idx = poses.length - 1;
+      } else {
+        continue;
+      }
 
       int pairPoints = 0;
 
@@ -934,7 +1009,7 @@ class ReconstructionService {
 
         // Get color from first image
         final color = _getColorFromImage(
-          images[i],
+          images[img1Idx.clamp(0, images.length - 1)],
           match.feature1.x.toInt(),
           match.feature1.y.toInt(),
         );
@@ -968,6 +1043,12 @@ class ReconstructionService {
       debugPrint('   • Better lighting');
       debugPrint('   • More textured object');
       debugPrint('   • More photos (16 recommended)');
+    }
+
+    // Light bundle adjustment: 3 iterations of gradient descent on point positions
+    if (points.length > 3 && poses.length >= 2) {
+      debugPrint(' Running light bundle adjustment (3 iterations)...');
+      _lightBundleAdjust(points, poses, matches, features);
     }
 
     return PointCloud(
@@ -1022,6 +1103,93 @@ class ReconstructionService {
     final p2 = o2 + d2 * t2;
 
     return (p1 + p2) / 2; // Midpoint
+  }
+
+  /// Light bundle adjustment: refine point positions to minimize reprojection error
+  void _lightBundleAdjust(
+    List<Point3D> points,
+    List<CameraPose> poses,
+    List<List<FeatureMatch>> matches,
+    List<List<ImageFeature>> features,
+  ) {
+    const iterations = 3;
+    const stepSize = 0.01;
+
+    for (int iter = 0; iter < iterations; iter++) {
+      double totalError = 0;
+      int errorCount = 0;
+
+      for (int pi = 0; pi < points.length; pi++) {
+        final point = points[pi];
+        double gradX = 0, gradY = 0, gradZ = 0;
+        int views = 0;
+
+        // Compute gradient from all camera views
+        for (int ci = 0; ci < poses.length; ci++) {
+          final reproj = _reprojectPoint(point.position, poses[ci]);
+          // Check if reprojection is within image bounds
+          if (reproj.x < 0 || reproj.x >= _imageWidth || reproj.y < 0 || reproj.y >= _imageHeight) continue;
+
+          // Find observed feature position for this point in this camera
+          // Use closest feature within 5 pixels as observation
+          double? obsX, obsY;
+          if (ci < features.length) {
+            double bestDist = 5.0;
+            for (final feat in features[ci]) {
+              final dx = feat.x - reproj.x;
+              final dy = feat.y - reproj.y;
+              final dist = math.sqrt(dx * dx + dy * dy);
+              if (dist < bestDist) {
+                bestDist = dist;
+                obsX = feat.x;
+                obsY = feat.y;
+              }
+            }
+          }
+
+          if (obsX == null || obsY == null) continue;
+
+          final errX = reproj.x - obsX;
+          final errY = reproj.y - obsY;
+          totalError += errX * errX + errY * errY;
+          errorCount++;
+
+          // Numerical gradient: shift point slightly in each axis
+          const delta = 0.001;
+          for (int axis = 0; axis < 3; axis++) {
+            final shifted = point.position.clone();
+            shifted.storage[axis] += delta;
+            final reprojShifted = _reprojectPoint(shifted, poses[ci]);
+            final errXs = reprojShifted.x - obsX;
+            final errYs = reprojShifted.y - obsY;
+            final errorBefore = errX * errX + errY * errY;
+            final errorAfter = errXs * errXs + errYs * errYs;
+            final grad = (errorAfter - errorBefore) / delta;
+            if (axis == 0) gradX += grad;
+            else if (axis == 1) gradY += grad;
+            else gradZ += grad;
+          }
+          views++;
+        }
+
+        if (views > 0) {
+          // Gradient descent step
+          points[pi] = Point3D(
+            position: Vector3(
+              point.position.x - stepSize * gradX / views,
+              point.position.y - stepSize * gradY / views,
+              point.position.z - stepSize * gradZ / views,
+            ),
+            color: point.color,
+            confidence: point.confidence,
+            normal: point.normal,
+          );
+        }
+      }
+
+      final rms = errorCount > 0 ? math.sqrt(totalError / errorCount) : 0.0;
+      debugPrint('   BA iter ${iter + 1}: RMS reprojection error = ${rms.toStringAsFixed(2)} px');
+    }
   }
 
   /// Get color from image at pixel coordinates
@@ -1499,9 +1667,9 @@ class ReconstructionService {
           final x = reproj.x.toInt();
           final y = reproj.y.toInt();
 
-          // Scale to image size (images are 512x512)
-          final imgX = (x * 512 / 1024).toInt().clamp(0, image.width - 1);
-          final imgY = (y * 512 / 1024).toInt().clamp(0, image.height - 1);
+          // Scale to color image size
+          final imgX = (x * image.width / _imageWidth).toInt().clamp(0, image.width - 1);
+          final imgY = (y * image.height / _imageHeight).toInt().clamp(0, image.height - 1);
 
           if (imgX >= 0 && imgX < image.width && imgY >= 0 && imgY < image.height) {
             final pixel = image.getPixel(imgX, imgY);
