@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/settings_service.dart';
 import '../services/backup_service.dart';
 import '../services/biometric_service.dart';
+import '../services/coin_identification_service.dart';
+import '../services/gemini_coin_service.dart';
 import '../utils/app_styles.dart';
 
 /// Settings Screen - Simplified for essential features
@@ -16,11 +19,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _settingsService = SettingsService();
   final _backupService = BackupService();
   final _biometricService = BiometricService();
+  final _coinService = CoinIdentificationService();
+  final _geminiService = GeminiCoinService();
   bool _isLoading = true;
   bool _biometricSupported = false;
   bool _biometricEnrolled = false;
   bool _biometricEnabled = false;
   String _biometricType = 'Biometric';
+  bool _hasNumistaKey = false;
+  bool _hasGeminiKey = false;
 
   @override
   void initState() {
@@ -31,6 +38,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     await _settingsService.initialize();
     await _loadBiometricState();
+    _hasNumistaKey = _coinService.hasApiKey;
+    await _geminiService.initialize();
+    _hasGeminiKey = _geminiService.hasApiKey;
     if (mounted) {
       setState(() => _isLoading = false);
     }
@@ -107,6 +117,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ]),
                     const SizedBox(height: AppSpacing.xxl),
 
+                    // === COIN RECOGNITION ===
+                    _buildSection('Coin Recognition', Icons.monetization_on, [
+                      _buildGeminiApiTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildNumistaApiTile(),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
                     // === DISPLAY ===
                     _buildSection('Display', Icons.display_settings, [
                       _buildSwitchTile(
@@ -116,6 +134,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Icons.location_on,
                         (value) => _updateSetting('showGpsCoordinates', value),
                       ),
+                      _buildSwitchTile(
+                        'Night Vision Mode',
+                        'Red filter to preserve night vision at sites',
+                        _settingsService.settings.nightMode,
+                        Icons.nightlight_round,
+                        (value) => _updateSetting('nightMode', value),
+                      ),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
+                    // === SENSOR ===
+                    _buildSection('Sensor Connection', Icons.bluetooth, [
+                      _buildSensorLockTile(),
                     ]),
                     const SizedBox(height: AppSpacing.xxxl),
 
@@ -206,6 +237,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildSensorLockTile() {
+    final lockedMac = _settingsService.settings.lockedSensorMac;
+    final isLocked = lockedMac.isNotEmpty;
+
+    return ListTile(
+      leading: Icon(
+        isLocked ? Icons.lock : Icons.lock_open,
+        color: isLocked ? AppColors.accent : AppColors.textSecondary,
+        size: AppSizes.iconMedium,
+      ),
+      title: Text(
+        isLocked ? 'Locked to: $lockedMac' : 'Not locked (connects to any sensor)',
+        style: AppTextStyles.body,
+      ),
+      subtitle: Text(
+        isLocked
+            ? 'Only connects to this device'
+            : 'Tap to lock to currently connected sensor',
+        style: AppTextStyles.subtitleSmall,
+      ),
+      trailing: isLocked
+          ? TextButton(
+              onPressed: () {
+                _updateSetting('lockedSensorMac', '');
+              },
+              child: const Text('Unlock'),
+            )
+          : TextButton(
+              onPressed: () {
+                // Try to find currently connected device
+                try {
+                  final devices = FlutterBluePlus.connectedDevices;
+                  if (devices.isNotEmpty) {
+                    final mac = devices.first.remoteId.str;
+                    _updateSetting('lockedSensorMac', mac);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Locked to $mac'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('No sensor connected. Connect first, then lock.'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Lock'),
+            ),
+    );
+  }
+
   Widget _buildBackupTile() {
     return ListTile(
       leading: Icon(Icons.backup, color: AppColors.textSecondary, size: AppSizes.iconMedium),
@@ -284,6 +378,212 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildGeminiApiTile() {
+    return ListTile(
+      leading: Icon(
+        _hasGeminiKey ? Icons.check_circle : Icons.auto_awesome,
+        color: _hasGeminiKey ? AppColors.success : AppColors.textSecondary,
+        size: AppSizes.iconMedium,
+      ),
+      title: Text('Gemini AI Key', style: AppTextStyles.body),
+      subtitle: Text(
+        _hasGeminiKey ? 'Connected - AI coin identification' : 'Add key for smart recognition',
+        style: AppTextStyles.subtitleSmall.copyWith(
+          color: _hasGeminiKey ? AppColors.success : AppColors.textSecondary,
+        ),
+      ),
+      trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      onTap: _showGeminiApiDialog,
+    );
+  }
+
+  void _showGeminiApiDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.primaryDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
+        title: Text('Gemini AI API Key', style: AppTextStyles.h3),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Get a FREE API key from Google AI Studio to enable AI-powered coin identification.',
+              style: AppTextStyles.subtitle,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              style: AppTextStyles.body,
+              decoration: InputDecoration(
+                labelText: 'API Key',
+                labelStyle: AppTextStyles.subtitleSmall,
+                hintText: 'Enter your Gemini API key',
+                hintStyle: AppTextStyles.caption,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
+                  borderSide: BorderSide(color: AppColors.cardBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
+                  borderSide: BorderSide(color: AppColors.accent),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Free: 15 requests/minute\nGet key: aistudio.google.com/apikey',
+              style: AppTextStyles.caption.copyWith(color: AppColors.accent),
+            ),
+          ],
+        ),
+        actions: [
+          if (_hasGeminiKey)
+            TextButton(
+              onPressed: () async {
+                await _geminiService.clearApiKey();
+                Navigator.pop(context);
+                setState(() => _hasGeminiKey = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('API key removed')),
+                );
+              },
+              child: Text('Remove', style: AppTextStyles.button.copyWith(color: AppColors.error)),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: AppTextStyles.button.copyWith(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final key = controller.text.trim();
+              if (key.isNotEmpty) {
+                await _geminiService.setApiKey(key);
+                Navigator.pop(context);
+                setState(() => _hasGeminiKey = true);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('API key saved! AI coin recognition enabled.'),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              }
+            },
+            child: Text('Save', style: AppTextStyles.button.copyWith(color: AppColors.accent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNumistaApiTile() {
+    return ListTile(
+      leading: Icon(
+        _hasNumistaKey ? Icons.check_circle : Icons.key,
+        color: _hasNumistaKey ? AppColors.success : AppColors.textSecondary,
+        size: AppSizes.iconMedium,
+      ),
+      title: Text('Numista API Key', style: AppTextStyles.body),
+      subtitle: Text(
+        _hasNumistaKey ? 'Connected - Real coin database' : 'Add key for better recognition',
+        style: AppTextStyles.subtitleSmall.copyWith(
+          color: _hasNumistaKey ? AppColors.success : AppColors.textSecondary,
+        ),
+      ),
+      trailing: Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      onTap: _showNumistaApiDialog,
+    );
+  }
+
+  void _showNumistaApiDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.primaryDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
+        title: Text('Numista API Key', style: AppTextStyles.h3),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Get a FREE API key from numista.com to enable real coin database lookups.',
+              style: AppTextStyles.subtitle,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              style: AppTextStyles.body,
+              decoration: InputDecoration(
+                labelText: 'API Key',
+                labelStyle: AppTextStyles.subtitleSmall,
+                hintText: 'Enter your Numista API key',
+                hintStyle: AppTextStyles.caption,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
+                  borderSide: BorderSide(color: AppColors.cardBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadiusSmall),
+                  borderSide: BorderSide(color: AppColors.accent),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Free: 2,000 requests/month\nGet key: numista.com/api',
+              style: AppTextStyles.caption.copyWith(color: AppColors.accent),
+            ),
+          ],
+        ),
+        actions: [
+          if (_hasNumistaKey)
+            TextButton(
+              onPressed: () {
+                _coinService.clearApiKey();
+                Navigator.pop(context);
+                setState(() => _hasNumistaKey = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('API key removed')),
+                );
+              },
+              child: Text('Remove', style: AppTextStyles.button.copyWith(color: AppColors.error)),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: AppTextStyles.button.copyWith(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              final key = controller.text.trim();
+              if (key.isNotEmpty) {
+                _coinService.setApiKey(key);
+                Navigator.pop(context);
+                setState(() => _hasNumistaKey = true);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('API key saved! Coin recognition enhanced.'),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              }
+            },
+            child: Text('Save', style: AppTextStyles.button.copyWith(color: AppColors.accent)),
+          ),
+        ],
+      ),
     );
   }
 

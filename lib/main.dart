@@ -115,6 +115,20 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: _settingsService.getThemeData(MediaQuery.platformBrightnessOf(context)),
+      builder: (context, child) {
+        if (_settingsService.settings.nightMode) {
+          return ColorFiltered(
+            colorFilter: const ColorFilter.matrix(<double>[
+              0.8, 0,   0,   0, 0,   // Red channel preserved
+              0,   0.15, 0,   0, 0,   // Green greatly reduced
+              0,   0,   0.15, 0, 0,   // Blue greatly reduced
+              0,   0,   0,   1, 0,   // Alpha unchanged
+            ]),
+            child: child,
+          );
+        }
+        return child ?? const SizedBox.shrink();
+      },
       home: StreamBuilder<User?>(
         stream: AuthService.authStateChanges,
         builder: (context, snapshot) {
@@ -8079,30 +8093,35 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
 
     // FIRST: Check if device is already connected
     try {
+      final lockedMac = SettingsService().settings.lockedSensorMac;
       final connectedDevices = FlutterBluePlus.connectedDevices;
       for (final device in connectedDevices) {
-        final name = device.platformName.toLowerCase();
-        if (name.contains('ancientvision') || name.contains('ancient') ||
-            name.contains('m5stick') || name.contains('m5-') || name.startsWith('m5')) {
-          debugPrint('>>> ALREADY CONNECTED: ${device.platformName} - subscribing to data...');
-          setState(() {
-            _connectedDevice = device;
-            _connectionStatus = 'Connected';
-            _isConnecting = false;
-            _isScanning = false;
-          });
-          _startKeepAliveMonitor();
-          // Request larger MTU for already-connected devices too
-          try {
-            final mtu = await device.requestMtu(512);
-            debugPrint('>>> MTU negotiated (already connected): $mtu');
-          } catch (e) {
-            debugPrint('>>> MTU request failed (non-fatal): $e');
-          }
-          await Future.delayed(const Duration(milliseconds: 500));
-          await _discoverAndSubscribe(device);
-          return;
+        // If MAC is locked, only connect to that exact device
+        if (lockedMac.isNotEmpty) {
+          if (device.remoteId.str.toLowerCase() != lockedMac.toLowerCase()) continue;
+        } else {
+          final name = device.platformName.toLowerCase();
+          if (!(name.contains('ancientvision') || name.contains('ancient') ||
+              name.contains('m5stick') || name.contains('m5-') || name.startsWith('m5'))) continue;
         }
+        debugPrint('>>> ALREADY CONNECTED: ${device.platformName} - subscribing to data...');
+        setState(() {
+          _connectedDevice = device;
+          _connectionStatus = 'Connected';
+          _isConnecting = false;
+          _isScanning = false;
+        });
+        _startKeepAliveMonitor();
+        // Request larger MTU for already-connected devices too
+        try {
+          final mtu = await device.requestMtu(512);
+          debugPrint('>>> MTU negotiated (already connected): $mtu');
+        } catch (e) {
+          debugPrint('>>> MTU request failed (non-fatal): $e');
+        }
+        await Future.delayed(const Duration(milliseconds: 500));
+        await _discoverAndSubscribe(device);
+        return;
       }
     } catch (e) {
       debugPrint('Error checking connected devices: $e');
@@ -8127,6 +8146,7 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
       );
 
       int devicesFound = 0;
+      final lockedMac = SettingsService().settings.lockedSensorMac;
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
         for (ScanResult r in results) {
           final name = r.device.platformName;
@@ -8138,14 +8158,21 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
             devicesFound++;
           }
 
-          // Match our device by name (case insensitive)
-          // Also match "M5" prefix for M5Stack devices
-          if (nameLower.contains('ancientvision') ||
-              nameLower.contains('ancient') ||
-              nameLower.contains('m5stick') ||
-              nameLower.contains('m5-') ||
-              nameLower.startsWith('m5')) {
-            debugPrint('>>> MATCHED DEVICE: $name - connecting...');
+          // If MAC is locked, only connect to that exact device
+          bool matched = false;
+          if (lockedMac.isNotEmpty) {
+            matched = r.device.remoteId.str.toLowerCase() == lockedMac.toLowerCase();
+          } else {
+            // Match our device by name (case insensitive)
+            matched = nameLower.contains('ancientvision') ||
+                nameLower.contains('ancient') ||
+                nameLower.contains('m5stick') ||
+                nameLower.contains('m5-') ||
+                nameLower.startsWith('m5');
+          }
+
+          if (matched) {
+            debugPrint('>>> MATCHED DEVICE: $name (${r.device.remoteId}) - connecting...');
             FlutterBluePlus.stopScan();
             _connectToDevice(r.device);
             return; // Exit the listener
@@ -8561,6 +8588,16 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
 
   Future<void> _saveAlertToFirebase(String level, String message) async {
     try {
+      // Get last known GPS position (non-blocking)
+      double? lat, lng;
+      try {
+        final pos = await Geolocator.getLastKnownPosition();
+        if (pos != null) {
+          lat = pos.latitude;
+          lng = pos.longitude;
+        }
+      } catch (_) {}
+
       await FirebaseFirestore.instance.collection('safety_alerts').add({
         'level': level,
         'message': message,
@@ -8573,9 +8610,13 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
         'rms': _rms,
         'freq': _dominantFreq,
         'crest': _crestFactor,
+        'kurtosis': _kurtosis,
+        'staLta': _staLtaRatio,
         'hazardType': _hazardType,
         'deviceName': _isSimulating ? 'Simulator' : (_connectedDevice?.platformName ?? 'Unknown'),
         'timestamp': FieldValue.serverTimestamp(),
+        if (lat != null) 'latitude': lat,
+        if (lng != null) 'longitude': lng,
       });
     } catch (e) {
       debugPrint('Error saving alert: $e');

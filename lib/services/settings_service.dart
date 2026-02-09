@@ -99,6 +99,12 @@ class AppSettings {
   final bool highQualityPreview;
   final int maxPhotosPerScan;
 
+  // Sensor
+  final String lockedSensorMac;
+
+  // Display extras
+  final bool nightMode;
+
   AppSettings({
     this.themeMode = AppThemeMode.dark,
     this.accentColorIndex = 0, // Gold by default (main app color)
@@ -123,6 +129,8 @@ class AppSettings {
     this.useCloudProcessing = true,
     this.highQualityPreview = false,
     this.maxPhotosPerScan = 50,
+    this.lockedSensorMac = '',
+    this.nightMode = false,
   });
 
   Color get accentColor {
@@ -156,6 +164,8 @@ class AppSettings {
     bool? useCloudProcessing,
     bool? highQualityPreview,
     int? maxPhotosPerScan,
+    String? lockedSensorMac,
+    bool? nightMode,
   }) =>
       AppSettings(
         themeMode: themeMode ?? this.themeMode,
@@ -181,6 +191,8 @@ class AppSettings {
         useCloudProcessing: useCloudProcessing ?? this.useCloudProcessing,
         highQualityPreview: highQualityPreview ?? this.highQualityPreview,
         maxPhotosPerScan: maxPhotosPerScan ?? this.maxPhotosPerScan,
+        lockedSensorMac: lockedSensorMac ?? this.lockedSensorMac,
+        nightMode: nightMode ?? this.nightMode,
       );
 
   Map<String, dynamic> toJson() => {
@@ -207,6 +219,8 @@ class AppSettings {
         'useCloudProcessing': useCloudProcessing,
         'highQualityPreview': highQualityPreview,
         'maxPhotosPerScan': maxPhotosPerScan,
+        'lockedSensorMac': lockedSensorMac,
+        'nightMode': nightMode,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -242,6 +256,8 @@ class AppSettings {
         useCloudProcessing: json['useCloudProcessing'] ?? true,
         highQualityPreview: json['highQualityPreview'] ?? false,
         maxPhotosPerScan: json['maxPhotosPerScan'] ?? 50,
+        lockedSensorMac: json['lockedSensorMac'] ?? '',
+        nightMode: json['nightMode'] ?? false,
       );
 }
 
@@ -380,6 +396,12 @@ class SettingsService extends ChangeNotifier {
         break;
       case 'maxPhotosPerScan':
         _settings = _settings.copyWith(maxPhotosPerScan: value as int);
+        break;
+      case 'lockedSensorMac':
+        _settings = _settings.copyWith(lockedSensorMac: value as String);
+        break;
+      case 'nightMode':
+        _settings = _settings.copyWith(nightMode: value as bool);
         break;
     }
 
