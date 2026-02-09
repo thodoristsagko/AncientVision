@@ -40,7 +40,7 @@ import 'screens/field_journal_screen.dart';
 import 'screens/quick_capture_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
-// import 'screens/qr_scanner_screen.dart'; // Removed - QR scanner hidden
+import 'screens/qr_scanner_screen.dart';
 import 'screens/ai_recognition_screen.dart';
 import 'screens/vibration_event_log_screen.dart';
 import 'services/export_service.dart';
@@ -1957,6 +1957,28 @@ class _DashboardHomeViewState extends State<_DashboardHomeView> {
                               ),
                             ),
                         ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // QR Scanner button
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+                      );
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.qr_code_scanner, color: Colors.white, size: 24),
                       ),
                     ),
                   ),
@@ -11662,11 +11684,16 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
               setState(() {
                 _captures.add(PhotogrammetryCapture(
-                  image: xFile,
-                  angle: (i * 360.0 / targetFrames),
-                  elevation: 0,
-                  quality: quality,
-                  timestamp: DateTime.now(),
+                  file: xFile,
+                  angle: CaptureAngle(
+                    id: _captures.length,
+                    name: 'Frame ${i + 1}',
+                    angle: (i * 360.0 / targetFrames),
+                    elevation: 0,
+                    icon: Icons.videocam,
+                  ),
+                  capturedAt: DateTime.now(),
+                  qualityScore: quality,
                 ));
                 _extractedFrameCount = ++extracted;
                 if (_currentAngleIndex < _captureAngles.length - 1) {
