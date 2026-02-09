@@ -42,6 +42,7 @@ import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
 // import 'screens/qr_scanner_screen.dart'; // Removed - QR scanner hidden
 import 'screens/ai_recognition_screen.dart';
+import 'screens/vibration_event_log_screen.dart';
 import 'services/export_service.dart';
 import 'services/biometric_service.dart';
 import 'services/background_service.dart';
@@ -8586,6 +8587,49 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
     widget.onAlert(message, level);
   }
 
+  String _generateDamageAssessment() {
+    final ppv = _ppvSmoothed > 0 ? _ppvSmoothed : _ppv;
+    if (ppv <= 0 && _rms <= 0) return '';
+
+    final parts = <String>[];
+
+    // DIN 4150-3 heritage structure assessment based on PPV + frequency
+    if (ppv > 0) {
+      final freqLimit = _dominantFreq <= 10 ? 3.0 : (_dominantFreq <= 50 ? 5.0 : 8.0);
+      final ratio = ppv / freqLimit;
+      if (ratio >= 1.0) {
+        parts.add('PPV exceeds DIN 4150-3 heritage limit (${freqLimit.toStringAsFixed(0)} mm/s)');
+      } else if (ratio >= 0.7) {
+        parts.add('PPV approaching heritage limit (${(ratio * 100).toStringAsFixed(0)}%)');
+      } else if (ratio >= 0.4) {
+        parts.add('Moderate vibration — monitor closely');
+      } else {
+        parts.add('Vibration within safe limits');
+      }
+    }
+
+    // Kurtosis assessment
+    if (_kurtosis > 6) {
+      parts.add('Severe impulsive loading detected (kurtosis ${_kurtosis.toStringAsFixed(1)})');
+    } else if (_kurtosis > 3) {
+      parts.add('Impact-type vibration present');
+    }
+
+    // STA/LTA assessment
+    if (_staLtaRatio > 4.0) {
+      parts.add('Seismic event trigger active (STA/LTA ${_staLtaRatio.toStringAsFixed(1)})');
+    } else if (_staLtaRatio > 2.0) {
+      parts.add('Elevated seismic activity');
+    }
+
+    // Crest factor
+    if (_crestFactor > 5) {
+      parts.add('High crest factor — transient impacts');
+    }
+
+    return parts.join('. ');
+  }
+
   Future<void> _saveAlertToFirebase(String level, String message) async {
     try {
       // Get last known GPS position (non-blocking)
@@ -8598,6 +8642,7 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
         }
       } catch (_) {}
 
+      final assessment = _generateDamageAssessment();
       await FirebaseFirestore.instance.collection('safety_alerts').add({
         'level': level,
         'message': message,
@@ -8613,6 +8658,7 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
         'kurtosis': _kurtosis,
         'staLta': _staLtaRatio,
         'hazardType': _hazardType,
+        'assessment': assessment,
         'deviceName': _isSimulating ? 'Simulator' : (_connectedDevice?.platformName ?? 'Unknown'),
         'timestamp': FieldValue.serverTimestamp(),
         if (lat != null) 'latitude': lat,
@@ -9128,6 +9174,13 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
                 hazardLabel: _getHazardTypeLabel(),
                 ppvColor: _getPPVColor(),
                 isConnected: isConnected,
+                damageAssessment: _generateDamageAssessment(),
+                onHistoryTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const VibrationEventLogScreen()),
+                  );
+                },
               ),
               const SizedBox(height: 12),
 
@@ -9812,15 +9865,18 @@ class _VibrationAnalysisCard extends StatelessWidget {
   final double ppv, rms, dominantFreq, crestFactor;
   final double ppvSmoothed, ppvPeakHold, kurtosis, staLtaRatio, centroid;
   final String hazardType, hazardLabel;
+  final String damageAssessment;
   final Color ppvColor;
   final bool isConnected;
+  final VoidCallback? onHistoryTap;
 
   const _VibrationAnalysisCard({
     required this.ppv, required this.rms, required this.dominantFreq,
     required this.crestFactor, required this.hazardType, required this.hazardLabel,
     required this.ppvColor, required this.isConnected,
     this.ppvSmoothed = 0, this.ppvPeakHold = 0, this.kurtosis = 0,
-    this.staLtaRatio = 0, this.centroid = 0, super.key,
+    this.staLtaRatio = 0, this.centroid = 0, this.damageAssessment = '',
+    this.onHistoryTap, super.key,
   });
 
   String _getFreqBandLabel() {
@@ -9892,6 +9948,13 @@ class _VibrationAnalysisCard extends StatelessWidget {
                       style: TextStyle(color: ppvColor, fontSize: 10, fontWeight: FontWeight.w700),
                     ),
                   ),
+                  if (onHistoryTap != null) ...[
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: onHistoryTap,
+                      child: Icon(Icons.history, color: Colors.white.withAlpha(180), size: 20),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 4),
@@ -9971,6 +10034,19 @@ class _VibrationAnalysisCard extends StatelessWidget {
                     ],
                   ),
                 ),
+
+                // Damage assessment
+                if (damageAssessment.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    damageAssessment,
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(160),
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
