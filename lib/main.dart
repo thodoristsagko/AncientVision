@@ -45,6 +45,7 @@ import 'services/export_service.dart';
 import 'services/biometric_service.dart';
 import 'services/background_service.dart';
 import 'services/settings_service.dart';
+import 'services/vibration_anomaly_service.dart';
 import 'widgets/offline_indicator.dart';
 
 // ============================================================
@@ -1536,39 +1537,135 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
 
-  Widget _buildBody() {
-    switch (_currentIndex) {
-      case 0:
-        return const _DashboardHomeView();
-      case 1:
-        return const _FindingsView();
-      case 2:
-        return const _ToolsView();
-      case 3:
-        return const _SafetyView();
-      default:
-        return const _DashboardHomeView();
+  // Global mute state (shared across all tabs)
+  bool _isMuted = false;
+
+  // Full-screen alert state (shown on top of all tabs)
+  bool _showFullScreenAlert = false;
+  String _fullScreenAlertMessage = '';
+  String _fullScreenAlertLevel = 'warning';
+
+  // Audio/voice for alerts
+  late FlutterTts _tts;
+  final AudioPlayer _alarmPlayer = AudioPlayer();
+
+  @override
+  void initState() {
+    super.initState();
+    _tts = FlutterTts();
+    _tts.setLanguage('en-US');
+    _tts.setSpeechRate(0.5);
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    _alarmPlayer.stop();
+    _alarmPlayer.dispose();
+    super.dispose();
+  }
+
+  void _toggleMute() {
+    setState(() {
+      _isMuted = !_isMuted;
+      if (_isMuted) {
+        _alarmPlayer.stop();
+        _tts.stop();
+        // Also dismiss any active full-screen alert when muting
+        _showFullScreenAlert = false;
+      }
+    });
+  }
+
+  void _triggerFullScreenAlert(String message, String level) async {
+    if (!mounted) return;
+    if (_isMuted) return;
+
+    setState(() {
+      _showFullScreenAlert = true;
+      _fullScreenAlertMessage = message;
+      _fullScreenAlertLevel = level;
+    });
+
+    // Haptic feedback
+    try {
+      HapticFeedback.heavyImpact();
+    } catch (e) {
+      debugPrint('Haptic error: $e');
     }
+
+    // Play alarm sound
+    try {
+      await _alarmPlayer.play(AssetSource('audio/alarm.wav'));
+    } catch (e) {
+      debugPrint('Could not play alarm: $e');
+    }
+
+    // Voice alert
+    try {
+      String voiceMessage = level == 'critical'
+          ? 'Critical alert! $message'
+          : 'Warning! $message';
+      await _tts.speak(voiceMessage);
+    } catch (e) {
+      debugPrint('TTS error: $e');
+    }
+  }
+
+  void _dismissFullScreenAlert() {
+    _alarmPlayer.stop();
+    setState(() {
+      _showFullScreenAlert = false;
+    });
+  }
+
+  Widget _buildBody() {
+    return IndexedStack(
+      index: _currentIndex,
+      children: [
+        const _DashboardHomeView(),
+        const _FindingsView(),
+        const _ToolsView(),
+        _SafetyView(
+          isMuted: _isMuted,
+          onToggleMute: _toggleMute,
+          onAlert: _triggerFullScreenAlert,
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return OfflineIndicator(
-      child: Scaffold(
-        extendBody: true,
-        backgroundColor: Colors.transparent,
-        body: _buildBody(),
-        bottomNavigationBar: SafeArea(
-          minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: _GlassBottomNavBar(
-            currentIndex: _currentIndex,
-            onItemSelected: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
+      child: Stack(
+        children: [
+          Scaffold(
+            extendBody: true,
+            backgroundColor: Colors.transparent,
+            body: _buildBody(),
+            bottomNavigationBar: SafeArea(
+              minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _GlassBottomNavBar(
+                currentIndex: _currentIndex,
+                isMuted: _isMuted,
+                onToggleMute: _toggleMute,
+                onItemSelected: (index) {
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                },
+              ),
+            ),
           ),
-        ),
+          // Full-screen alert overlay on top of everything
+          if (_showFullScreenAlert)
+            _FullScreenAlertOverlay(
+              message: _fullScreenAlertMessage,
+              level: _fullScreenAlertLevel,
+              onDismiss: _dismissFullScreenAlert,
+            ),
+        ],
       ),
     );
   }
@@ -2466,9 +2563,9 @@ class _QuickActionsRow extends StatelessWidget {
       children: [
         Expanded(
           child: _GlassActionButton(
-            icon: Icons.auto_awesome_rounded,
-            title: 'AI Recognition',
-            subtitle: 'ML Kit AI',
+            icon: Icons.monetization_on_rounded,
+            title: 'Coin AI',
+            subtitle: 'Gemini AI',
             onTap: () async {
               final result = await Navigator.push<Map<String, dynamic>>(
                 context,
@@ -2720,7 +2817,7 @@ class _FindingRow extends StatelessWidget {
 /// Source type for findings
 enum FindingSource {
   manual('Manual Entry', Icons.edit_note, Color(0xFFFFC107)),
-  photo('Photo Capture', Icons.camera_alt, Color(0xFF4CAF50)),
+  photo('Coin Recognition', Icons.auto_awesome, Color(0xFFFF9800)),
   quick('Quick Capture', Icons.flash_on, Color(0xFF2196F3));
 
   final String label;
@@ -3689,19 +3786,8 @@ class _FindingsViewState extends State<_FindingsView> {
                 const SizedBox(height: 12),
 
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Expanded(
-                      child: Text(
-                        _filteredFindings.isEmpty && _searchController.text.isNotEmpty
-                            ? 'No results found'
-                            : '${_filteredFindings.length} findings${_selectedSource != null ? ' (${_selectedSource!.label})' : ''}',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.75),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
                   // Batch Export button
                   if (AuthService.currentUser != null && _filteredFindings.isNotEmpty)
                     GestureDetector(
@@ -3776,14 +3862,13 @@ class _FindingsViewState extends State<_FindingsView> {
                         ),
                       ),
                     ),
-                  // AI Recognition button
+                  // Coin Recognition button
                   if (AuthService.currentUser != null && !_isSelectionMode)
                     GestureDetector(
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('AI Recognition coming soon'),
-                          ),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
                         );
                       },
                       child: Container(
@@ -3803,7 +3888,7 @@ class _FindingsViewState extends State<_FindingsView> {
                             ),
                             SizedBox(width: 4),
                             Text(
-                              'AI',
+                              'Coin Recognition',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
@@ -5099,7 +5184,7 @@ class _ToolsView extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 12),
-                      // Manual Entry & Photo Capture - Grid (QR Scanner removed)
+                      // Manual Entry & Coin Recognition - Grid
                       _buildToolGrid(context, [
                         _ToolCard(
                           icon: Icons.edit_note_rounded,
@@ -5112,27 +5197,9 @@ class _ToolsView extends StatelessWidget {
                           ),
                         ),
                         _ToolCard(
-                          icon: Icons.camera_alt_rounded,
-                          title: 'Photo Capture',
-                          description: 'High-quality photos',
-                          color: const Color(0xFF9C27B0),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
-                          ),
-                        ),
-                      ]),
-                      const SizedBox(height: 20),
-
-                      // === AI TOOLS ===
-                      _buildCategoryHeader('AI & Analysis'),
-                      const SizedBox(height: 12),
-                      _buildToolGrid(context, [
-                        _ToolCard(
-                          icon: Icons.monetization_on_rounded,
-                          title: 'Coin Recognition',
-                          description: 'Identify coins - ancient & modern',
-                          badge: 'NEW',
+                          icon: Icons.auto_awesome_rounded,
+                          title: 'Coin AI',
+                          description: 'Gemini AI identification',
                           color: const Color(0xFFFF9800),
                           onTap: () => Navigator.push(
                             context,
@@ -5444,7 +5511,7 @@ class _ToolsView extends StatelessWidget {
         const SizedBox(height: 12),
         _buildLockedCard('Manual Entry', Icons.edit_note_rounded),
         const SizedBox(height: 12),
-        _buildLockedCard('AI Recognition', Icons.auto_awesome_rounded),
+        _buildLockedCard('Coin Recognition', Icons.auto_awesome_rounded),
         const SizedBox(height: 24),
         Center(
           child: GestureDetector(
@@ -7886,7 +7953,16 @@ const String _bleMoistureCharUUID = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
 const String _bleAlertCharUUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa";
 
 class _SafetyView extends StatefulWidget {
-  const _SafetyView({super.key});
+  final bool isMuted;
+  final VoidCallback onToggleMute;
+  final void Function(String message, String level) onAlert;
+
+  const _SafetyView({
+    required this.isMuted,
+    required this.onToggleMute,
+    required this.onAlert,
+    super.key,
+  });
 
   @override
   State<_SafetyView> createState() => _SafetyViewState();
@@ -7909,6 +7985,37 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
   String _alertMessage = '';
   String _lastUpdate = '--:--';
 
+  // New v2.0 vibration analysis fields from firmware
+  double _ppv = 0.0;           // Peak Particle Velocity (mm/s)
+  double _rms = 0.0;           // RMS acceleration (g)
+  double _dominantFreq = 0.0;  // Dominant frequency (Hz)
+  double _crestFactor = 0.0;   // Crest factor (Peak/RMS)
+  String _hazardType = 'none'; // Hazard classification type
+
+  // v3.0 fields
+  double _centroid = 0.0;      // Spectral centroid (Hz)
+  double _kurtosis = 0.0;      // Excess kurtosis
+  double _staLtaRatio = 0.0;   // STA/LTA ratio
+  double _ppvSmoothed = 0.0;   // EMA smoothed PPV
+  double _ppvPeakHold = 0.0;   // 5-second peak hold
+  DateTime _ppvPeakTime = DateTime.now();
+
+  // v3.0 app-side alert hysteresis
+  int _alertPersistence = 0;
+  int _alertCooldownCount = 0;
+  String _pendingAlertLevel = 'safe';
+
+  // PPV history for trend graph (DIN 4150-3)
+  final List<Map<String, dynamic>> _ppvHistory = [];
+
+  // Vibration feature log for ML training data
+  final List<Map<String, dynamic>> _vibrationFeatureLog = [];
+
+  // ML Anomaly Detection (Tier 2)
+  final _anomalyService = VibrationAnomalyService();
+  AnomalyResult _lastAnomalyResult = const AnomalyResult(score: 0, level: AnomalyLevel.unknown, rawError: 0);
+  bool _mlModelLoaded = false;
+
   final List<_AlertData> _alerts = [];
 
   StreamSubscription? _scanSubscription;
@@ -7926,47 +8033,27 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
   Timer? _reconnectTimer;
   Timer? _keepAliveTimer;
   DateTime? _lastDataReceived;
-  bool _showFullScreenAlert = false;
-  String _fullScreenAlertMessage = '';
-  String _fullScreenAlertLevel = 'warning';
   String? _lastNotifiedAlertLevel; // Prevent duplicate notifications
-
-  // Text-to-speech for voice alerts
-  late FlutterTts _tts;
-
-  // Audio player for alarm sounds
-  final AudioPlayer _alarmPlayer = AudioPlayer();
-
-  // Mute control for alerts
-  bool _isMuted = false;
 
   @override
   void initState() {
     super.initState();
-    _initTts();
-    _initAlarm();
     _checkBluetoothAndScan();
     _startFirebaseLogging();
     _loadSensorHistory();
+    _initAnomalyModel();
   }
 
-  Future<void> _initTts() async {
-    _tts = FlutterTts();
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.6);
-    await _tts.setVolume(1.0);
-    await _tts.setPitch(1.2);
-  }
-
-  Future<void> _initAlarm() async {
-    await _alarmPlayer.setReleaseMode(ReleaseMode.loop); // Loop alarm sound
+  Future<void> _initAnomalyModel() async {
+    final success = await _anomalyService.initialize();
+    if (mounted) {
+      setState(() => _mlModelLoaded = success);
+    }
+    debugPrint('ML anomaly model loaded: $success');
   }
 
   @override
   void dispose() {
-    _tts.stop();
-    _alarmPlayer.stop();
-    _alarmPlayer.dispose();
     _scanSubscription?.cancel();
     _connectionSubscription?.cancel();
     for (var sub in _charSubscriptions) {
@@ -7989,6 +8076,39 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
       setState(() => _connectionStatus = 'Bluetooth OFF');
       return;
     }
+
+    // FIRST: Check if device is already connected
+    try {
+      final connectedDevices = FlutterBluePlus.connectedDevices;
+      for (final device in connectedDevices) {
+        final name = device.platformName.toLowerCase();
+        if (name.contains('ancientvision') || name.contains('ancient') ||
+            name.contains('m5stick') || name.contains('m5-') || name.startsWith('m5')) {
+          debugPrint('>>> ALREADY CONNECTED: ${device.platformName} - subscribing to data...');
+          setState(() {
+            _connectedDevice = device;
+            _connectionStatus = 'Connected';
+            _isConnecting = false;
+            _isScanning = false;
+          });
+          _startKeepAliveMonitor();
+          // Request larger MTU for already-connected devices too
+          try {
+            final mtu = await device.requestMtu(512);
+            debugPrint('>>> MTU negotiated (already connected): $mtu');
+          } catch (e) {
+            debugPrint('>>> MTU request failed (non-fatal): $e');
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+          await _discoverAndSubscribe(device);
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking connected devices: $e');
+    }
+
+    // If not already connected, start scanning
     _startScan();
   }
 
@@ -8088,6 +8208,17 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
           });
         }
       });
+
+      // Request larger MTU so BLE JSON payloads are not truncated
+      try {
+        final mtu = await device.requestMtu(512);
+        debugPrint('>>> MTU negotiated: $mtu');
+      } catch (e) {
+        debugPrint('>>> MTU request failed (non-fatal): $e');
+      }
+
+      // Small delay to let MTU take effect before service discovery
+      await Future.delayed(const Duration(milliseconds: 500));
 
       await _discoverAndSubscribe(device);
     } catch (e) {
@@ -8208,19 +8339,43 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
 
   Future<void> _discoverAndSubscribe(BluetoothDevice device) async {
     try {
+      debugPrint('>>> Starting service discovery for ${device.platformName}...');
       List<BluetoothService> services = await device.discoverServices();
+      debugPrint('>>> Found ${services.length} services');
+
+      bool foundService = false;
       for (BluetoothService service in services) {
-        if (service.uuid.toString().toLowerCase() == _bleSensorServiceUUID.toLowerCase()) {
+        final serviceUuid = service.uuid.toString().toLowerCase();
+        debugPrint('>>> Service: $serviceUuid');
+
+        // Check if this is our sensor service
+        if (serviceUuid.contains('4fafc201') || serviceUuid == _bleSensorServiceUUID.toLowerCase()) {
+          foundService = true;
+          debugPrint('>>> MATCHED our sensor service!');
+
           for (BluetoothCharacteristic char in service.characteristics) {
+            final charUuidStr = char.uuid.toString().toLowerCase();
+            debugPrint('>>>   Characteristic: $charUuidStr notify=${char.properties.notify} read=${char.properties.read}');
             if (char.properties.notify) {
-              await char.setNotifyValue(true);
-              final sub = char.onValueReceived.listen((value) {
-                _handleCharacteristicData(char.uuid.toString().toLowerCase(), value);
-              });
-              _charSubscriptions.add(sub);
+              try {
+                await char.setNotifyValue(true);
+                debugPrint('>>>   Notifications ENABLED for $charUuidStr');
+                final sub = char.onValueReceived.listen((value) {
+                  debugPrint('>>>   DATA RECEIVED on $charUuidStr: ${value.length} bytes');
+                  _handleCharacteristicData(charUuidStr, value);
+                });
+                _charSubscriptions.add(sub);
+                debugPrint('>>>   SUBSCRIBED to $charUuidStr');
+              } catch (e) {
+                debugPrint('>>>   FAILED to subscribe to $charUuidStr: $e');
+              }
             }
           }
         }
+      }
+
+      if (!foundService) {
+        debugPrint('>>> WARNING: Our sensor service was NOT found!');
       }
     } catch (e) {
       debugPrint('Service discovery error: $e');
@@ -8231,8 +8386,17 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
     if (!mounted) return;
 
     try {
-      final jsonStr = String.fromCharCodes(value);
+      // Strip null bytes that C snprintf may include
+      final cleaned = value.where((b) => b != 0).toList();
+      final jsonStr = String.fromCharCodes(cleaned).trim();
+      debugPrint('>>> RAW BLE DATA from $charUuid (${value.length} bytes): "$jsonStr"');
       if (jsonStr.isEmpty) return;
+
+      // Check for truncated JSON (missing closing brace)
+      if (!jsonStr.endsWith('}')) {
+        debugPrint('>>> WARNING: Truncated BLE data! MTU too small. Raw length=${value.length}');
+        return;
+      }
 
       final data = json.decode(jsonStr);
       if (data == null) return;
@@ -8240,19 +8404,107 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
       // Update last data received for keepalive monitoring
       _lastDataReceived = DateTime.now();
 
+      // Debug: log received data with full UUID
+      debugPrint('>>> PARSED BLE Data UUID=$charUuid data=$data');
+
       setState(() {
         _lastUpdate = _formatTime(DateTime.now());
 
-        if (charUuid == _bleIMUCharUUID.toLowerCase()) {
+        // Match by last part of UUID (the unique suffix)
+        // IMU: beb5483e-36e1-4688-b7f5-ea07361b26a8
+        // Moisture: beb5483e-36e1-4688-b7f5-ea07361b26a9
+        // Alert: beb5483e-36e1-4688-b7f5-ea07361b26aa
+        if (charUuid.endsWith('26a8') || charUuid.contains('b26a8')) {
+          // IMU characteristic (v2.0: includes processed vibration features)
           _accX = (data['x'] as num?)?.toDouble() ?? 0.0;
           _accY = (data['y'] as num?)?.toDouble() ?? 0.0;
           _accZ = (data['z'] as num?)?.toDouble() ?? 0.0;
           _vibration = (data['vib'] as num?)?.toDouble() ?? 0.0;
-        } else if (charUuid == _bleMoistureCharUUID.toLowerCase()) {
+
+          // Parse v2.0+ fields (backward compatible - defaults to 0 if missing)
+          _ppv = (data['ppv'] as num?)?.toDouble() ?? 0.0;
+          _rms = (data['rms'] as num?)?.toDouble() ?? 0.0;
+          _dominantFreq = (data['freq'] as num?)?.toDouble() ?? 0.0;
+          _crestFactor = (data['crest'] as num?)?.toDouble() ?? 0.0;
+
+          // Parse v3.0 fields
+          _centroid = (data['cent'] as num?)?.toDouble() ?? 0.0;
+          _kurtosis = (data['kurt'] as num?)?.toDouble() ?? 0.0;
+          _staLtaRatio = (data['stalta'] as num?)?.toDouble() ?? 0.0;
+
+          // PPV EMA smoothing (alpha = 0.3)
+          _ppvSmoothed = 0.3 * _ppv + 0.7 * _ppvSmoothed;
+
+          // 5-second peak hold
+          if (_ppv > _ppvPeakHold) {
+            _ppvPeakHold = _ppv;
+            _ppvPeakTime = DateTime.now();
+          } else if (DateTime.now().difference(_ppvPeakTime).inSeconds >= 5) {
+            _ppvPeakHold = _ppv;
+            _ppvPeakTime = DateTime.now();
+          }
+
+          // Add to legacy graph history
+          _sensorHistory.add({
+            'vibration': _vibration,
+            'moisture': _moisturePercent,
+            'timestamp': DateTime.now(),
+          });
+          if (_sensorHistory.length > 30) _sensorHistory.removeAt(0);
+
+          // Add to PPV trend history (for DIN 4150-3 graph)
+          _ppvHistory.add({
+            'ppv': _ppv,
+            'freq': _dominantFreq,
+            'crest': _crestFactor,
+            'rms': _rms,
+            'cent': _centroid,
+            'kurt': _kurtosis,
+            'stalta': _staLtaRatio,
+            'timestamp': DateTime.now(),
+          });
+          if (_ppvHistory.length > 60) _ppvHistory.removeAt(0);
+
+          // Log feature vector for ML training
+          _vibrationFeatureLog.add({
+            'rms': _rms,
+            'ppv': _ppv,
+            'freq': _dominantFreq,
+            'crest': _crestFactor,
+            'cent': _centroid,
+            'kurt': _kurtosis,
+            'stalta': _staLtaRatio,
+            'timestamp': DateTime.now().toIso8601String(),
+          });
+          if (_vibrationFeatureLog.length > 500) _vibrationFeatureLog.removeAt(0);
+
+          // Run ML anomaly detection (Tier 2) with v3.0 features
+          if (_mlModelLoaded && (_rms > 0 || _ppv > 0)) {
+            _lastAnomalyResult = _anomalyService.detect({
+              'rms': _rms,
+              'ppv': _ppv,
+              'freq': _dominantFreq,
+              'crest': _crestFactor,
+              'cent': _centroid,
+              'kurt': _kurtosis,
+              'stalta': _staLtaRatio,
+            });
+          }
+
+          debugPrint('>>> VIBRATION v3.0: PPV=${_ppv}mm/s(smooth=${_ppvSmoothed.toStringAsFixed(1)}) Freq=${_dominantFreq}Hz Crest=$_crestFactor Kurt=$_kurtosis STA/LTA=$_staLtaRatio ML=${_lastAnomalyResult.levelLabel}');
+        } else if (charUuid.endsWith('26a9') || charUuid.contains('b26a9')) {
+          // Moisture characteristic (also includes vibration for reliability)
           _moisturePercent = (data['percent'] as num?)?.toInt() ?? 0;
-        } else if (charUuid == _bleAlertCharUUID.toLowerCase()) {
+          // Read vibration from moisture characteristic (more reliable than IMU char)
+          if (data.containsKey('vib')) {
+            _vibration = (data['vib'] as num?)?.toDouble() ?? 0.0;
+            debugPrint('>>> VIBRATION FROM MOISTURE: $_vibration');
+          }
+          debugPrint('>>> MOISTURE UPDATED: $_moisturePercent%');
+        } else if (charUuid.endsWith('26aa') || charUuid.contains('b26aa')) {
           final newLevel = data['level'] as String? ?? 'safe';
           final newMessage = data['message'] as String? ?? '';
+          _hazardType = data['type'] as String? ?? 'none';
 
           if (newLevel != 'safe' && newMessage.isNotEmpty) {
             _alerts.insert(0, _AlertData(
@@ -8302,50 +8554,9 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
     }
   }
 
-  /// Trigger full-screen alert overlay with voice, haptic feedback, and alarm sound
-  void _triggerFullScreenAlert(String message, String level) async {
-    if (!mounted) return;
-
-    setState(() {
-      _showFullScreenAlert = true;
-      _fullScreenAlertMessage = message;
-      _fullScreenAlertLevel = level;
-    });
-
-    // Skip sounds if muted (still show visual alert)
-    if (_isMuted) return;
-
-    // Haptic feedback - single vibration (safer)
-    try {
-      HapticFeedback.heavyImpact();
-    } catch (e) {
-      debugPrint('Haptic error: $e');
-    }
-
-    // Play alarm sound (local asset - works offline)
-    try {
-      await _alarmPlayer.play(AssetSource('audio/alarm.wav'));
-    } catch (e) {
-      debugPrint('Could not play alarm: $e');
-    }
-
-    // Voice alert - speak the warning (wrapped in try-catch)
-    try {
-      String voiceMessage = level == 'critical'
-          ? 'Critical alert! $message'
-          : 'Warning! $message';
-      await _tts.speak(voiceMessage);
-    } catch (e) {
-      debugPrint('TTS error: $e');
-    }
-  }
-
-  /// Dismiss full-screen alert and stop alarm
-  void _dismissFullScreenAlert() {
-    _alarmPlayer.stop(); // Stop alarm sound
-    setState(() {
-      _showFullScreenAlert = false;
-    });
+  /// Trigger full-screen alert via parent Dashboard (works on all tabs)
+  void _triggerFullScreenAlert(String message, String level) {
+    widget.onAlert(message, level);
   }
 
   Future<void> _saveAlertToFirebase(String level, String message) async {
@@ -8358,6 +8569,11 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
         'accX': _accX,
         'accY': _accY,
         'accZ': _accZ,
+        'ppv': _ppv,
+        'rms': _rms,
+        'freq': _dominantFreq,
+        'crest': _crestFactor,
+        'hazardType': _hazardType,
         'deviceName': _isSimulating ? 'Simulator' : (_connectedDevice?.platformName ?? 'Unknown'),
         'timestamp': FieldValue.serverTimestamp(),
       });
@@ -8382,6 +8598,11 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
         'accX': _accX,
         'accY': _accY,
         'accZ': _accZ,
+        'ppv': _ppv,
+        'rms': _rms,
+        'freq': _dominantFreq,
+        'crest': _crestFactor,
+        'hazardType': _hazardType,
         'deviceName': _isSimulating ? 'Simulator' : (_connectedDevice?.platformName ?? 'Unknown'),
         'timestamp': FieldValue.serverTimestamp(),
       });
@@ -8391,15 +8612,21 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
   }
 
   Future<void> _loadSensorHistory() async {
+    // Don't load from Firebase if device is connected - use live BLE data instead
+    if (_connectedDevice != null) {
+      debugPrint('Device connected - using live BLE data for graph');
+      return;
+    }
+
     try {
-      // Load last 30 data points from Firebase (covers 5 minutes at 10-second intervals)
+      // Only load from Firebase when no device connected
       final snapshot = await FirebaseFirestore.instance
           .collection('sensor_data')
           .orderBy('timestamp', descending: true)
           .limit(30)
           .get();
 
-      if (mounted) {
+      if (mounted && _connectedDevice == null) {
         setState(() {
           _sensorHistory = snapshot.docs.map((doc) {
             final data = doc.data();
@@ -8408,18 +8635,9 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
               'moisture': (data['moisture'] as num?)?.toInt() ?? 0,
               'timestamp': (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
             };
-          }).toList().reversed.toList(); // Reverse to get chronological order
+          }).toList().reversed.toList();
         });
       }
-
-      // Refresh history every 10 seconds
-      Timer.periodic(const Duration(seconds: 10), (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-        _loadSensorHistory();
-      });
     } catch (e) {
       debugPrint('Error loading sensor history: $e');
     }
@@ -8444,64 +8662,178 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
         _accY = -0.1 + random.nextDouble() * 0.2;
         _accZ = 0.95 + random.nextDouble() * 0.1;
 
-        // Occasionally simulate vibration events
-        if (random.nextInt(50) == 0) {
-          _vibration = 0.3 + random.nextDouble() * 0.6; // Warning to critical
-        } else {
-          _vibration = random.nextDouble() * 0.15; // Normal range
+        // Simulate v3.0 vibration analysis
+        // Normal background: PPV 0.05-0.25 mm/s, freq 1-5 Hz (footsteps/ambient)
+        _ppv = 0.05 + random.nextDouble() * 0.2;
+        _rms = 0.001 + random.nextDouble() * 0.01;
+        _dominantFreq = 1.0 + random.nextDouble() * 4.0;
+        _crestFactor = 1.5 + random.nextDouble() * 1.5;
+        _centroid = 2.0 + random.nextDouble() * 4.0;
+        _kurtosis = -0.5 + random.nextDouble() * 2.0;
+        _staLtaRatio = 0.5 + random.nextDouble() * 1.0;
+        _vibration = _rms;
+        _hazardType = 'none';
+
+        // Occasionally simulate hazard events
+        int eventRoll = random.nextInt(80);
+        if (eventRoll == 0) {
+          // Simulate seismic event: low freq, high PPV
+          _ppv = 3.5 + random.nextDouble() * 8.0;
+          _dominantFreq = 2.0 + random.nextDouble() * 6.0;
+          _crestFactor = 2.0 + random.nextDouble() * 2.0;
+          _rms = 0.05 + random.nextDouble() * 0.3;
+          _centroid = 1.0 + random.nextDouble() * 5.0;
+          _kurtosis = 1.0 + random.nextDouble() * 3.0;
+          _staLtaRatio = 4.0 + random.nextDouble() * 6.0;
+          _vibration = _rms;
+          _hazardType = 'seismic';
+        } else if (eventRoll == 1) {
+          // Simulate machinery: mid freq, moderate PPV
+          _ppv = 2.0 + random.nextDouble() * 3.0;
+          _dominantFreq = 15.0 + random.nextDouble() * 30.0;
+          _crestFactor = 2.0 + random.nextDouble() * 1.5;
+          _rms = 0.02 + random.nextDouble() * 0.1;
+          _centroid = 15.0 + random.nextDouble() * 20.0;
+          _kurtosis = 0.5 + random.nextDouble() * 2.0;
+          _staLtaRatio = 2.0 + random.nextDouble() * 2.0;
+          _vibration = _rms;
+          _hazardType = 'machinery';
+        } else if (eventRoll == 2) {
+          // Simulate impact: high crest factor
+          _ppv = 1.5 + random.nextDouble() * 3.0;
+          _dominantFreq = 5.0 + random.nextDouble() * 20.0;
+          _crestFactor = 5.5 + random.nextDouble() * 3.0;
+          _rms = 0.01 + random.nextDouble() * 0.05;
+          _centroid = 10.0 + random.nextDouble() * 20.0;
+          _kurtosis = 5.0 + random.nextDouble() * 5.0;
+          _staLtaRatio = 6.0 + random.nextDouble() * 4.0;
+          _vibration = _rms;
+          _hazardType = 'impact';
         }
 
-        // Moisture varies slowly
-        _moisturePercent = 35 + random.nextInt(30); // 35-65% range
+        // PPV smoothing & peak hold (simulation)
+        _ppvSmoothed = 0.3 * _ppv + 0.7 * _ppvSmoothed;
+        if (_ppv > _ppvPeakHold) {
+          _ppvPeakHold = _ppv;
+          _ppvPeakTime = DateTime.now();
+        } else if (DateTime.now().difference(_ppvPeakTime).inSeconds >= 5) {
+          _ppvPeakHold = _ppv;
+          _ppvPeakTime = DateTime.now();
+        }
 
-        // Occasionally go outside safe range
+        // PPV history for trend graph
+        _ppvHistory.add({
+          'ppv': _ppv,
+          'freq': _dominantFreq,
+          'crest': _crestFactor,
+          'rms': _rms,
+          'cent': _centroid,
+          'kurt': _kurtosis,
+          'stalta': _staLtaRatio,
+          'timestamp': DateTime.now(),
+        });
+        if (_ppvHistory.length > 60) _ppvHistory.removeAt(0);
+
+        // Moisture varies slowly
+        _moisturePercent = 35 + random.nextInt(30);
         if (random.nextInt(30) == 0) {
           _moisturePercent = random.nextBool() ? 20 + random.nextInt(10) : 65 + random.nextInt(15);
         }
 
         _lastUpdate = _formatTime(DateTime.now());
 
-        // Check for alerts
-        String newLevel = 'safe';
+        // DIN 4150-3 compliant alert logic with v3.0 STA/LTA
+        String candidateLevel = 'safe';
         String newMessage = '';
 
-        if (_vibration > 0.8) {
-          newLevel = 'critical';
-          newMessage = 'EARTHQUAKE DETECTED!';
-        } else if (_vibration > 0.3) {
-          newLevel = 'warning';
-          newMessage = 'High vibration detected';
+        if (_ppv > 10.0) {
+          candidateLevel = 'critical';
+          newMessage = 'Structural damage risk - EVACUATE';
+        } else if (_ppv > 3.0 && _dominantFreq <= 10.0) {
+          candidateLevel = 'critical';
+          newMessage = 'Seismic activity detected';
+        } else if (_staLtaRatio > 4.0 && _ppv > 1.0) {
+          candidateLevel = 'critical';
+          newMessage = 'Seismic event (STA/LTA)';
+        } else if (_ppv > 3.0 && _dominantFreq > 10.0) {
+          candidateLevel = 'warning';
+          newMessage = 'Heavy machinery nearby';
+        } else if (_crestFactor > 5.0 && _ppv > 1.0) {
+          candidateLevel = 'warning';
+          newMessage = 'Impact detected';
+        } else if (_ppv > 2.5) {
+          candidateLevel = 'warning';
+          newMessage = 'Continuous vibration high';
         }
 
         if (_moisturePercent > 60) {
-          newLevel = 'critical';
+          candidateLevel = 'critical';
           newMessage = 'Soil too wet - collapse risk!';
-        } else if (_moisturePercent < 30 && newLevel == 'safe') {
-          newLevel = 'warning';
+          _hazardType = 'moisture_high';
+        } else if (_moisturePercent < 30 && candidateLevel == 'safe') {
+          candidateLevel = 'warning';
           newMessage = 'Soil too dry';
+          _hazardType = 'moisture_low';
         }
 
-        if (newLevel != 'safe' && newMessage.isNotEmpty && newLevel != _alertLevel) {
-          _alerts.insert(0, _AlertData(
-            time: _lastUpdate,
-            level: newLevel == 'critical' ? _AlertLevel.critical : _AlertLevel.warning,
-            title: newLevel == 'critical' ? 'Critical Alert' : 'Warning',
-            message: newMessage,
-          ));
-          if (_alerts.length > 10) _alerts.removeLast();
-          _saveAlertToFirebase(newLevel, newMessage);
+        // Run ML anomaly detection in simulation too (v3.0: 7 features)
+        if (_mlModelLoaded) {
+          _lastAnomalyResult = _anomalyService.detect({
+            'rms': _rms,
+            'ppv': _ppv,
+            'freq': _dominantFreq,
+            'crest': _crestFactor,
+            'cent': _centroid,
+            'kurt': _kurtosis,
+            'stalta': _staLtaRatio,
+          });
+        }
 
-          // Send notification for simulated alerts too
-          _sendAlertNotification(newLevel, newMessage);
-
-          // Show full-screen alert for critical
-          if (newLevel == 'critical') {
-            _triggerFullScreenAlert(newMessage, newLevel);
+        // App-side alert hysteresis (v3.0)
+        // 3-sample persistence to trigger, 6-sample cooldown to clear
+        if (candidateLevel != 'safe' && candidateLevel != _alertLevel) {
+          if (candidateLevel == _pendingAlertLevel) {
+            _alertPersistence++;
+          } else {
+            _pendingAlertLevel = candidateLevel;
+            _alertPersistence = 1;
+          }
+          if (_alertPersistence >= 3) {
+            // Confirmed alert - fire it
+            _alerts.insert(0, _AlertData(
+              time: _lastUpdate,
+              level: candidateLevel == 'critical' ? _AlertLevel.critical : _AlertLevel.warning,
+              title: candidateLevel == 'critical' ? 'Critical Alert' : 'Warning',
+              message: newMessage,
+            ));
+            if (_alerts.length > 10) _alerts.removeLast();
+            _saveAlertToFirebase(candidateLevel, newMessage);
+            _sendAlertNotification(candidateLevel, newMessage);
+            if (candidateLevel == 'critical') {
+              _triggerFullScreenAlert(newMessage, candidateLevel);
+            }
+            _alertLevel = candidateLevel;
+            _alertMessage = newMessage;
+            _alertPersistence = 0;
+            _alertCooldownCount = 0;
+          }
+        } else if (candidateLevel == 'safe' && _alertLevel != 'safe') {
+          _alertCooldownCount++;
+          if (_alertCooldownCount >= 6) {
+            _alertLevel = 'safe';
+            _alertMessage = '';
+            _alertCooldownCount = 0;
+            _alertPersistence = 0;
+            _pendingAlertLevel = 'safe';
+          }
+        } else {
+          _alertPersistence = 0;
+          _alertCooldownCount = 0;
+          if (candidateLevel != 'safe') {
+            _alertLevel = candidateLevel;
+            _alertMessage = newMessage;
           }
         }
-
-        _alertLevel = newLevel;
-        _alertMessage = newMessage;
       });
     });
   }
@@ -8515,9 +8847,22 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
       _accY = 0.0;
       _accZ = 0.0;
       _vibration = 0.0;
+      _ppv = 0.0;
+      _rms = 0.0;
+      _dominantFreq = 0.0;
+      _crestFactor = 0.0;
+      _centroid = 0.0;
+      _kurtosis = 0.0;
+      _staLtaRatio = 0.0;
+      _ppvSmoothed = 0.0;
+      _ppvPeakHold = 0.0;
+      _hazardType = 'none';
       _moisturePercent = 0;
       _alertLevel = 'safe';
       _alertMessage = '';
+      _alertPersistence = 0;
+      _alertCooldownCount = 0;
+      _pendingAlertLevel = 'safe';
       _lastUpdate = '--:--';
     });
   }
@@ -8535,9 +8880,39 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
   }
 
   String _getVibrationStatus() {
-    if (_vibration > 0.8) return 'CRITICAL!';
-    if (_vibration > 0.3) return 'Warning';
-    return 'Stable';
+    // DIN 4150-3 compliant status using PPV
+    if (_ppv > 10.0) return 'CRITICAL - EVACUATE';
+    if (_ppv > 3.0) return 'DIN 4150-3 EXCEEDED';
+    if (_ppv > 2.5) return 'Heritage limit';
+    if (_ppv > 0.3) return 'Perceptible';
+    // Fallback to legacy threshold if no PPV data
+    if (_ppv == 0.0 && _vibration > 0.8) return 'CRITICAL!';
+    if (_ppv == 0.0 && _vibration > 0.3) return 'Warning';
+    return 'Safe';
+  }
+
+  String _getHazardTypeLabel() {
+    switch (_hazardType) {
+      case 'seismic': return 'Seismic Activity';
+      case 'machinery': return 'Heavy Machinery';
+      case 'structural': return 'Structural Risk';
+      case 'hf_stress': return 'HF Stress';
+      case 'impact': return 'Impact';
+      case 'continuous': return 'Continuous Vib.';
+      case 'source_change': return 'Source Changed';
+      case 'moisture_low': return 'Dry Soil';
+      case 'moisture_high': return 'Wet Soil';
+      case 'test': return 'Test Alert';
+      default: return 'Normal';
+    }
+  }
+
+  Color _getPPVColor() {
+    if (_ppv > 10.0) return const Color(0xFFE53935); // Red - structural damage
+    if (_ppv > 3.0) return const Color(0xFFFF5722);  // Deep orange - DIN exceeded
+    if (_ppv > 2.5) return const Color(0xFFFF9800);  // Orange - heritage limit
+    if (_ppv > 0.3) return const Color(0xFFFFC107);  // Amber - perceptible
+    return const Color(0xFF4CAF50);                    // Green - safe
   }
 
   String _getMoistureStatus() {
@@ -8643,34 +9018,26 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Mute button - toggle alarm sounds
+                  // Mute button - uses global mute from Dashboard
                   GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _isMuted = !_isMuted;
-                        if (_isMuted) {
-                          _alarmPlayer.stop(); // Stop any playing alarm
-                          _tts.stop(); // Stop any voice alert
-                        }
-                      });
-                    },
+                    onTap: widget.onToggleMute,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: _isMuted ? Colors.grey : Colors.green.withAlpha(200),
+                        color: widget.isMuted ? Colors.grey : Colors.green.withAlpha(200),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            _isMuted ? Icons.volume_off : Icons.volume_up,
+                            widget.isMuted ? Icons.volume_off : Icons.volume_up,
                             color: Colors.white,
                             size: 14,
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _isMuted ? 'Muted' : 'Sound',
+                            widget.isMuted ? 'Muted' : 'Sound',
                             style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                         ],
@@ -8681,15 +9048,15 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
               ),
               const SizedBox(height: 16),
 
-              // STATS ROW
+              // STATS ROW - PPV (primary metric) + Moisture
               Row(
                 children: [
                   Expanded(
                     child: _SafetyStatCard(
-                      title: 'Vibration',
-                      value: '${_vibration.toStringAsFixed(3)} g',
+                      title: 'PPV (DIN 4150-3)',
+                      value: _ppv > 0 ? '${_ppv.toStringAsFixed(1)} mm/s' : '${_vibration.toStringAsFixed(3)} g',
                       status: _getVibrationStatus(),
-                      statusColor: _vibration > 0.3 ? Colors.orange : null,
+                      statusColor: _getPPVColor(),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -8703,19 +9070,52 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
-              // Live Sensors Card
+              // Vibration Analysis Card (new v2.0)
+              _VibrationAnalysisCard(
+                ppv: _ppv,
+                rms: _rms,
+                dominantFreq: _dominantFreq,
+                crestFactor: _crestFactor,
+                ppvSmoothed: _ppvSmoothed,
+                ppvPeakHold: _ppvPeakHold,
+                kurtosis: _kurtosis,
+                staLtaRatio: _staLtaRatio,
+                centroid: _centroid,
+                hazardType: _hazardType,
+                hazardLabel: _getHazardTypeLabel(),
+                ppvColor: _getPPVColor(),
+                isConnected: isConnected,
+              ),
+              const SizedBox(height: 12),
+
+              // PPV Trend Graph with DIN 4150-3 limit lines
+              _PPVTrendGraphCard(ppvHistory: _ppvHistory),
+              const SizedBox(height: 12),
+
+              // ML Anomaly Detection Indicator (Tier 2)
+              if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
+                _MLAnomalyIndicator(result: _lastAnomalyResult),
+              if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
+                const SizedBox(height: 12),
+
+              // Live Sensors Card (legacy + enhanced)
               _LiveSensorsCard(
                 accX: _accX, accY: _accY, accZ: _accZ,
                 vibration: _vibration,
                 moisturePercent: _moisturePercent,
                 lastUpdate: _lastUpdate,
                 isConnected: isConnected,
+                ppv: _ppv,
+                dominantFreq: _dominantFreq,
+                crestFactor: _crestFactor,
+                rms: _rms,
+                hazardType: _hazardType,
               ),
               const SizedBox(height: 12),
 
-              // Sensor History Graph Card
+              // Sensor History Graph Card (legacy moisture + vibration)
               _SensorHistoryGraphCard(sensorHistory: _sensorHistory),
               const SizedBox(height: 12),
 
@@ -8735,13 +9135,6 @@ class _SafetyViewState extends State<_SafetyView> with AutomaticKeepAliveClientM
         ),
       ),
     ),
-    // Full-screen alert overlay
-    if (_showFullScreenAlert)
-      _FullScreenAlertOverlay(
-        message: _fullScreenAlertMessage,
-        level: _fullScreenAlertLevel,
-        onDismiss: _dismissFullScreenAlert,
-      ),
       ],
     );
   }
@@ -9100,26 +9493,50 @@ class _LiveSensorsCard extends StatelessWidget {
   final String lastUpdate;
   final bool isConnected;
   final double vibration;
+  final double ppv;
+  final double dominantFreq;
+  final double crestFactor;
+  final double rms;
+  final String hazardType;
 
   const _LiveSensorsCard({
     required this.accX, required this.accY, required this.accZ,
     required this.moisturePercent, required this.lastUpdate, required this.isConnected,
     this.vibration = 0.0,
+    this.ppv = 0.0,
+    this.dominantFreq = 0.0,
+    this.crestFactor = 0.0,
+    this.rms = 0.0,
+    this.hazardType = 'none',
     super.key,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Determine vibration status
+    // DIN 4150-3 compliant status
     String vibStatus = 'Safe';
     Color vibColor = Colors.green;
-    if (vibration > 0.5) {
+    if (ppv > 10.0) {
+      vibStatus = 'CRITICAL';
+      vibColor = const Color(0xFFE53935);
+    } else if (ppv > 3.0) {
+      vibStatus = 'DIN EXCEEDED';
+      vibColor = const Color(0xFFFF5722);
+    } else if (ppv > 2.5) {
+      vibStatus = 'Heritage limit';
+      vibColor = Colors.orange;
+    } else if (ppv > 0.3) {
+      vibStatus = 'Perceptible';
+      vibColor = const Color(0xFFFFC107);
+    } else if (ppv == 0.0 && vibration > 0.5) {
       vibStatus = 'HIGH!';
       vibColor = Colors.red;
-    } else if (vibration > 0.2) {
+    } else if (ppv == 0.0 && vibration > 0.2) {
       vibStatus = 'Moderate';
       vibColor = Colors.orange;
     }
+
+    final bool hasV2Data = ppv > 0 || rms > 0;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -9140,6 +9557,16 @@ class _LiveSensorsCard extends StatelessWidget {
                 children: [
                   const Text('Live sensors', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
                   const Spacer(),
+                  if (hasV2Data)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00BCD4).withAlpha(60),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('v2.0 DSP', style: TextStyle(color: Color(0xFF00BCD4), fontSize: 9, fontWeight: FontWeight.w600)),
+                    ),
+                  const SizedBox(width: 6),
                   Icon(
                     isConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
                     color: isConnected ? Colors.green : Colors.grey,
@@ -9149,15 +9576,25 @@ class _LiveSensorsCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               _SensorRow(
-                label: 'Vibration (M5StickC)',
-                value: '${vibration.toStringAsFixed(2)}g   Status: $vibStatus',
+                label: hasV2Data ? 'PPV (DIN 4150-3)' : 'Vibration (M5StickC)',
+                value: hasV2Data
+                    ? '${ppv.toStringAsFixed(1)} mm/s   Status: $vibStatus'
+                    : '${vibration.toStringAsFixed(2)}g   Status: $vibStatus',
                 icon: Icons.vibration,
                 valueColor: vibColor,
               ),
+              if (hasV2Data) ...[
+                const SizedBox(height: 6),
+                _SensorRow(
+                  label: 'Frequency analysis',
+                  value: '${dominantFreq.toStringAsFixed(0)} Hz   Crest: ${crestFactor.toStringAsFixed(1)}   RMS: ${rms.toStringAsFixed(4)}g',
+                  icon: Icons.graphic_eq,
+                ),
+              ],
               const SizedBox(height: 6),
               _SensorRow(
                 label: 'Soil moisture',
-                value: '$moisturePercent %   (safe: 30–60%)',
+                value: '$moisturePercent %   (safe: 30-60%)',
                 icon: Icons.water_drop_outlined,
               ),
               const SizedBox(height: 10),
@@ -9205,6 +9642,677 @@ class _SensorRow extends StatelessWidget {
       ],
     );
   }
+}
+
+// ===================== ML ANOMALY INDICATOR =====================
+class _MLAnomalyIndicator extends StatelessWidget {
+  final AnomalyResult result;
+
+  const _MLAnomalyIndicator({required this.result, super.key});
+
+  Color _getColor() {
+    switch (result.level) {
+      case AnomalyLevel.normal: return const Color(0xFF4CAF50);
+      case AnomalyLevel.unusual: return const Color(0xFFFFC107);
+      case AnomalyLevel.anomaly: return const Color(0xFFE53935);
+      case AnomalyLevel.unknown: return Colors.grey;
+    }
+  }
+
+  IconData _getIcon() {
+    switch (result.level) {
+      case AnomalyLevel.normal: return Icons.check_circle_outline;
+      case AnomalyLevel.unusual: return Icons.help_outline;
+      case AnomalyLevel.anomaly: return Icons.warning_rounded;
+      case AnomalyLevel.unknown: return Icons.device_unknown;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getColor();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: color.withAlpha(20),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withAlpha(80), width: 1),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withAlpha(40),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(_getIcon(), color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('ML Anomaly Detection', style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 12, fontWeight: FontWeight.w600)),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: color.withAlpha(50),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            result.levelLabel,
+                            style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    // Score bar
+                    Row(
+                      children: [
+                        Text('Score: ', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 11)),
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: SizedBox(
+                              height: 6,
+                              child: Stack(
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(20),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                  ),
+                                  FractionallySizedBox(
+                                    widthFactor: result.score.clamp(0.0, 1.0),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: color,
+                                        borderRadius: BorderRadius.circular(3),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${(result.score * 100).toStringAsFixed(0)}%',
+                          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ===================== VIBRATION ANALYSIS CARD (v2.0) =====================
+class _VibrationAnalysisCard extends StatelessWidget {
+  final double ppv, rms, dominantFreq, crestFactor;
+  final double ppvSmoothed, ppvPeakHold, kurtosis, staLtaRatio, centroid;
+  final String hazardType, hazardLabel;
+  final Color ppvColor;
+  final bool isConnected;
+
+  const _VibrationAnalysisCard({
+    required this.ppv, required this.rms, required this.dominantFreq,
+    required this.crestFactor, required this.hazardType, required this.hazardLabel,
+    required this.ppvColor, required this.isConnected,
+    this.ppvSmoothed = 0, this.ppvPeakHold = 0, this.kurtosis = 0,
+    this.staLtaRatio = 0, this.centroid = 0, super.key,
+  });
+
+  String _getFreqBandLabel() {
+    if (dominantFreq <= 0) return '--';
+    if (dominantFreq <= 1.0) return 'Sub-Hz (wind/ambient)';
+    if (dominantFreq <= 5.0) return '1-5 Hz (footsteps/sway)';
+    if (dominantFreq <= 10.0) return '1-10 Hz (seismic band)';
+    if (dominantFreq <= 50.0) return '10-50 Hz (machinery)';
+    return '50-100 Hz (structural)';
+  }
+
+  Color _getFreqBandColor() {
+    if (dominantFreq <= 0) return Colors.grey;
+    if (dominantFreq <= 5.0) return const Color(0xFF4CAF50);
+    if (dominantFreq <= 10.0) return const Color(0xFFFF5722);
+    if (dominantFreq <= 50.0) return const Color(0xFFFF9800);
+    return const Color(0xFFFFC107);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasData = ppv > 0 || rms > 0;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withAlpha(25),
+                Colors.white.withAlpha(13),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withAlpha(90), width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: ppvColor.withAlpha(50),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.analytics_rounded, color: ppvColor, size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text('Vibration Analysis', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: ppvColor.withAlpha(40),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ppvColor.withAlpha(100), width: 1),
+                    ),
+                    child: Text(
+                      hazardLabel,
+                      style: TextStyle(color: ppvColor, fontSize: 10, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text('DIN 4150-3 compliant vibration monitoring', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 11)),
+              const SizedBox(height: 14),
+
+              if (!hasData)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      isConnected ? 'Waiting for v2.0 firmware data...' : 'Connect sensor for analysis',
+                      style: TextStyle(color: Colors.white.withAlpha(130), fontSize: 12),
+                    ),
+                  ),
+                )
+              else ...[
+                // PPV Gauge Bar (smoothed value, with peak hold)
+                _buildGaugeRow('PPV', ppvSmoothed > 0 ? ppvSmoothed : ppv, 'mm/s', 15.0, ppvColor),
+                if (ppvPeakHold > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Peak (5s): ${ppvPeakHold.toStringAsFixed(1)} mm/s',
+                      style: TextStyle(color: Colors.white.withAlpha(130), fontSize: 10),
+                    ),
+                  ),
+                const SizedBox(height: 10),
+
+                // DIN 4150-3 threshold markers
+                _buildDINThresholdBar(),
+                const SizedBox(height: 14),
+
+                // Metrics grid - row 1
+                Row(
+                  children: [
+                    _buildMetricTile('RMS', '${rms.toStringAsFixed(4)}g', Icons.show_chart),
+                    const SizedBox(width: 10),
+                    _buildMetricTile('Crest', crestFactor.toStringAsFixed(1), Icons.bolt),
+                    const SizedBox(width: 10),
+                    _buildMetricTile('Freq', '${dominantFreq.toStringAsFixed(0)}Hz', Icons.graphic_eq),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Metrics grid - row 2 (v3.0 features)
+                Row(
+                  children: [
+                    _buildMetricTile('Kurt', kurtosis.toStringAsFixed(1), Icons.assessment,
+                      valueColor: kurtosis > 6 ? const Color(0xFFFF5722) : kurtosis > 3 ? const Color(0xFFFF9800) : null),
+                    const SizedBox(width: 10),
+                    _buildMetricTile('STA/LTA', staLtaRatio.toStringAsFixed(1), Icons.sensors,
+                      valueColor: staLtaRatio > 4.0 ? const Color(0xFFFF5722) : staLtaRatio > 2.0 ? const Color(0xFFFF9800) : null),
+                    const SizedBox(width: 10),
+                    _buildMetricTile('Cent', '${centroid.toStringAsFixed(0)}Hz', Icons.center_focus_strong),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Frequency band indicator
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _getFreqBandColor().withAlpha(25),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _getFreqBandColor().withAlpha(60), width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.waves, color: _getFreqBandColor(), size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        _getFreqBandLabel(),
+                        style: TextStyle(color: _getFreqBandColor(), fontSize: 12, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGaugeRow(String label, double value, String unit, double maxValue, Color color) {
+    final fraction = (value / maxValue).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(label, style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 12)),
+            const Spacer(),
+            Text('${value.toStringAsFixed(1)} $unit', style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: SizedBox(
+            height: 8,
+            child: Stack(
+              children: [
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(20),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                FractionallySizedBox(
+                  widthFactor: fraction,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [color.withAlpha(200), color]),
+                      borderRadius: BorderRadius.circular(4),
+                      boxShadow: [BoxShadow(color: color.withAlpha(80), blurRadius: 6)],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDINThresholdBar() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('DIN 4150-3 Thresholds', style: TextStyle(color: Colors.white.withAlpha(120), fontSize: 10)),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 20,
+          child: Row(
+            children: [
+              _buildThresholdSegment('Safe', 0.3 / 15.0, const Color(0xFF4CAF50)),
+              _buildThresholdSegment('', (2.5 - 0.3) / 15.0, const Color(0xFFFFC107)),
+              _buildThresholdSegment('3mm/s', (3.0 - 2.5) / 15.0, const Color(0xFFFF9800)),
+              _buildThresholdSegment('Heritage', (8.0 - 3.0) / 15.0, const Color(0xFFFF5722)),
+              _buildThresholdSegment('10mm/s', (10.0 - 8.0) / 15.0, const Color(0xFFE53935)),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFB71C1C).withAlpha(150),
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(4),
+                      bottomRight: Radius.circular(4),
+                    ),
+                  ),
+                  child: const Center(child: Text('DMG', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w600))),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildThresholdSegment(String label, double fraction, Color color) {
+    return Expanded(
+      flex: (fraction * 100).round().clamp(1, 100),
+      child: Container(
+        decoration: BoxDecoration(color: color.withAlpha(120)),
+        child: Center(
+          child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w600), overflow: TextOverflow.clip, maxLines: 1),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetricTile(String label, String value, IconData icon, {Color? valueColor}) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withAlpha(40), width: 1),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.white.withAlpha(150), size: 16),
+            const SizedBox(height: 4),
+            Text(value, style: TextStyle(color: valueColor ?? Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(color: Colors.white.withAlpha(130), fontSize: 10)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ===================== PPV TREND GRAPH (DIN 4150-3) =====================
+class _PPVTrendGraphCard extends StatelessWidget {
+  final List<Map<String, dynamic>> ppvHistory;
+
+  const _PPVTrendGraphCard({required this.ppvHistory, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withAlpha(25),
+                Colors.white.withAlpha(13),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withAlpha(90), width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF5722).withAlpha(50),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.trending_up_rounded, color: Color(0xFFFF5722), size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text('PPV Trend', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF5722).withAlpha(40),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('DIN 4150-3', style: TextStyle(color: Color(0xFFFF5722), fontSize: 9, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text('Peak Particle Velocity with heritage limit lines', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 11)),
+              const SizedBox(height: 12),
+              // Legend
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildLegendItem(const Color(0xFFFF5722), 'PPV'),
+                  const SizedBox(width: 16),
+                  _buildLegendItem(const Color(0xFFE53935).withAlpha(150), '3 mm/s limit'),
+                  const SizedBox(width: 16),
+                  _buildLegendItem(const Color(0xFFFFC107).withAlpha(150), '2.5 mm/s cont.'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (ppvHistory.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      children: [
+                        Icon(Icons.timeline, color: Colors.white.withAlpha(100), size: 28),
+                        const SizedBox(height: 6),
+                        Text('Waiting for PPV data...', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Y-axis labels
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('10', style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 9)),
+                        const SizedBox(height: 18),
+                        Text('5', style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 9)),
+                        const SizedBox(height: 18),
+                        Text('3', style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 9)),
+                        const SizedBox(height: 18),
+                        Text('0', style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 9)),
+                      ],
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: SizedBox(
+                        height: 120,
+                        child: CustomPaint(
+                          size: const Size(double.infinity, 120),
+                          painter: _PPVGraphPainter(ppvHistory),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 14, height: 3,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+class _PPVGraphPainter extends CustomPainter {
+  final List<Map<String, dynamic>> data;
+
+  _PPVGraphPainter(this.data);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.isEmpty) return;
+
+    const double maxPPV = 12.0; // Max Y-axis (mm/s)
+    const double topPad = 4.0;
+    const double botPad = 2.0;
+    final double graphH = size.height - topPad - botPad;
+
+    // Draw grid
+    final gridPaint = Paint()
+      ..color = Colors.white.withAlpha(15)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (int i = 0; i <= 4; i++) {
+      final y = topPad + graphH * i / 4;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    // Draw DIN 4150-3 limit lines
+    // 3 mm/s heritage limit (1-10 Hz)
+    final limitY3 = topPad + graphH - (graphH * 3.0 / maxPPV);
+    final limitPaint3 = Paint()
+      ..color = const Color(0xFFE53935).withAlpha(120)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    _drawDashedLine(canvas, Offset(0, limitY3), Offset(size.width, limitY3), limitPaint3);
+
+    // 2.5 mm/s continuous limit
+    final limitY25 = topPad + graphH - (graphH * 2.5 / maxPPV);
+    final limitPaint25 = Paint()
+      ..color = const Color(0xFFFFC107).withAlpha(100)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    _drawDashedLine(canvas, Offset(0, limitY25), Offset(size.width, limitY25), limitPaint25);
+
+    // Draw PPV line
+    if (data.length < 2) return;
+
+    final points = <Offset>[];
+    for (int i = 0; i < data.length; i++) {
+      final x = size.width * i / (data.length - 1);
+      final ppv = ((data[i]['ppv'] as num?)?.toDouble() ?? 0.0).clamp(0.0, maxPPV);
+      final y = topPad + graphH - (graphH * ppv / maxPPV);
+      points.add(Offset(x, y));
+    }
+
+    // Fill
+    final fillPath = ui.Path();
+    fillPath.moveTo(points.first.dx, points.first.dy);
+    for (int i = 1; i < points.length; i++) {
+      fillPath.lineTo(points[i].dx, points[i].dy);
+    }
+    fillPath.lineTo(size.width, topPad + graphH);
+    fillPath.lineTo(0, topPad + graphH);
+    fillPath.close();
+
+    final fillPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, topPad),
+        Offset(0, topPad + graphH),
+        [const Color(0xFFFF5722).withAlpha(80), const Color(0xFFFF5722).withAlpha(10)],
+      );
+    canvas.drawPath(fillPath, fillPaint);
+
+    // Line
+    final linePath = ui.Path();
+    linePath.moveTo(points.first.dx, points.first.dy);
+    for (int i = 1; i < points.length; i++) {
+      linePath.lineTo(points[i].dx, points[i].dy);
+    }
+
+    final linePaint = Paint()
+      ..color = const Color(0xFFFF5722)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(linePath, linePaint);
+
+    // Glow
+    final glowPaint = Paint()
+      ..color = const Color(0xFFFF5722).withAlpha(40)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 3);
+    canvas.drawPath(linePath, glowPaint);
+
+    // Latest point dot
+    if (points.isNotEmpty) {
+      final last = points.last;
+      canvas.drawCircle(last, 4, Paint()..color = const Color(0xFFFF5722));
+      canvas.drawCircle(last, 4, Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5);
+    }
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    const dashWidth = 6.0;
+    const dashSpace = 4.0;
+    final dx = end.dx - start.dx;
+    final dy = end.dy - start.dy;
+    final length = sqrt(dx * dx + dy * dy);
+    final unitX = dx / length;
+    final unitY = dy / length;
+
+    double drawn = 0;
+    while (drawn < length) {
+      final segEnd = (drawn + dashWidth).clamp(0.0, length);
+      canvas.drawLine(
+        Offset(start.dx + unitX * drawn, start.dy + unitY * drawn),
+        Offset(start.dx + unitX * segEnd, start.dy + unitY * segEnd),
+        paint,
+      );
+      drawn += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PPVGraphPainter oldDelegate) => true;
 }
 
 class _SensorHistoryGraphCard extends StatelessWidget {
@@ -9638,10 +10746,14 @@ class _SafetyInsightCard extends StatelessWidget {
 class _GlassBottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onItemSelected;
+  final bool isMuted;
+  final VoidCallback onToggleMute;
 
   const _GlassBottomNavBar({
     required this.currentIndex,
     required this.onItemSelected,
+    required this.isMuted,
+    required this.onToggleMute,
     super.key,
   });
 
@@ -9691,6 +10803,26 @@ class _GlassBottomNavBar extends StatelessWidget {
                 index: 3,
                 isSelected: currentIndex == 3,
                 onTap: onItemSelected,
+              ),
+              const SizedBox(width: 4),
+              // Global mute button
+              GestureDetector(
+                onTap: onToggleMute,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: isMuted
+                        ? Colors.red.withOpacity(0.3)
+                        : Colors.green.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: isMuted ? Colors.red.shade300 : Colors.green.shade300,
+                    size: 20,
+                  ),
+                ),
               ),
             ],
           ),
