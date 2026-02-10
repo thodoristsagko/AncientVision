@@ -1,0 +1,1987 @@
+// ignore_for_file: use_build_context_synchronously
+import 'dart:ui' as ui;
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import '../services/local_storage_service.dart';
+import '../services/image_service.dart';
+import '../models/reconstruction_result.dart';
+import '../main.dart' show imgbbApiKey;
+
+class ManualEntryFormScreen extends StatefulWidget {
+  final ReconstructionResult? reconstructionResult;
+  final List<XFile>? photoGallery;
+  final String? cloudModelUrl;
+
+  const ManualEntryFormScreen({
+    super.key,
+    this.reconstructionResult,
+    this.photoGallery,
+    this.cloudModelUrl,
+  });
+
+  @override
+  State<ManualEntryFormScreen> createState() => _ManualEntryFormScreenState();
+}
+
+class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _typeController = TextEditingController();
+  final _siteController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _dateController = TextEditingController();
+  final _latController = TextEditingController();
+  final _lngController = TextEditingController();
+  final _model3dUrlController = TextEditingController();
+  bool _hasImage = false;
+  XFile? _selectedImage;
+  final List<XFile> _photoGallery = []; // For photogrammetry - multiple photos
+  final ImagePicker _imagePicker = ImagePicker();
+  String _nextId = 'A-001';
+  bool _isLoading = true;
+  bool _isSaving = false;
+  bool _isGettingLocation = false;
+
+  // ========== COIN-SPECIFIC FIELDS ==========
+  final _denominationController = TextEditingController();
+  final _mintController = TextEditingController();
+  final _rulerController = TextEditingController();
+  final _obverseLegendController = TextEditingController();
+  final _reverseLegendController = TextEditingController();
+  final _dieAxisController = TextEditingController();
+
+  // ========== FRAGMENT-SPECIFIC FIELDS ==========
+  String? _selectedVesselPart;
+  String? _selectedWareType;
+  String? _selectedDecoration;
+  final _rimDiameterController = TextEditingController();
+  final _wallThicknessController = TextEditingController();
+
+  // Auto-save functionality
+  Timer? _autoSaveTimer;
+  Timer? _editDebounceTimer;
+
+  // Random example hints
+  late String _nameHint;
+  late String _typeHint;
+  late String _siteHint;
+
+  static const _nameTypePairs = [
+    {'name': 'Bronze Coin', 'type': 'Coin'},
+    {'name': 'Ceramic Vase', 'type': 'Pottery'},
+    {'name': 'Marble Statue', 'type': 'Sculpture'},
+    {'name': 'Iron Chisel', 'type': 'Tool'},
+    {'name': 'Gold Ring', 'type': 'Jewelry'},
+    {'name': 'Bronze Sword', 'type': 'Weapon'},
+    {'name': 'Stone Tablet', 'type': 'Inscription'},
+    {'name': 'Bone Comb', 'type': 'Organic'},
+  ];
+
+  static const _siteExamples = ['Trench A1', 'Grid 12-N', 'North Wall'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNextId();
+    _generateRandomHints();
+    // Set today's date as default
+    final now = DateTime.now();
+    _dateController.text = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    // Initialize with data from photogrammetry if available
+    if (widget.photoGallery != null && widget.photoGallery!.isNotEmpty) {
+      _photoGallery.addAll(widget.photoGallery!);
+    }
+
+    // Initialize cloud model URL if provided
+    if (widget.cloudModelUrl != null) {
+      _model3dUrlController.text = widget.cloudModelUrl!;
+    }
+
+    // Load draft if exists
+    _loadDraft();
+
+    // Setup auto-save (saves every 30 seconds)
+    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _autoSave();
+    });
+
+    // Add listeners to controllers for auto-save
+    _nameController.addListener(_scheduleAutoSave);
+    _typeController.addListener(_scheduleAutoSave);
+    _typeController.addListener(_onTypeChanged); // Trigger rebuild for conditional fields
+    _siteController.addListener(_scheduleAutoSave);
+  }
+
+  void _onTypeChanged() {
+    // Trigger rebuild to show/hide coin/fragment fields
+    if (mounted) setState(() {});
+  }
+
+  void _scheduleAutoSave() {
+    // Schedule auto-save for 2 seconds after last edit (separate from periodic timer)
+    _editDebounceTimer?.cancel();
+    _editDebounceTimer = Timer(const Duration(seconds: 2), _autoSave);
+  }
+
+  Future<void> _autoSave() async {
+    if (_nameController.text.isEmpty && _typeController.text.isEmpty) {
+      return; // Don't save empty forms
+    }
+
+    final storage = LocalStorageService();
+    await storage.saveFormDraft(
+      formId: 'manual_entry',
+      data: {
+        'name': _nameController.text,
+        'type': _typeController.text,
+        'site': _siteController.text,
+        'description': _descriptionController.text,
+        'date': _dateController.text,
+        'latitude': _latController.text,
+        'longitude': _lngController.text,
+        // Coin fields
+        'denomination': _denominationController.text,
+        'mint': _mintController.text,
+        'ruler': _rulerController.text,
+        'obverseLegend': _obverseLegendController.text,
+        'reverseLegend': _reverseLegendController.text,
+        'dieAxis': _dieAxisController.text,
+        // Fragment fields
+        'vesselPart': _selectedVesselPart,
+        'wareType': _selectedWareType,
+        'decorationStyle': _selectedDecoration,
+        'rimDiameter': _rimDiameterController.text,
+        'wallThickness': _wallThicknessController.text,
+      },
+    );
+  }
+
+  Future<void> _loadDraft() async {
+    final storage = LocalStorageService();
+    final draft = storage.getFormDraft('manual_entry');
+    if (draft != null && mounted) {
+      setState(() {
+        _nameController.text = draft['name'] ?? '';
+        _typeController.text = draft['type'] ?? '';
+        _siteController.text = draft['site'] ?? '';
+        _descriptionController.text = draft['description'] ?? '';
+        if (draft['date'] != null && (draft['date'] as String).isNotEmpty) {
+          _dateController.text = draft['date'];
+        }
+        _latController.text = draft['latitude'] ?? '';
+        _lngController.text = draft['longitude'] ?? '';
+        // Coin fields
+        _denominationController.text = draft['denomination'] ?? '';
+        _mintController.text = draft['mint'] ?? '';
+        _rulerController.text = draft['ruler'] ?? '';
+        _obverseLegendController.text = draft['obverseLegend'] ?? '';
+        _reverseLegendController.text = draft['reverseLegend'] ?? '';
+        _dieAxisController.text = draft['dieAxis'] ?? '';
+        // Fragment fields
+        _selectedVesselPart = draft['vesselPart'];
+        _selectedWareType = draft['wareType'];
+        _selectedDecoration = draft['decorationStyle'];
+        _rimDiameterController.text = draft['rimDiameter'] ?? '';
+        _wallThicknessController.text = draft['wallThickness'] ?? '';
+      });
+
+      // Show notification (post-frame to avoid initState context issue)
+      if (_nameController.text.isNotEmpty || _typeController.text.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Draft restored'),
+                backgroundColor: Color(0xFF2196F3),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        });
+      }
+    }
+  }
+
+  void _generateRandomHints() {
+    final random = Random();
+    // Pick a matching name-type pair
+    final pair = _nameTypePairs[random.nextInt(_nameTypePairs.length)];
+    _nameHint = 'e.g., ${pair['name']}';
+    _typeHint = 'e.g., ${pair['type']}';
+    _siteHint = 'e.g., ${_siteExamples[random.nextInt(_siteExamples.length)]}';
+  }
+
+  // Get current GPS location
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isGettingLocation = true);
+
+    try {
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location services are disabled. Please enable GPS.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        setState(() => _isGettingLocation = false);
+        return;
+      }
+
+      // Check permissions
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Location permission denied'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          setState(() => _isGettingLocation = false);
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permissions are permanently denied'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        setState(() => _isGettingLocation = false);
+        return;
+      }
+
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      setState(() {
+        _latController.text = position.latitude.toStringAsFixed(6);
+        _lngController.text = position.longitude.toStringAsFixed(6);
+        _isGettingLocation = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location captured successfully!'),
+            backgroundColor: Color(0xFF4CAF50),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isGettingLocation = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error getting location: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Pick image from camera
+  Future<void> _pickFromCamera() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        setState(() {
+          _selectedImage = image;
+          _hasImage = true;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Photo captured successfully!'),
+              backgroundColor: Color(0xFF4CAF50),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error capturing photo: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Pick image from gallery
+  Future<void> _pickFromGallery() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        setState(() {
+          _selectedImage = image;
+          _hasImage = true;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image selected successfully!'),
+              backgroundColor: Color(0xFF4CAF50),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error selecting image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Load next ID from Firestore by scanning all documents
+  Future<void> _loadNextId() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('findings')
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _nextId = 'A-001';
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      // Find the highest ID number from all documents
+      int maxNum = 0;
+      for (final doc in snapshot.docs) {
+        // Check document ID first
+        var match = RegExp(r'A-(\d+)').firstMatch(doc.id);
+        if (match != null) {
+          final num = int.parse(match.group(1)!);
+          if (num > maxNum) {
+            maxNum = num;
+          }
+        }
+
+        // Also check 'id' field inside the document
+        final data = doc.data() as Map<String, dynamic>?;
+        if (data != null && data['id'] != null) {
+          match = RegExp(r'A-(\d+)').firstMatch(data['id'].toString());
+          if (match != null) {
+            final num = int.parse(match.group(1)!);
+            if (num > maxNum) {
+              maxNum = num;
+            }
+          }
+        }
+      }
+
+      // If no matching IDs found, use document count as fallback
+      if (maxNum == 0) {
+        maxNum = snapshot.docs.length;
+      }
+
+      if (mounted) {
+        setState(() {
+          _nextId = 'A-${(maxNum + 1).toString().padLeft(3, '0')}';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _nextId = 'A-001';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Backup findings to local file
+  Future<void> _backupFindings() async {
+    try {
+      // Get all findings
+      final snapshot = await FirebaseFirestore.instance
+          .collection('findings')
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No findings to backup'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Create backup data
+      final backupData = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['documentId'] = doc.id;
+        return data;
+      }).toList();
+
+      // Save to local file
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+      final file = File('${directory.path}/findings_backup_$timestamp.json');
+      await file.writeAsString(jsonEncode(backupData));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Backed up ${snapshot.docs.length} findings.\nSaved to: ${file.path}'),
+            backgroundColor: const Color(0xFF4CAF50),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Save finding to Firestore
+  Future<void> _saveFinding() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSaving = true);
+
+    // Parse coordinates from controllers, fallback to defaults if empty
+    final lat = double.tryParse(_latController.text) ?? 0.0;
+    final lng = double.tryParse(_lngController.text) ?? 0.0;
+
+    try {
+
+      // Upload image to ImgBB and get URL
+      String? imageUrl;
+      if (_selectedImage != null) {
+        try {
+          // Compress image for 10x faster upload
+          final imageService = ImageService();
+          final compressedFile = await imageService.compressImage(
+            File(_selectedImage!.path),
+            maxWidth: 1920,
+            maxHeight: 1920,
+            quality: 85,
+          );
+
+          final bytes = await compressedFile.readAsBytes();
+          final base64Image = base64Encode(bytes);
+
+          final response = await http.post(
+            Uri.parse('https://api.imgbb.com/1/upload'),
+            body: {
+              'key': imgbbApiKey,
+              'image': base64Image,
+              'name': _nextId,
+            },
+          ).timeout(const Duration(seconds: 30));
+
+          debugPrint('ImgBB response: ${response.statusCode}');
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            if (data['success'] == true) {
+              imageUrl = data['data']['url'];
+              debugPrint('Image uploaded: $imageUrl');
+            }
+          } else {
+            debugPrint('ImgBB error: ${response.body}');
+          }
+        } catch (e) {
+          debugPrint('Image upload failed: $e');
+        }
+      }
+
+      // Upload photo gallery images for photogrammetry
+      List<String> galleryUrls = [];
+      if (_photoGallery.isNotEmpty) {
+        final imageService = ImageService();
+        for (int i = 0; i < _photoGallery.length; i++) {
+          try {
+            // Compress for faster upload (critical for multiple images)
+            final compressedFile = await imageService.compressImage(
+              File(_photoGallery[i].path),
+              maxWidth: 1920,
+              maxHeight: 1920,
+              quality: 85,
+            );
+
+            final bytes = await compressedFile.readAsBytes();
+            final base64Image = base64Encode(bytes);
+            final response = await http.post(
+              Uri.parse('https://api.imgbb.com/1/upload'),
+              body: {
+                'key': imgbbApiKey,
+                'image': base64Image,
+                'name': '${_nextId}_photo_$i',
+              },
+            ).timeout(const Duration(seconds: 30));
+
+            if (response.statusCode == 200) {
+              final data = jsonDecode(response.body);
+              if (data['success'] == true) {
+                galleryUrls.add(data['data']['url']);
+              }
+            }
+          } catch (e) {
+            debugPrint('Gallery photo $i upload failed: $e');
+          }
+        }
+      }
+
+      // Get 3D model data from reconstruction result if available
+      String? model3dUrl;
+      Map<String, dynamic>? reconstructionData;
+
+      if (widget.reconstructionResult != null) {
+        final result = widget.reconstructionResult!;
+        // Save reconstruction metadata
+        reconstructionData = {
+          'pointCount': result.pointCount,
+          'processingTimeSeconds': result.processingTimeSeconds,
+          'method': result.isSparse ? 'Sparse SfM (RANSAC)' : 'Dense SfM',
+          'qualityMetrics': result.qualityMetrics,
+          'inputImageCount': result.inputImageCount,
+        };
+      }
+
+      // Determine source based on how the form was opened
+      final source = widget.photoGallery != null || widget.reconstructionResult != null
+          ? 'photo'
+          : 'manual';
+
+      final findingData = {
+        'name': _nameController.text,
+        'type': _typeController.text,
+        'site': _siteController.text,
+        'date': _dateController.text,
+        'description': _descriptionController.text,
+        'latitude': lat,
+        'longitude': lng,
+        'imageUrl': imageUrl,
+        'photoGallery': galleryUrls,
+        'model3dUrl': model3dUrl,
+        'reconstructionData': reconstructionData,
+        'createdAt': FieldValue.serverTimestamp(),
+        'source': source,
+        // Coin-specific fields (saved if populated)
+        if (_denominationController.text.isNotEmpty) 'denomination': _denominationController.text,
+        if (_mintController.text.isNotEmpty) 'mint': _mintController.text,
+        if (_rulerController.text.isNotEmpty) 'ruler': _rulerController.text,
+        if (_obverseLegendController.text.isNotEmpty) 'obverseLegend': _obverseLegendController.text,
+        if (_reverseLegendController.text.isNotEmpty) 'reverseLegend': _reverseLegendController.text,
+        if (_dieAxisController.text.isNotEmpty) 'dieAxis': int.tryParse(_dieAxisController.text),
+        // Fragment-specific fields (saved if populated)
+        if (_selectedVesselPart != null) 'vesselPart': _selectedVesselPart,
+        if (_selectedWareType != null) 'wareType': _selectedWareType,
+        if (_selectedDecoration != null) 'decorationStyle': _selectedDecoration,
+        if (_rimDiameterController.text.isNotEmpty) 'rimDiameter': double.tryParse(_rimDiameterController.text),
+        if (_wallThicknessController.text.isNotEmpty) 'wallThickness': double.tryParse(_wallThicknessController.text),
+      };
+
+      try {
+        // Try to save to Firebase
+        await FirebaseFirestore.instance
+            .collection('findings')
+            .doc(_nextId)
+            .set(findingData)
+            .timeout(const Duration(seconds: 15));
+
+        // Success - clear draft and cache locally
+        final storage = LocalStorageService();
+        await storage.clearFormDraft('manual_entry');
+        await storage.cacheFinding(findingId: _nextId, data: findingData);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✓ Finding $_nextId saved successfully!'),
+              backgroundColor: const Color(0xFF4CAF50),
+            ),
+          );
+          Navigator.pop(context);
+        }
+      } on FirebaseException catch (e) {
+        // Firebase error - save offline
+        final storage = LocalStorageService();
+        await storage.queueForUpload(findingId: _nextId, data: findingData);
+        await storage.cacheFinding(findingId: _nextId, data: findingData);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('📱 Saved offline - will sync when online\n${e.message}'),
+              backgroundColor: const Color(0xFFFFC107),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          Navigator.pop(context);
+        }
+      }
+    } catch (e) {
+      // General error - try to save offline
+      try {
+        final storage = LocalStorageService();
+        final findingData = {
+          'name': _nameController.text,
+          'type': _typeController.text,
+          'site': _siteController.text,
+          'date': _dateController.text,
+          'description': _descriptionController.text,
+          'latitude': lat,
+          'longitude': lng,
+          'createdAt': DateTime.now().toIso8601String(),
+          'source': 'manual',
+          // Coin-specific fields (saved if populated)
+          if (_denominationController.text.isNotEmpty) 'denomination': _denominationController.text,
+          if (_mintController.text.isNotEmpty) 'mint': _mintController.text,
+          if (_rulerController.text.isNotEmpty) 'ruler': _rulerController.text,
+          if (_obverseLegendController.text.isNotEmpty) 'obverseLegend': _obverseLegendController.text,
+          if (_reverseLegendController.text.isNotEmpty) 'reverseLegend': _reverseLegendController.text,
+          if (_dieAxisController.text.isNotEmpty) 'dieAxis': int.tryParse(_dieAxisController.text),
+          // Fragment-specific fields (saved if populated)
+          if (_selectedVesselPart != null) 'vesselPart': _selectedVesselPart,
+          if (_selectedWareType != null) 'wareType': _selectedWareType,
+          if (_selectedDecoration != null) 'decorationStyle': _selectedDecoration,
+          if (_rimDiameterController.text.isNotEmpty) 'rimDiameter': double.tryParse(_rimDiameterController.text),
+          if (_wallThicknessController.text.isNotEmpty) 'wallThickness': double.tryParse(_wallThicknessController.text),
+        };
+        await storage.queueForUpload(findingId: _nextId, data: findingData);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📱 Saved offline - will sync when online'),
+              backgroundColor: Color(0xFFFFC107),
+              duration: Duration(seconds: 3),
+            ),
+          );
+          Navigator.pop(context);
+        }
+      } catch (offlineError) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('⚠️ Error: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoSaveTimer?.cancel();
+    _editDebounceTimer?.cancel();
+    _nameController.dispose();
+    _typeController.dispose();
+    _siteController.dispose();
+    _descriptionController.dispose();
+    _dateController.dispose();
+    _latController.dispose();
+    _lngController.dispose();
+    _model3dUrlController.dispose();
+    _denominationController.dispose();
+    _mintController.dispose();
+    _rulerController.dispose();
+    _obverseLegendController.dispose();
+    _reverseLegendController.dispose();
+    _dieAxisController.dispose();
+    _rimDiameterController.dispose();
+    _wallThicknessController.dispose();
+    super.dispose();
+  }
+
+  // Add multiple photos for photogrammetry
+  Future<void> _addPhotogrammetryPhoto() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+      if (image != null) {
+        setState(() {
+          _photoGallery.add(image);
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Photo ${_photoGallery.length} added! Take more for better 3D reconstruction.'),
+              backgroundColor: const Color(0xFF4CAF50),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removeGalleryPhoto(int index) {
+    setState(() {
+      _photoGallery.removeAt(index);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF0D3A39),
+              Color(0xFF1C2523),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // HEADER WITH BACK BUTTON
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withAlpha(26),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withAlpha(77),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Text(
+                          'Manual Entry',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      // Backup button
+                      GestureDetector(
+                        onTap: () {
+                          _backupFindings();
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFC107).withAlpha(51),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFFFFC107).withAlpha(128),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.download_rounded,
+                            color: Color(0xFFFFC107),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add a new finding to the database',
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(191),
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // AUTO-GENERATED ID DISPLAY
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: Colors.white.withAlpha(89),
+                            width: 1,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(26),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.tag_rounded,
+                                  color: Color(0xFFFFC107),
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'ID',
+                                          style: TextStyle(
+                                            color: Colors.white.withAlpha(179),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFFC107).withAlpha(51),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Text(
+                                            'Auto',
+                                            style: TextStyle(
+                                              color: Color(0xFFFFC107),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    _isLoading
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Color(0xFFFFC107),
+                                            ),
+                                          )
+                                        : Text(
+                                            _nextId,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // FORM FIELDS
+                  _buildFormField(
+                    controller: _nameController,
+                    label: 'Name',
+                    hint: _nameHint,
+                    icon: Icons.inventory_2_outlined,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildFormField(
+                    controller: _typeController,
+                    label: 'Type',
+                    hint: _typeHint,
+                    icon: Icons.category_outlined,
+                  ),
+
+                  // ========== COIN-SPECIFIC FIELDS ==========
+                  if (_typeController.text.toLowerCase().contains('coin'))
+                    _buildCoinFields(),
+
+                  // ========== FRAGMENT-SPECIFIC FIELDS ==========
+                  if (_typeController.text.toLowerCase().contains('fragment') ||
+                      _typeController.text.toLowerCase().contains('sherd'))
+                    _buildFragmentFields(),
+
+                  const SizedBox(height: 16),
+                  _buildFormField(
+                    controller: _siteController,
+                    label: 'Site',
+                    hint: _siteHint,
+                    icon: Icons.location_on_outlined,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildFormField(
+                    controller: _descriptionController,
+                    label: 'Description',
+                    hint: 'e.g., Fragment with geometric patterns',
+                    icon: Icons.description_outlined,
+                    maxLines: 3,
+                    isRequired: false,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildFormField(
+                    controller: _dateController,
+                    label: 'Date',
+                    hint: 'e.g., ${_dateController.text}',
+                    icon: Icons.calendar_today_outlined,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // COORDINATES SECTION
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: Colors.white.withAlpha(89),
+                            width: 1,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(26),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.my_location_rounded,
+                                      color: Color(0xFFFFC107),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'Coordinates',
+                                              style: TextStyle(
+                                                color: Colors.white.withAlpha(179),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withAlpha(26),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                'Optional',
+                                                style: TextStyle(
+                                                  color: Colors.white.withAlpha(128),
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _latController.text.isEmpty && _lngController.text.isEmpty
+                                              ? 'No location set'
+                                              : 'Location set',
+                                          style: TextStyle(
+                                            color: _latController.text.isEmpty && _lngController.text.isEmpty
+                                                ? Colors.white.withAlpha(102)
+                                                : Colors.white,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              // Latitude field
+                              Row(
+                                children: [
+                                  SizedBox(
+                                    width: 80,
+                                    child: Text(
+                                      'Latitude',
+                                      style: TextStyle(
+                                        color: Colors.white.withAlpha(179),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withAlpha(26),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.white.withAlpha(51),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: TextField(
+                                        controller: _latController,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                        ),
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                                        decoration: InputDecoration(
+                                          hintText: 'e.g., 37.9715',
+                                          hintStyle: TextStyle(
+                                            color: Colors.white.withAlpha(102),
+                                            fontSize: 14,
+                                          ),
+                                          border: InputBorder.none,
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              // Longitude field
+                              Row(
+                                children: [
+                                  SizedBox(
+                                    width: 80,
+                                    child: Text(
+                                      'Longitude',
+                                      style: TextStyle(
+                                        color: Colors.white.withAlpha(179),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withAlpha(26),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.white.withAlpha(51),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: TextField(
+                                        controller: _lngController,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                        ),
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                                        decoration: InputDecoration(
+                                          hintText: 'e.g., 23.7267',
+                                          hintStyle: TextStyle(
+                                            color: Colors.white.withAlpha(102),
+                                            fontSize: 14,
+                                          ),
+                                          border: InputBorder.none,
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              // Use GPS button
+                              GestureDetector(
+                                onTap: _isGettingLocation ? null : _getCurrentLocation,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFC107).withAlpha(51),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(0xFFFFC107).withAlpha(128),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      _isGettingLocation
+                                          ? const SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Color(0xFFFFC107),
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.gps_fixed_rounded,
+                                              color: Color(0xFFFFC107),
+                                              size: 18,
+                                            ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _isGettingLocation ? 'Getting Location...' : 'Use GPS',
+                                        style: const TextStyle(
+                                          color: Color(0xFFFFC107),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // OPTIONAL PICTURE FIELD
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: Colors.white.withAlpha(89),
+                            width: 1,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(26),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.photo_camera_outlined,
+                                      color: Color(0xFFFFC107),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'Picture',
+                                              style: TextStyle(
+                                                color: Colors.white.withAlpha(179),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withAlpha(26),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                'Optional',
+                                                style: TextStyle(
+                                                  color: Colors.white.withAlpha(128),
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _hasImage ? 'Image selected' : 'No image selected',
+                                          style: TextStyle(
+                                            color: _hasImage ? Colors.white : Colors.white.withAlpha(102),
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _pickFromCamera,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withAlpha(26),
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: Colors.white.withAlpha(51),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.camera_alt_rounded,
+                                              color: Colors.white70,
+                                              size: 18,
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'Take Photo',
+                                              style: TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _pickFromGallery,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withAlpha(26),
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: Colors.white.withAlpha(51),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.photo_library_rounded,
+                                              color: Colors.white70,
+                                              size: 18,
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'Gallery',
+                                              style: TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // PHOTOGRAMMETRY SECTION - Multiple photos for 3D reconstruction
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: const Color(0xFF7C4DFF).withAlpha(89),
+                            width: 1,
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF7C4DFF).withAlpha(51),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.view_in_ar_rounded,
+                                      color: Color(0xFF7C4DFF),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Text(
+                                              'Photogrammetry',
+                                              style: TextStyle(
+                                                color: Color(0xFF7C4DFF),
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF7C4DFF).withAlpha(51),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: const Text(
+                                                '3D',
+                                                style: TextStyle(
+                                                  color: Color(0xFF7C4DFF),
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _photoGallery.isEmpty
+                                              ? 'Take multiple photos for 3D model'
+                                              : '${_photoGallery.length} photos captured',
+                                          style: TextStyle(
+                                            color: Colors.white.withAlpha(153),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Photo gallery preview
+                              if (_photoGallery.isNotEmpty) ...[
+                                SizedBox(
+                                  height: 70,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _photoGallery.length,
+                                    itemBuilder: (context, index) {
+                                      return Stack(
+                                        children: [
+                                          Container(
+                                            width: 70,
+                                            height: 70,
+                                            margin: const EdgeInsets.only(right: 8),
+                                            decoration: BoxDecoration(
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: const Color(0xFF7C4DFF).withAlpha(128),
+                                                width: 2,
+                                              ),
+                                            ),
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(10),
+                                              child: Image.file(
+                                                File(_photoGallery[index].path),
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            top: 2,
+                                            right: 10,
+                                            child: GestureDetector(
+                                              onTap: () => _removeGalleryPhoto(index),
+                                              child: Container(
+                                                width: 20,
+                                                height: 20,
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.red,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(Icons.close, color: Colors.white, size: 14),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+
+                              // Add photo button
+                              GestureDetector(
+                                onTap: _addPhotogrammetryPhoto,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF7C4DFF).withAlpha(51),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(0xFF7C4DFF).withAlpha(128),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.add_a_photo_rounded, color: Color(0xFF7C4DFF), size: 18),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _photoGallery.isEmpty ? 'Start Capture' : 'Add More Photos',
+                                        style: const TextStyle(
+                                          color: Color(0xFF7C4DFF),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              // Tips
+                              const SizedBox(height: 12),
+                              Text(
+                                'Tip: Take 10-20 photos from different angles for best 3D reconstruction',
+                                style: TextStyle(
+                                  color: Colors.white.withAlpha(102),
+                                  fontSize: 11,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // SUBMIT BUTTON
+                  SizedBox(
+                    width: double.infinity,
+                    child: GestureDetector(
+                      onTap: _isSaving ? null : _saveFinding,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFC107),
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFFFC107).withAlpha(77),
+                                  blurRadius: 16,
+                                  spreadRadius: 0,
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: _isSaving
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 3,
+                                        color: Color(0xFF3E2723),
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Add Finding',
+                                      style: TextStyle(
+                                        color: Color(0xFF3E2723),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    int maxLines = 1,
+    bool isRequired = true,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(26),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withAlpha(89),
+              width: 1,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(26),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: const Color(0xFFFFC107),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(179),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        controller: controller,
+                        maxLines: maxLines,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: hint,
+                          hintStyle: TextStyle(
+                            color: Colors.white.withAlpha(102),
+                            fontSize: 16,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        validator: isRequired ? (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter $label';
+                          }
+                          return null;
+                        } : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ========== COIN-SPECIFIC FIELDS SECTION ==========
+  Widget _buildCoinFields() {
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        // Section header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFB8860B).withAlpha(51),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.paid, color: Color(0xFFB8860B), size: 18),
+              SizedBox(width: 8),
+              Text(
+                'COIN DETAILS',
+                style: TextStyle(
+                  color: Color(0xFFB8860B),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Denomination
+        _buildFormField(
+          controller: _denominationController,
+          label: 'Denomination',
+          hint: 'e.g., Drachma, Denarius, Obol',
+          icon: Icons.monetization_on_outlined,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Mint
+        _buildFormField(
+          controller: _mintController,
+          label: 'Mint Location',
+          hint: 'e.g., Athens, Rome, Alexandria',
+          icon: Icons.factory_outlined,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Ruler/Authority
+        _buildFormField(
+          controller: _rulerController,
+          label: 'Ruler/Authority',
+          hint: 'e.g., Alexander III, Augustus',
+          icon: Icons.account_balance_outlined,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Obverse Legend
+        _buildFormField(
+          controller: _obverseLegendController,
+          label: 'Obverse (Front) Legend',
+          hint: 'Inscription on front side',
+          icon: Icons.text_fields,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Reverse Legend
+        _buildFormField(
+          controller: _reverseLegendController,
+          label: 'Reverse (Back) Legend',
+          hint: 'Inscription on back side',
+          icon: Icons.text_fields,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Die Axis
+        _buildFormField(
+          controller: _dieAxisController,
+          label: 'Die Axis (Clock Position)',
+          hint: 'e.g., 12, 6, 3 (o\'clock)',
+          icon: Icons.access_time,
+          isRequired: false,
+        ),
+      ],
+    );
+  }
+
+  // ========== FRAGMENT-SPECIFIC FIELDS SECTION ==========
+  Widget _buildFragmentFields() {
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        // Section header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFCD853F).withAlpha(51),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.broken_image, color: Color(0xFFCD853F), size: 18),
+              SizedBox(width: 8),
+              Text(
+                'FRAGMENT DETAILS',
+                style: TextStyle(
+                  color: Color(0xFFCD853F),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Vessel Part Selector
+        _buildDropdownField(
+          label: 'Vessel Part',
+          icon: Icons.pie_chart_outline,
+          value: _selectedVesselPart,
+          items: const ['Rim', 'Body', 'Base', 'Handle', 'Spout', 'Lid', 'Foot', 'Neck', 'Shoulder'],
+          onChanged: (val) => setState(() => _selectedVesselPart = val),
+        ),
+        const SizedBox(height: 12),
+        // Ware Type Selector
+        _buildDropdownField(
+          label: 'Ware Type',
+          icon: Icons.layers_outlined,
+          value: _selectedWareType,
+          items: const ['Coarse Ware', 'Fine Ware', 'Cooking Ware', 'Storage Ware', 'Tableware', 'Transport', 'Unknown'],
+          onChanged: (val) => setState(() => _selectedWareType = val),
+        ),
+        const SizedBox(height: 12),
+        // Decoration Style Selector
+        _buildDropdownField(
+          label: 'Decoration',
+          icon: Icons.brush_outlined,
+          value: _selectedDecoration,
+          items: const ['Plain', 'Painted', 'Incised', 'Stamped', 'Glazed', 'Relief', 'Burnished', 'Slipped'],
+          onChanged: (val) => setState(() => _selectedDecoration = val),
+        ),
+        const SizedBox(height: 12),
+        // Rim Diameter
+        _buildFormField(
+          controller: _rimDiameterController,
+          label: 'Rim Diameter (mm)',
+          hint: 'Estimated diameter if rim sherd',
+          icon: Icons.radio_button_unchecked,
+          isRequired: false,
+        ),
+        const SizedBox(height: 12),
+        // Wall Thickness
+        _buildFormField(
+          controller: _wallThicknessController,
+          label: 'Wall Thickness (mm)',
+          hint: 'Sherd thickness',
+          icon: Icons.straighten,
+          isRequired: false,
+        ),
+      ],
+    );
+  }
+
+  // Dropdown field builder for fragment selectors
+  Widget _buildDropdownField({
+    required String label,
+    required IconData icon,
+    required String? value,
+    required List<String> items,
+    required Function(String?) onChanged,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(26),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withAlpha(89),
+              width: 1,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(26),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: const Color(0xFFFFC107), size: 20),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(179),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      DropdownButtonFormField<String>(
+                        value: value,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        dropdownColor: const Color(0xFF1C2523),
+                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                        hint: Text(
+                          'Select $label',
+                          style: TextStyle(color: Colors.white.withAlpha(102)),
+                        ),
+                        items: items.map((item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(item),
+                        )).toList(),
+                        onChanged: onChanged,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
