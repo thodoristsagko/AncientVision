@@ -2,7 +2,7 @@
 
 ## Professional Archaeological Field Management & 3D Reconstruction
 
-**Version:** 1.0.0 | **Platform:** Android | **Framework:** Flutter
+**Version:** 4.0.0 | **Platform:** Android | **Framework:** Flutter
 
 ---
 
@@ -46,9 +46,11 @@ AncientVision is a professional-grade mobile application designed for archaeolog
 - GPS location capture
 - Professional PDF reports
 
-### Safety Monitoring
+### Safety Monitoring v4.0
 - M5StickC Plus 2 integration via BLE
-- Real-time vibration detection (earthquake/collapse warning)
+- Advanced seismic analysis: Arias Intensity, CAV, 3-level Haar DWT
+- Recursive STA/LTA with EMA for memory efficiency
+- IMU temperature compensation (0.0005g/°C)
 - Soil moisture monitoring
 - Alert history with Firebase logging
 
@@ -91,14 +93,14 @@ AncientVision is a professional-grade mobile application designed for archaeolog
 ```
 AncientVision/
 ├── lib/
-│   ├── main.dart              # Core application (10,000+ lines)
-│   ├── services/              # Business logic layer
+│   ├── main.dart              # Core application (~600 lines, refactored from 13,472)
+│   ├── services/              # Business logic layer (25+ services)
 │   ├── models/                # Data structures
 │   ├── widgets/               # UI components
 │   └── utils/                 # Utilities
 ├── android/                   # Android platform code
-├── m5stick_firmware/          # Hardware sensor code
-├── scripts/                   # Python tools
+├── m5stick_firmware/          # Hardware sensor code (v4.0 firmware)
+├── scripts/                   # Python tools (ML training scripts)
 ├── docs/                      # Documentation
 └── build/                     # Build outputs
 ```
@@ -126,7 +128,8 @@ This application was developed for the FIRST LEGO League Innovation Project. Key
 2. **Triple Validation Pipeline** - Epipolar geometry, reprojection error, sample consensus
 3. **85-95% Reconstruction Success Rate** - With proper capture technique
 4. **Offline-First Architecture** - Designed for remote archaeological sites
-5. **Hardware Integration** - Custom sensor firmware for safety monitoring
+5. **Advanced Seismic Monitoring v4.0** - Wavelet analysis, Arias Intensity, CAV, recursive STA/LTA
+6. **ML Anomaly Detection** - VAE with 10 features, 181 unit tests, modular architecture
 
 ---
 

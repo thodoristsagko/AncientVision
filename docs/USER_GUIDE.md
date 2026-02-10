@@ -303,12 +303,22 @@ Tap any finding to see:
 
 ### Understanding Readings
 
-**Vibration**
+**Vibration** (Basic metrics, all firmware versions)
 | Value | Status | Meaning |
 |-------|--------|---------|
 | <0.3g | Safe | Normal |
 | 0.3-0.8g | Warning | Ground movement |
 | >0.8g | Critical | Earthquake/collapse risk |
+
+**NEW v4.0 Seismic Metrics** (only with v4.0 firmware)
+| Metric | Threshold | Meaning |
+|--------|-----------|---------|
+| Arias Intensity | Visual indicator | Cumulative seismic energy (π/2g·∫a²dt) |
+| CAV | 0.16 g·s | EPRI damage threshold |
+| Temperature | Display only | IMU temperature with 0.0005g/°C compensation |
+| DWT D1 | Bar graph | 50-100 Hz band (machinery) |
+| DWT D2 | Bar graph | 25-50 Hz band (structural) |
+| DWT D3 | Bar graph | 12-25 Hz band (seismic) |
 
 **Soil Moisture**
 | Value | Status | Meaning |

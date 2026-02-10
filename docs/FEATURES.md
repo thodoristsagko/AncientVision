@@ -349,10 +349,40 @@ Comprehensive archaeological documentation form with 25+ fields.
 
 ---
 
-## 6. Trench Safety Monitoring
+## 6. Trench Safety Monitoring v4.0
 
 ### Hardware Integration
 Connects to M5StickC Plus 2 microcontroller via Bluetooth Low Energy (BLE).
+
+### Advanced Seismic Analysis (NEW in v4.0)
+
+#### Arias Intensity
+Cumulative seismic energy metric (π/2g·∫a²dt):
+- Auto-resets every 60 seconds
+- Quantifies total earthquake energy delivered to structure
+- Used in seismic building codes worldwide
+
+#### CAV (Cumulative Absolute Velocity)
+- EPRI threshold: 0.16 g·s for structural damage
+- Industry standard for nuclear facility seismic safety
+- Color-coded warning levels in app UI
+
+#### 3-Level Haar DWT (Discrete Wavelet Transform)
+On-device frequency band decomposition:
+- D1: 50-100 Hz (high-frequency machinery)
+- D2: 25-50 Hz (mid-frequency structural)
+- D3: 12-25 Hz (low-frequency seismic)
+- Visualized as colored bars in app
+
+#### IMU Temperature
+- MPU6886 die temperature reading
+- Thermal bias compensation: 0.0005g/°C applied to acceleration
+- Prevents false alarms from temperature drift
+
+#### Recursive STA/LTA
+- EMA-based implementation saves 8KB RAM vs. v3.0 circular buffers
+- Standard seismology trigger algorithm
+- Ratio > 4.0 indicates seismic event
 
 ### Sensors Monitored
 
@@ -378,11 +408,14 @@ Connects to M5StickC Plus 2 microcontroller via Bluetooth Low Energy (BLE).
 - **Alarm sound** plays on critical alerts
 - **Global mute button** in bottom navigation bar controls all alert sounds across the entire app
 
-### Display Features
+### Display Features v4.0
 - **Live Values** - Real-time vibration and moisture readings
 - **Status Indicators** - Color-coded safety levels (green/orange/red)
 - **History Graph** - Live sensor trends (last 30 data points)
 - **Battery Level** - ESP device battery shown on M5StickC screen
+- **NEW: Seismic Metrics Row** - Arias Intensity, CAV (with EPRI thresholds), Temperature
+- **NEW: DWT Visualization** - 3 frequency band bars (D1/D2/D3) with amplitude colors
+- **Conditional Rendering** - v4.0 features only show when v4.0 firmware detected
 
 ### Connection Management
 - **Auto-scan** - Automatically finds nearby AncientVision-Sensor devices
@@ -390,6 +423,7 @@ Connects to M5StickC Plus 2 microcontroller via Bluetooth Low Energy (BLE).
 - **Auto-reconnect** - Exponential backoff reconnection on signal loss (up to 10 attempts)
 - **Keep-alive monitor** - Detects stale connections after 15 seconds of no data
 - **MTU negotiation** - Requests 512-byte MTU to prevent JSON truncation
+- **Backward Compatibility** - App supports v2.0, v3.0, and v4.0 firmware automatically
 
 ### Data Storage
 - Real-time data displayed on Safety tab
@@ -673,7 +707,7 @@ When saving incomplete records:
 | Cloud Processing | ✅ Complete | OpenScan API |
 | Photo Capture | ✅ Complete | Camera + Gallery |
 | PDF Export | ✅ Complete | Professional |
-| Trench Safety Monitoring | ✅ Complete | M5StickC Plus 2 + Global Alerts |
+| Trench Safety Monitoring v4.0 | ✅ Complete | DWT + Arias + CAV + Temp |
 | Offline Support | ✅ Complete | Auto-save + Queue |
 | Cloud Database | ✅ Complete | Firebase Firestore |
 | Field Journal | ✅ Complete | Daily logging |
@@ -683,4 +717,5 @@ When saving incomplete records:
 | Settings Sync | ✅ Complete | Cross-device |
 | Quick Capture | ✅ Complete | Simplified single-photo |
 | Data Validation | ✅ Complete | Quality checks |
-| AI Recognition | 🔄 Coming Soon | In development |
+| ML Anomaly Detection v4.0 | ✅ Complete | VAE with 10 features |
+| Modular Architecture v4.0 | ✅ Complete | 25+ services, 181 tests |

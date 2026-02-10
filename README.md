@@ -14,6 +14,8 @@ Developed in the context of FIRST LEGO League (FLL), the project focuses on solv
 2. Read [INSTALLATION.md](INSTALLATION.md) for detailed setup guide
 3. Run `run_app.bat` to launch the app (after installation)
 
+**Version:** v4.0 (February 2026) - Enhanced seismic analysis with wavelet transforms
+
 ## 📋 What You Need
 
 1. **Flutter SDK** - https://docs.flutter.dev/get-started/install/windows
@@ -35,10 +37,10 @@ Developed in the context of FIRST LEGO League (FLL), the project focuses on solv
 - **Data Validation**: Automatic quality checks
 
 ### Safety & Integration
-- **Safety Monitoring**: Real-time trench safety with M5StickC Plus 2
+- **Safety Monitoring v4.0**: Advanced seismic analysis with Haar wavelets, Arias Intensity, CAV, thermal compensation
 - **Offline Support**: Full functionality without internet
 - **Export**: PDF, JSON, CSV, GeoJSON, KML, PLY, OBJ, GLB
-- **AI Recognition**: Artifact identification (coming soon)
+- **AI Recognition**: VAE-based anomaly detection with 10-feature model
 
 ## 📱 How to Run
 

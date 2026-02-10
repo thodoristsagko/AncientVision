@@ -62,26 +62,36 @@
 
 ```
 lib/
-├── main.dart                    # 10,000+ γραμμές - Κύρια εφαρμογή
+├── main.dart                    # ~600 γραμμές - Κύρια εφαρμογή (από 13,472)
 │   ├── MyApp                    # Root widget
 │   ├── AuthScreen               # Σύνδεση/εγγραφή
 │   ├── MainScreen               # Scaffold πλοήγησης
-│   ├── _DashboardHomeView       # Στατιστικά & επισκόπηση
-│   ├── _FindingsView            # Γκαλερί & χάρτης
-│   ├── _ToolsView               # Κόμβος λειτουργιών
-│   ├── _SafetyView              # Παρακολούθηση αισθητήρων
-│   ├── ManualEntryFormScreen    # Φόρμα τεκμηρίωσης
-│   ├── PhotogrammetryScreen     # 3D λήψη
-│   └── AdminPanelScreen         # Διαχείριση χρηστών
+│   └── Οθόνες μεταφέρθηκαν σε ξεχωριστά αρχεία
 │
-├── services/
+├── screens/                     # ΝΕΟ v4.0 - Διαχωρισμός οθονών
+│   ├── dashboard_screen.dart    # Στατιστικά & επισκόπηση
+│   ├── findings_screen.dart     # Γκαλερί & χάρτης
+│   ├── tools_screen.dart        # Κόμβος λειτουργιών
+│   ├── safety_screen.dart       # Παρακολούθηση αισθητήρων
+│   ├── manual_entry_screen.dart # Φόρμα τεκμηρίωσης
+│   ├── photogrammetry_screen.dart # 3D λήψη
+│   └── export_screens.dart      # Εξαγωγές PDF & δεδομένων
+│
+├── services/                    # 25+ υπηρεσίες (ήταν 7)
 │   ├── auth_service.dart        # Firebase Auth wrapper + Ρόλοι
 │   ├── firebase_service.dart    # Λειτουργίες Firestore
 │   ├── reconstruction_service.dart  # 3D pipeline
 │   ├── sfm_robust.dart          # Αλγόριθμοι SfM
 │   ├── image_service.dart       # Συμπίεση & ανάλυση
 │   ├── cloud_photogrammetry_service.dart # OpenScan Cloud
-│   └── local_storage_service.dart   # Υποστήριξη εκτός σύνδεσης
+│   ├── local_storage_service.dart   # Υποστήριξη εκτός σύνδεσης
+│   ├── vibration_anomaly_service.dart  # ΝΕΟ v4.0 - VAE ML μοντέλο
+│   ├── wavelet_service.dart     # ΝΕΟ v4.0 - Haar DWT (23 tests)
+│   ├── vibration_metrics_service.dart  # ΝΕΟ v4.0 - Arias/CAV (40 tests)
+│   ├── exif_service.dart        # ΝΕΟ v4.0 - Μεταδεδομένα εικόνας (28 tests)
+│   ├── reconstruction_quality_service.dart  # ΝΕΟ v4.0 - Βαθμολογία ποιότητας
+│   ├── bundle_adjustment_service.dart  # ΝΕΟ v4.0 - Βελτιστοποίηση BA (15 tests)
+│   └── metadata_export_service.dart  # ΝΕΟ v4.0 - Μορφές εξαγωγής (22 tests)
 │
 ├── models/
 │   ├── point_cloud.dart         # PointCloud, Point3D
@@ -90,12 +100,19 @@ lib/
 │
 ├── widgets/
 │   ├── point_cloud_painter.dart # 3D απόδοση
-│   └── model_3d_viewer.dart     # Διαδραστικός προβολέας
+│   ├── model_3d_viewer.dart     # Διαδραστικός προβολέας
+│   └── spectrogram_widget.dart  # ΝΕΟ v4.0 - Οπτικοποίηση συχνοτήτων (20 tests)
 │
 └── utils/
     ├── quality_analyzer.dart    # Μετρήσεις ποιότητας εικόνας
     └── validators.dart          # Επικύρωση δεδομένων
 ```
+
+**Βελτιώσεις Αρχιτεκτονικής v4.0:**
+- Main.dart μειώθηκε από 13,472 → ~600 γραμμές (μείωση 96%)
+- 25+ αρθρωτές υπηρεσίες με σαφείς ευθύνες
+- 181 unit tests (ήταν 31 σε v3.0) - αύξηση 484%
+- Υπηρεσίες έτοιμες για μελλοντική ενσωμάτωση (wavelet, EXIF, bundle adjustment)
 
 ---
 

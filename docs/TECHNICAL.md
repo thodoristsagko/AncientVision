@@ -439,27 +439,36 @@ Deep dive into system design, algorithms, and implementation details.
 
 ```
 lib/
-├── main.dart                    # 10,000+ lines - Core application
+├── main.dart                    # ~600 lines - Core application (refactored from 13,472)
 │   ├── MyApp                    # Root widget
 │   ├── AuthScreen               # Login/register
 │   ├── MainScreen               # Navigation scaffold
-│   ├── _DashboardHomeView       # Statistics & overview
-│   ├── _FindingsView            # Gallery & map
-│   ├── _ToolsView               # Feature hub
-│   ├── _SafetyView              # Sensor monitoring (BLE persistent via IndexedStack)
-│   ├── ManualEntryFormScreen    # Documentation form
-│   ├── PhotogrammetryScreen     # 3D capture
-│   ├── PDFExportScreen          # Report generation
-│   └── ExportDataScreen         # Data export
+│   └── Screens delegated to separate files
 │
-├── services/
+├── screens/                     # NEW v4.0 - Screen separation
+│   ├── dashboard_screen.dart    # Statistics & overview
+│   ├── findings_screen.dart     # Gallery & map
+│   ├── tools_screen.dart        # Feature hub
+│   ├── safety_screen.dart       # Sensor monitoring (BLE persistent)
+│   ├── manual_entry_screen.dart # Documentation form
+│   ├── photogrammetry_screen.dart # 3D capture
+│   └── export_screens.dart      # PDF & data export
+│
+├── services/                    # 25+ services (was 7)
 │   ├── auth_service.dart        # Firebase Auth wrapper
 │   ├── firebase_service.dart    # Firestore operations
 │   ├── reconstruction_service.dart  # 3D pipeline
 │   ├── sfm_robust.dart          # SfM algorithms
 │   ├── image_service.dart       # Compression & analysis
 │   ├── pdf_report_service.dart  # PDF generation
-│   └── local_storage_service.dart   # Offline support
+│   ├── local_storage_service.dart   # Offline support
+│   ├── vibration_anomaly_service.dart  # NEW v4.0 - VAE ML model
+│   ├── wavelet_service.dart     # NEW v4.0 - Haar DWT (23 tests)
+│   ├── vibration_metrics_service.dart  # NEW v4.0 - Arias/CAV (40 tests)
+│   ├── exif_service.dart        # NEW v4.0 - Image metadata (28 tests)
+│   ├── reconstruction_quality_service.dart  # NEW v4.0 - Quality scoring
+│   ├── bundle_adjustment_service.dart  # NEW v4.0 - BA optimization (15 tests)
+│   └── metadata_export_service.dart  # NEW v4.0 - Export formats (22 tests)
 │
 ├── models/
 │   ├── point_cloud.dart         # PointCloud, Point3D
@@ -469,11 +478,18 @@ lib/
 ├── widgets/
 │   ├── point_cloud_painter.dart # 3D rendering
 │   ├── model_3d_viewer.dart     # Interactive viewer
-│   └── liquid_glass.dart        # Glassmorphism UI
+│   ├── liquid_glass.dart        # Glassmorphism UI
+│   └── spectrogram_widget.dart  # NEW v4.0 - Frequency visualization (20 tests)
 │
 └── utils/
     └── quality_analyzer.dart    # Image quality metrics
 ```
+
+**v4.0 Architecture Improvements:**
+- Main.dart reduced from 13,472 → ~600 lines (96% reduction)
+- 25+ modular services with clear responsibilities
+- 181 unit tests (was 31 in v3.0) - 484% increase
+- Services ready for future integration (wavelet, EXIF, bundle adjustment)
 
 ---
 
