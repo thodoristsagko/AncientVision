@@ -62,6 +62,14 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   double _ppvPeakHold = 0.0;   // 5-second peak hold
   DateTime _ppvPeakTime = DateTime.now();
 
+  // v4.0 fields
+  double _arias = 0.0;         // Arias Intensity (m/s)
+  double _cav = 0.0;           // Cumulative Absolute Velocity (g·s)
+  double _temp = 0.0;          // IMU temperature (°C)
+  double _dwt1 = 0.0;          // DWT level 1 energy (50-100Hz)
+  double _dwt2 = 0.0;          // DWT level 2 energy (25-50Hz)
+  double _dwt3 = 0.0;          // DWT level 3 energy (12-25Hz)
+
   // PPV history for trend graph (DIN 4150-3)
   final List<Map<String, dynamic>> _ppvHistory = [];
 
@@ -505,6 +513,14 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           _centroid = (data['cent'] as num?)?.toDouble() ?? 0.0;
           _kurtosis = (data['kurt'] as num?)?.toDouble() ?? 0.0;
           _staLtaRatio = (data['stalta'] as num?)?.toDouble() ?? 0.0;
+
+          // Parse v4.0 fields (backward compatible - defaults to 0 if missing)
+          _arias = (data['arias'] as num?)?.toDouble() ?? 0.0;
+          _cav = (data['cav'] as num?)?.toDouble() ?? 0.0;
+          _temp = (data['temp'] as num?)?.toDouble() ?? 0.0;
+          _dwt1 = (data['dwt1'] as num?)?.toDouble() ?? 0.0;
+          _dwt2 = (data['dwt2'] as num?)?.toDouble() ?? 0.0;
+          _dwt3 = (data['dwt3'] as num?)?.toDouble() ?? 0.0;
 
           // PPV EMA smoothing (alpha = 0.3)
           _ppvSmoothed = 0.3 * _ppv + 0.7 * _ppvSmoothed;
@@ -975,7 +991,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               ),
               const SizedBox(height: 12),
 
-              // Vibration Analysis Card (new v2.0)
+              // Vibration Analysis Card (v4.0)
               VibrationAnalysisCard(
                 ppv: _ppv,
                 rms: _rms,
@@ -986,6 +1002,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                 kurtosis: _kurtosis,
                 staLtaRatio: _staLtaRatio,
                 centroid: _centroid,
+                arias: _arias,
+                cav: _cav,
+                temp: _temp,
+                dwt1: _dwt1,
+                dwt2: _dwt2,
+                dwt3: _dwt3,
                 hazardType: _hazardType,
                 hazardLabel: _getHazardTypeLabel(),
                 ppvColor: _getPPVColor(),

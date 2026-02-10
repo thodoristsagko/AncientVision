@@ -375,6 +375,8 @@ class MLAnomalyIndicator extends StatelessWidget {
 class VibrationAnalysisCard extends StatelessWidget {
   final double ppv, rms, dominantFreq, crestFactor;
   final double ppvSmoothed, ppvPeakHold, kurtosis, staLtaRatio, centroid;
+  final double arias, cav, temp; // v4.0 fields
+  final double dwt1, dwt2, dwt3; // v4.0 wavelet fields
   final String hazardType, hazardLabel;
   final String damageAssessment;
   final Color ppvColor;
@@ -388,6 +390,8 @@ class VibrationAnalysisCard extends StatelessWidget {
     required this.ppvColor, required this.isConnected,
     this.ppvSmoothed = 0, this.ppvPeakHold = 0, this.kurtosis = 0,
     this.staLtaRatio = 0, this.centroid = 0, this.damageAssessment = '',
+    this.arias = 0, this.cav = 0, this.temp = 0, // v4.0 defaults
+    this.dwt1 = 0, this.dwt2 = 0, this.dwt3 = 0,
     this.onHistoryTap,
   });
 
@@ -524,7 +528,61 @@ class VibrationAnalysisCard extends StatelessWidget {
                     _buildMetricTile('Cent', '${centroid.toStringAsFixed(0)}Hz', Icons.center_focus_strong),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
+
+                // Metrics grid - row 3 (v4.0 features) - only show if any v4.0 data present
+                if (arias > 0 || cav > 0 || temp > 0) ...[
+                  Row(
+                    children: [
+                      _buildMetricTile('Arias', arias.toStringAsFixed(4), Icons.tsunami,
+                        valueColor: arias > 0.01 ? const Color(0xFFFF9800) : null),
+                      const SizedBox(width: 10),
+                      _buildMetricTile('CAV', '${cav.toStringAsFixed(3)}g·s', Icons.speed,
+                        valueColor: cav > 0.16 ? const Color(0xFFFF5722) : cav > 0.1 ? const Color(0xFFFF9800) : null),
+                      const SizedBox(width: 10),
+                      _buildMetricTile('Temp', '${temp.toStringAsFixed(1)}°C', Icons.thermostat),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // DWT levels (v4.0) - only show if non-zero
+                if (dwt1 > 0 || dwt2 > 0 || dwt3 > 0) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2196F3).withAlpha(20),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF2196F3).withAlpha(60), width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.graphic_eq, color: Color(0xFF2196F3), size: 14),
+                            SizedBox(width: 6),
+                            Text('Wavelet Decomposition (DWT)',
+                              style: TextStyle(color: Color(0xFF2196F3), fontSize: 11, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(child: _buildDwtBar('D1 (50-100Hz)', dwt1, const Color(0xFF4CAF50))),
+                            const SizedBox(width: 8),
+                            Expanded(child: _buildDwtBar('D2 (25-50Hz)', dwt2, const Color(0xFFFF9800))),
+                            const SizedBox(width: 8),
+                            Expanded(child: _buildDwtBar('D3 (12-25Hz)', dwt3, const Color(0xFFFF5722))),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                const SizedBox(height: 2),
 
                 // Frequency band indicator
                 Container(
@@ -676,6 +734,37 @@ class VibrationAnalysisCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDwtBar(String label, double value, Color color) {
+    const maxDwt = 0.01; // Typical max DWT energy
+    final fraction = (value / maxDwt).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(color: Colors.white.withAlpha(160), fontSize: 9)),
+        const SizedBox(height: 3),
+        Container(
+          height: 6,
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(30),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: fraction,
+            child: Container(
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(value.toStringAsFixed(4), style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w600)),
+      ],
     );
   }
 }
