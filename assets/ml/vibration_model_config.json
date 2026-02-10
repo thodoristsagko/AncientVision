@@ -1,20 +1,31 @@
 {
-  "model_version": "1.0",
+  "model_version": "4.0",
+  "model_type": "vae",
   "input_features": [
     "rms",
     "ppv",
     "freq",
-    "crest"
+    "crest",
+    "centroid",
+    "kurtosis",
+    "stalta",
+    "arias",
+    "cav",
+    "temp"
   ],
-  "input_dim": 4,
+  "input_dim": 10,
+  "latent_dim": 4,
+  "beta": 1.0,
   "thresholds": {
-    "threshold_low": 1.0295724868774414,
-    "threshold_high": 2.418797731399536,
-    "mean_error": 0.2859453856945038,
-    "std_error": 0.47470328211784363
+    "threshold_low": 5.527729508593464,
+    "threshold_high": 7.061842587807361,
+    "mean_error": 1.8461462705675862,
+    "std_error": 1.514269196153443
   },
-  "training_samples": 2000,
+  "training_samples": 5000,
+  "training_epochs": 150,
+  "final_loss": 6.500329971313477,
   "synthetic_data": true,
-  "description": "Autoencoder for archaeological site vibration anomaly detection",
+  "description": "VAE for archaeological site vibration anomaly detection",
   "standard": "DIN 4150-3"
 }

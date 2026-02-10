@@ -44,6 +44,24 @@ void main() {
       expect(imu.stalta, closeTo(1.50, 0.01));
     });
 
+    test('parses v4.0 IMU payload (all 17 fields)', () {
+      const json =
+          '{"x":0.012,"y":-0.003,"z":9.810,"vib":0.0042,"ppv":1.5,"rms":0.0031,"freq":12.5,"crest":3.2,"cent":15.0,"kurt":2.10,"stalta":1.50,"arias":0.0023,"cav":0.045,"temp":24.5,"dwt1":0.0012,"dwt2":0.0008,"dwt3":0.0005}';
+      final result = parseBleJson(json, imuUuid);
+      expect(result, isA<ImuData>());
+      final imu = result as ImuData;
+      expect(imu.x, closeTo(0.012, 0.001));
+      expect(imu.ppv, closeTo(1.5, 0.1));
+      expect(imu.kurt, closeTo(2.10, 0.01));
+      // v4.0 fields
+      expect(imu.arias, closeTo(0.0023, 0.0001));
+      expect(imu.cav, closeTo(0.045, 0.001));
+      expect(imu.temp, closeTo(24.5, 0.1));
+      expect(imu.dwt1, closeTo(0.0012, 0.0001));
+      expect(imu.dwt2, closeTo(0.0008, 0.0001));
+      expect(imu.dwt3, closeTo(0.0005, 0.0001));
+    });
+
     test('parses v2.0 payload (missing v3 fields)', () {
       const json = '{"x":0.1,"y":0.2,"z":9.8,"vib":0.01,"ppv":2.0,"rms":0.005,"freq":10.0,"crest":4.0}';
       final result = parseBleJson(json, imuUuid);
@@ -52,6 +70,13 @@ void main() {
       expect(imu.cent, 0.0); // defaults to 0
       expect(imu.kurt, 0.0);
       expect(imu.stalta, 0.0);
+      // v4.0 fields also default to 0
+      expect(imu.arias, 0.0);
+      expect(imu.cav, 0.0);
+      expect(imu.temp, 0.0);
+      expect(imu.dwt1, 0.0);
+      expect(imu.dwt2, 0.0);
+      expect(imu.dwt3, 0.0);
     });
 
     test('handles integer values', () {

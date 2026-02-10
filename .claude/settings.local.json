@@ -41,7 +41,18 @@
       "Bash(del /q COMPREHENSIVE_FIX.md FINAL_STATUS.md MARKET_LEADER.md PERFECT_3D_SYSTEM.md PRODUCTION_IMPROVEMENTS.md REAL_SFM_IMPLEMENTATION.md ULTIMATE_SYSTEM_COMPLETE.md ULTRA_FEATURES.md ULTRA_FIX_COMPLETE.md WORLD_CLASS_APP.md WORLD_CLASS_FEATURES.md)",
       "Bash(flutter install:*)",
       "Bash(taskkill:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(flutter attach:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(adb devices:*)",
+      "Bash(more:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(flutter emulators:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(for d in \"c:/Users/thodo/Desktop/FLL_Thodoris/AncientVisionFLL/AncientVision/training_images\"/*)",
+      "Bash(\"C:\\\\Users\\\\thodo\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe\" run -t upload)"
     ]
   }
 }

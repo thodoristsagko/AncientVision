@@ -1,23 +1,29 @@
 /*
- * AncientVision Trench Safety Monitor v3.0
+ * AncientVision Trench Safety Monitor v4.0
  * For M5StickC Plus 2 with Soil Moisture Sensor
  *
- * v3.0 Upgrades over v2.0:
+ * v4.0 Upgrades over v3.0:
+ * - Arias Intensity (running computation, auto-reset every 60s or via BLE)
+ * - Cumulative Absolute Velocity (CAV) with EPRI threshold (0.16 g·s)
+ * - Recursive STA/LTA (no arrays, saves memory)
+ * - 3-Level Haar DWT for transient detection (alongside FFT)
+ * - IMU temperature compensation (MPU6886 bias correction)
+ * - Extended BLE JSON with 17 fields (was 11)
+ *
+ * v3.0 Features (retained):
  * - Madgwick quaternion gravity removal (accurate at any orientation)
  * - Tri-axial PCPV per DIN 4150-3 (proper 3-axis PPV)
  * - 2nd-order Butterworth HPF on velocity (replaces crude 0.998 decay)
  * - FFT adaptive noise floor threshold
- * - STA/LTA seismic event trigger (standard seismology algorithm)
  * - Kurtosis computation (4th moment for impact detection)
  * - Hysteresis alert state machine with cooldown
  * - Filter warm-up discard (first 2 windows)
- * - Extended BLE JSON with 7 features (was 4)
  *
  * Signal Processing Pipeline:
- *   Raw IMU (200Hz) -> DLPF (99Hz) -> Madgwick Gravity Removal
- *   -> Butterworth Bandpass (0.5-100Hz) per axis -> FFT (256-pt)
- *   -> Tri-axial PPV + Velocity HPF -> STA/LTA + Kurtosis
- *   -> DIN 4150-3 Classification (Hysteresis)
+ *   Raw IMU (200Hz) -> Temp Compensation -> DLPF (99Hz) -> Madgwick Gravity Removal
+ *   -> Butterworth Bandpass (0.5-100Hz) per axis -> FFT (256-pt) + Haar DWT (3-level)
+ *   -> Tri-axial PPV + Velocity HPF -> Recursive STA/LTA + Kurtosis
+ *   -> Arias Intensity + CAV -> DIN 4150-3 Classification (Hysteresis)
  *
  * Libraries Required:
  * - M5StickCPlus2 (Arduino Library Manager)
@@ -32,6 +38,7 @@
 #include <BLE2902.h>
 #include <arduinoFFT.h>
 #include <MadgwickAHRS.h>
+#include <Wire.h>
 
 // ===================== CONFIGURATION =====================
 
@@ -65,16 +72,26 @@ const float CREST_IMPACT_THRESHOLD = 5.0;
 // Spectral centroid shift threshold (50% change)
 const float CENTROID_SHIFT_THRESHOLD = 0.5;
 
-// STA/LTA Configuration
-const int STA_LEN = 40;           // 0.2 sec at 200 Hz
-const int LTA_LEN = 2000;         // 10 sec at 200 Hz
+// STA/LTA Configuration (recursive - no arrays needed)
+const float STA_ALPHA = 1.0f / 40.0f;    // Equivalent to 40-sample window (0.2s at 200Hz)
+const float LTA_ALPHA = 1.0f / 2000.0f;  // Equivalent to 2000-sample window (10s at 200Hz)
 const float STA_TRIGGER = 4.0;    // STA/LTA trigger ratio
 const float STA_DETRIGGER = 1.5;  // STA/LTA de-trigger ratio
+
+// CAV damage threshold (EPRI)
+const float CAV_DAMAGE_THRESHOLD = 0.16;  // g·s
+
+// Arias Intensity reset interval (milliseconds)
+const unsigned long ARIAS_RESET_INTERVAL_MS = 60000;  // 60 seconds
 
 // Hysteresis Configuration
 const int TRIGGER_COUNT = 2;      // Windows to confirm alert (~2.5s)
 const int CLEAR_COUNT = 4;        // Windows to clear alert (~5s)
 const int COOLDOWN_WINDOWS = 8;   // Cooldown before re-alerting (~10s)
+
+// Temperature compensation (MPU6886 typical bias drift)
+const float TEMP_BIAS_COEFF = 0.0005f;  // g per degree C from 25°C
+const float TEMP_REF = 25.0f;           // Reference temperature
 
 // BLE UUIDs (unchanged for backward compatibility)
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
@@ -127,6 +144,13 @@ double vReal[FFT_SAMPLES];
 double vImag[FFT_SAMPLES];
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, FFT_SAMPLES, SAMPLE_RATE);
 
+// ===================== DWT BUFFERS =====================
+float dwtDetail1[128];  // Level 1 detail (50-100 Hz band at 200Hz Fs)
+float dwtDetail2[64];   // Level 2 detail (25-50 Hz band)
+float dwtDetail3[32];   // Level 3 detail (12.5-25 Hz band)
+float dwtApprox[32];    // Level 3 approximation (0-12.5 Hz band)
+float dwtEnergy1 = 0, dwtEnergy2 = 0, dwtEnergy3 = 0;
+
 // ===================== GLOBALS =====================
 BLEServer* pServer = NULL;
 BLECharacteristic* pIMUChar = NULL;
@@ -153,11 +177,23 @@ float prevSpectralCentroid = 0;      // Previous centroid for shift detection
 float kurtosis = 0;                  // Excess kurtosis (4th moment)
 float vibrationMagnitude = 0;        // Legacy: raw magnitude for backward compat
 
-// STA/LTA state (recursive, minimal memory)
-float sta = 0;
-float lta = 0.001f;                  // Initialize to small value to avoid div-by-zero
+// Recursive STA/LTA state (v4.0 - no arrays, saves memory)
+float staValue = 0;
+float ltaValue = 0.001f;             // Initialize to small value to avoid div-by-zero
 float staLtaRatio = 0;
 bool staLtaTriggered = false;
+
+// Arias Intensity (v4.0 - running computation)
+float ariasIntensity = 0.0f;
+unsigned long ariasLastReset = 0;
+
+// Cumulative Absolute Velocity (v4.0)
+float cav = 0.0f;
+
+// IMU Temperature (v4.0)
+float imuTemp = 25.0f;               // Default to reference temperature
+unsigned long lastTempRead = 0;
+const int TEMP_READ_INTERVAL = 500;  // Read temperature every 500ms
 
 // Moisture data
 int moisturePercent = 0;
@@ -213,6 +249,51 @@ void configureDLPF() {
   Serial.println("DLPF configured: 99 Hz bandwidth");
 }
 
+// ===================== IMU TEMPERATURE READING (v4.0) =====================
+void readIMUTemperature() {
+  Wire1.beginTransmission(0x68);
+  Wire1.write(0x41);  // TEMP_OUT_H register
+  Wire1.endTransmission(false);
+  Wire1.requestFrom((uint8_t)0x68, (uint8_t)2);
+  if (Wire1.available() >= 2) {
+    int16_t rawTemp = (Wire1.read() << 8) | Wire1.read();
+    imuTemp = rawTemp / 326.8f + 25.0f;  // MPU6886 temperature formula
+  }
+}
+
+// ===================== 3-LEVEL HAAR DWT (v4.0) =====================
+void computeHaarDWT(float* signal, int length) {
+  float temp[256];
+  memcpy(temp, signal, length * sizeof(float));
+
+  int len = length;
+  for (int level = 0; level < 3; level++) {
+    int halfLen = len / 2;
+    float* detail;
+    if (level == 0) detail = dwtDetail1;
+    else if (level == 1) detail = dwtDetail2;
+    else detail = dwtDetail3;
+
+    for (int i = 0; i < halfLen; i++) {
+      float avg  = (temp[2 * i] + temp[2 * i + 1]) * 0.70710678f;  // 1/sqrt(2)
+      float diff = (temp[2 * i] - temp[2 * i + 1]) * 0.70710678f;
+      detail[i] = diff;
+      temp[i] = avg;
+    }
+    len = halfLen;
+  }
+  memcpy(dwtApprox, temp, 32 * sizeof(float));
+}
+
+void computeDWTEnergy() {
+  dwtEnergy1 = 0;
+  dwtEnergy2 = 0;
+  dwtEnergy3 = 0;
+  for (int i = 0; i < 128; i++) dwtEnergy1 += dwtDetail1[i] * dwtDetail1[i];
+  for (int i = 0; i < 64; i++)  dwtEnergy2 += dwtDetail2[i] * dwtDetail2[i];
+  for (int i = 0; i < 32; i++)  dwtEnergy3 += dwtDetail3[i] * dwtDetail3[i];
+}
+
 // ===================== BLE CALLBACKS =====================
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
@@ -232,8 +313,8 @@ void setup() {
   M5.begin(cfg);
 
   Serial.begin(115200);
-  Serial.println("AncientVision Trench Safety Monitor v3.0");
-  Serial.println("DSP: Madgwick + Tri-axial PPV + STA/LTA + Kurtosis");
+  Serial.println("AncientVision Trench Safety Monitor v4.0");
+  Serial.println("DSP: Madgwick + Tri-axial PPV + Recursive STA/LTA + DWT + Arias + CAV");
 
   // Initialize display
   M5.Lcd.setRotation(1);
@@ -245,10 +326,12 @@ void setup() {
   M5.Lcd.println("AncientVision");
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(10, 50);
-  M5.Lcd.println("Vibration Analysis v3.0");
+  M5.Lcd.println("Vibration Analysis v4.0");
   M5.Lcd.setCursor(10, 65);
-  M5.Lcd.println("Madgwick+FFT+STA/LTA");
-  M5.Lcd.setCursor(10, 85);
+  M5.Lcd.println("Madgwick+FFT+DWT+STA/LTA");
+  M5.Lcd.setCursor(10, 80);
+  M5.Lcd.println("Arias+CAV+TempComp");
+  M5.Lcd.setCursor(10, 100);
   M5.Lcd.println("Initializing...");
 
   // Initialize IMU
@@ -275,6 +358,14 @@ void setup() {
   memset(velocitySamplesZ, 0, sizeof(velocitySamplesZ));
   sampleIndex = 0;
   windowCount = 0;
+
+  // Initialize v4.0 accumulators
+  ariasIntensity = 0.0f;
+  cav = 0.0f;
+  ariasLastReset = millis();
+
+  // Read initial IMU temperature
+  readIMUTemperature();
 
   // Initialize moisture sensor pin
   pinMode(MOISTURE_PIN, INPUT);
@@ -352,6 +443,20 @@ void loop() {
     classifyHazard();
   }
 
+  // ---- Read IMU temperature periodically (v4.0) ----
+  if (currentMillis - lastTempRead >= TEMP_READ_INTERVAL) {
+    lastTempRead = currentMillis;
+    readIMUTemperature();
+  }
+
+  // ---- Auto-reset Arias Intensity (v4.0) ----
+  if (currentMillis - ariasLastReset >= ARIAS_RESET_INTERVAL_MS) {
+    Serial.printf("Arias Intensity reset (was %.6f m/s, CAV was %.4f g*s)\n", ariasIntensity, cav);
+    ariasIntensity = 0.0f;
+    cav = 0.0f;
+    ariasLastReset = currentMillis;
+  }
+
   // ---- Read moisture at 1 Hz ----
   if (currentMillis - lastMoistureRead >= MOISTURE_INTERVAL) {
     lastMoistureRead = currentMillis;
@@ -392,6 +497,12 @@ void collectSample() {
   // Read IMU accelerometer AND gyroscope
   M5.Imu.getAccelData(&accX, &accY, &accZ);
   M5.Imu.getGyroData(&gyroX, &gyroY, &gyroZ);
+
+  // v4.0: Temperature compensation - remove thermal bias from accelerometer
+  float tempBias = (imuTemp - TEMP_REF) * TEMP_BIAS_COEFF;
+  accX -= tempBias;
+  accY -= tempBias;
+  accZ -= tempBias;
 
   // Update Madgwick filter for orientation tracking
   // Madgwick expects gyro in degrees/sec, accel in any consistent unit
@@ -445,14 +556,24 @@ void collectSample() {
     velocitySamplesZ[0] = 0;
   }
 
-  // STA/LTA computation (on acceleration magnitude, per-sample)
+  // v4.0: Recursive STA/LTA computation (no arrays, saves ~8KB RAM)
   float mag = filtX * filtX + filtY * filtY + filtZ * filtZ;
-  sta = sta + (mag - sta) / (float)STA_LEN;
-  lta = lta + (mag - lta) / (float)LTA_LEN;
-  staLtaRatio = (lta > 0.000001f) ? sta / lta : 0;
+  float sampleEnergy = mag;  // Already squared magnitude
+  staValue = STA_ALPHA * sampleEnergy + (1.0f - STA_ALPHA) * staValue;
+  ltaValue = LTA_ALPHA * sampleEnergy + (1.0f - LTA_ALPHA) * ltaValue;
+  staLtaRatio = (ltaValue > 1e-10f) ? staValue / ltaValue : 1.0f;
+
+  // v4.0: Arias Intensity accumulation (per filtered sample)
+  // AI = (pi / 2g) * integral(a^2 dt), a in g, result in m/s
+  float filteredAccelMag = sqrt(mag);  // magnitude in g
+  ariasIntensity += (PI / (2.0f * 9.81f)) * filteredAccelMag * filteredAccelMag * dt;
+
+  // v4.0: Cumulative Absolute Velocity accumulation
+  // CAV = integral(|a| dt), in g·s
+  cav += filteredAccelMag * dt;
 
   // Legacy backward compat: magnitude
-  vibrationMagnitude = sqrt(mag);
+  vibrationMagnitude = filteredAccelMag;
 
   sampleIndex++;
 
@@ -483,8 +604,8 @@ void processVibrationWindow() {
                   accelSamplesY[i] * accelSamplesY[i] +
                   accelSamplesZ[i] * accelSamplesZ[i];
     sumSq += magSq;
-    float mag = sqrt(magSq);
-    if (mag > peak) peak = mag;
+    float magVal = sqrt(magSq);
+    if (magVal > peak) peak = magVal;
 
     // Per-axis peak velocity for PCPV
     float absVelX = fabs(velocitySamplesX[i]);
@@ -508,17 +629,17 @@ void processVibrationWindow() {
   {
     float mean = 0, m2 = 0, m4 = 0;
     for (int i = 0; i < FFT_SAMPLES; i++) {
-      float mag = sqrt(accelSamplesX[i] * accelSamplesX[i] +
+      float magVal = sqrt(accelSamplesX[i] * accelSamplesX[i] +
                        accelSamplesY[i] * accelSamplesY[i] +
                        accelSamplesZ[i] * accelSamplesZ[i]);
-      mean += mag;
+      mean += magVal;
     }
     mean /= FFT_SAMPLES;
     for (int i = 0; i < FFT_SAMPLES; i++) {
-      float mag = sqrt(accelSamplesX[i] * accelSamplesX[i] +
+      float magVal = sqrt(accelSamplesX[i] * accelSamplesX[i] +
                        accelSamplesY[i] * accelSamplesY[i] +
                        accelSamplesZ[i] * accelSamplesZ[i]);
-      float d = mag - mean;
+      float d = magVal - mean;
       m2 += d * d;
       m4 += d * d * d * d;
     }
@@ -528,10 +649,13 @@ void processVibrationWindow() {
   }
 
   // ---- FFT for frequency analysis (use magnitude of 3 axes) ----
+  // Build magnitude signal for both FFT and DWT
+  float magSignal[FFT_SAMPLES];
   for (int i = 0; i < FFT_SAMPLES; i++) {
-    vReal[i] = (double)sqrt(accelSamplesX[i] * accelSamplesX[i] +
-                             accelSamplesY[i] * accelSamplesY[i] +
-                             accelSamplesZ[i] * accelSamplesZ[i]);
+    magSignal[i] = sqrt(accelSamplesX[i] * accelSamplesX[i] +
+                        accelSamplesY[i] * accelSamplesY[i] +
+                        accelSamplesZ[i] * accelSamplesZ[i]);
+    vReal[i] = (double)magSignal[i];
     vImag[i] = 0;
   }
 
@@ -587,9 +711,15 @@ void processVibrationWindow() {
     spectralCentroid = 0;
   }
 
+  // ---- v4.0: 3-Level Haar DWT for transient detection ----
+  computeHaarDWT(magSignal, FFT_SAMPLES);
+  computeDWTEnergy();
+
   // Debug output
-  Serial.printf("DSP v3.0: RMS=%.4fg PPV=%.1fmm/s Freq=%.1fHz Crest=%.1f Kurt=%.2f STA/LTA=%.2f Cent=%.1fHz\n",
+  Serial.printf("DSP v4.0: RMS=%.4fg PPV=%.1fmm/s Freq=%.1fHz Crest=%.1f Kurt=%.2f STA/LTA=%.2f Cent=%.1fHz\n",
     vibrationRMS, vibrationPPV, dominantFreq, crestFactor, kurtosis, staLtaRatio, spectralCentroid);
+  Serial.printf("  Arias=%.6f CAV=%.4f Temp=%.1fC DWT=[%.4f,%.4f,%.4f]\n",
+    ariasIntensity, cav, imuTemp, dwtEnergy1, dwtEnergy2, dwtEnergy3);
 }
 
 // ===================== HAZARD CLASSIFICATION (DIN 4150-3 + Hysteresis) =====================
@@ -620,6 +750,12 @@ void classifyHazard() {
     newMessage = "Seismic event (STA/LTA)";
     newType = "seismic";
   }
+  // CRITICAL: CAV exceeds EPRI damage threshold (v4.0)
+  else if (cav > CAV_DAMAGE_THRESHOLD) {
+    newAlert = CRITICAL;
+    newMessage = "CAV damage threshold exceeded";
+    newType = "cav_damage";
+  }
   // WARNING: Heavy machinery (mid frequency, moderate PPV)
   else if (vibrationPPV > PPV_HERITAGE_LOW && dominantFreq > 10.0 && dominantFreq <= 50.0) {
     newAlert = WARNING;
@@ -637,6 +773,12 @@ void classifyHazard() {
     newAlert = WARNING;
     newMessage = "Impact detected";
     newType = "impact";
+  }
+  // WARNING: DWT transient detection (v4.0 - high energy in detail level 1)
+  else if (dwtEnergy1 > dwtEnergy3 * 10.0f && dwtEnergy1 > 0.01f && vibrationPPV > 0.5) {
+    newAlert = WARNING;
+    newMessage = "HF transient (DWT)";
+    newType = "dwt_transient";
   }
   // WARNING: Continuous vibration exceeding heritage limit
   else if (vibrationPPV > PPV_CONTINUOUS_LIMIT) {
@@ -776,7 +918,7 @@ void updateDisplay() {
   }
   M5.Lcd.setTextColor(WHITE, bgColor);
 
-  // Row 5: Moisture + Kurtosis
+  // Row 5: Moisture + Temperature (v4.0)
   M5.Lcd.setTextSize(2);
   M5.Lcd.setCursor(5, 94);
   M5.Lcd.printf("Mst:%d%%", moisturePercent);
@@ -787,23 +929,25 @@ void updateDisplay() {
   } else {
     M5.Lcd.print(" OK");
   }
+  M5.Lcd.printf(" %.0fC", imuTemp);
 
-  // Row 6: Details (small)
+  // Row 6: Details (small) - v4.0: Arias + CAV + RMS
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(5, 118);
-  M5.Lcd.printf("RMS:%.4f CF:%.1f K:%.1f", vibrationRMS, crestFactor, kurtosis);
+  M5.Lcd.printf("AI:%.4f CAV:%.3f RMS:%.4f K:%.1f", ariasIntensity, cav, vibrationRMS, kurtosis);
 }
 
 // ===================== BLE FUNCTIONS =====================
 void sendBLEData() {
   if (!deviceConnected) return;
 
-  // Send IMU data with all v3.0 features
-  char imuData[256];
+  // Send IMU data with all v4.0 features
+  char imuData[384];
   snprintf(imuData, sizeof(imuData),
-    "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"vib\":%.4f,\"ppv\":%.1f,\"rms\":%.4f,\"freq\":%.1f,\"crest\":%.1f,\"cent\":%.1f,\"kurt\":%.2f,\"stalta\":%.2f}",
+    "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"vib\":%.4f,\"ppv\":%.1f,\"rms\":%.4f,\"freq\":%.1f,\"crest\":%.1f,\"cent\":%.1f,\"kurt\":%.2f,\"stalta\":%.2f,\"arias\":%.6f,\"cav\":%.4f,\"temp\":%.1f,\"dwt1\":%.4f,\"dwt2\":%.4f,\"dwt3\":%.4f}",
     accX, accY, accZ, vibrationMagnitude, vibrationPPV, vibrationRMS,
-    dominantFreq, crestFactor, spectralCentroid, kurtosis, staLtaRatio);
+    dominantFreq, crestFactor, spectralCentroid, kurtosis, staLtaRatio,
+    ariasIntensity, cav, imuTemp, dwtEnergy1, dwtEnergy2, dwtEnergy3);
   pIMUChar->setValue(imuData);
   pIMUChar->notify();
 

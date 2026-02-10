@@ -5,6 +5,7 @@ sealed class BleParseResult {}
 
 class ImuData extends BleParseResult {
   final double x, y, z, vib, ppv, rms, freq, crest, cent, kurt, stalta;
+  final double arias, cav, temp, dwt1, dwt2, dwt3; // v4.0 fields
 
   ImuData({
     required this.x,
@@ -18,6 +19,12 @@ class ImuData extends BleParseResult {
     this.cent = 0,
     this.kurt = 0,
     this.stalta = 0,
+    this.arias = 0,
+    this.cav = 0,
+    this.temp = 0,
+    this.dwt1 = 0,
+    this.dwt2 = 0,
+    this.dwt3 = 0,
   });
 }
 
@@ -80,6 +87,13 @@ BleParseResult parseBleJson(String jsonStr, String charUuid) {
       cent: (data['cent'] as num?)?.toDouble() ?? 0.0,
       kurt: (data['kurt'] as num?)?.toDouble() ?? 0.0,
       stalta: (data['stalta'] as num?)?.toDouble() ?? 0.0,
+      // v4.0 firmware fields (backward compatible - default to 0 if missing)
+      arias: (data['arias'] as num?)?.toDouble() ?? 0.0,
+      cav: (data['cav'] as num?)?.toDouble() ?? 0.0,
+      temp: (data['temp'] as num?)?.toDouble() ?? 0.0,
+      dwt1: (data['dwt1'] as num?)?.toDouble() ?? 0.0,
+      dwt2: (data['dwt2'] as num?)?.toDouble() ?? 0.0,
+      dwt3: (data['dwt3'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
