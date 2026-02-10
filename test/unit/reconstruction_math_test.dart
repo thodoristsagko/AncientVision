@@ -132,12 +132,12 @@ void main() {
       expect(R.determinant(), closeTo(1.0, 1e-10));
 
       // 90 degree rotation around Z axis
-      final Rz = Matrix3(
+      final rotZ = Matrix3(
         0, -1, 0,
         1, 0, 0,
         0, 0, 1,
       );
-      expect(Rz.determinant(), closeTo(1.0, 1e-10));
+      expect(rotZ.determinant(), closeTo(1.0, 1e-10));
     });
   });
 }

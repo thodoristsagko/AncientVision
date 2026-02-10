@@ -1,8 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import '../main.dart' show imgbbApiKey;
 import '../services/auth_service.dart';
 import '../services/export_service.dart';
+import '../services/local_storage_service.dart';
 import 'field_journal_screen.dart';
 import 'quick_capture_screen.dart';
 import 'manual_entry_form_screen.dart';
@@ -508,15 +513,136 @@ class ToolsView extends StatelessWidget {
 
   // Handle Quick Capture result
   Future<void> _handleQuickCaptureResult(BuildContext context, Map<String, dynamic> result) async {
-    // This method is referenced but its implementation is in main.dart
-    // For now, we'll show a simple success message
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Quick capture saved!'),
-          backgroundColor: Color(0xFF4CAF50),
-        ),
-      );
+    // Support both formats: 'photo' (single) from QuickCapture, 'photos' (list) from elsewhere
+    final singlePhoto = result['photo'] as XFile?;
+    final photosList = result['photos'] as List<dynamic>?;
+    final photos = photosList ?? (singlePhoto != null ? [singlePhoto] : null);
+    final type = result['type'];
+    // Support both 'note' and 'description' field names
+    final description = (result['description'] ?? result['note']) as String?;
+    final location = result['location'] as Map<String, dynamic>?;
+    final persistedPath = result['persistedPath'] as String?;
+
+    if (photos == null || photos.isEmpty) {
+      debugPrint('QuickCapture: No photos to save');
+      return;
+    }
+
+    // Get type label
+    String typeLabel = 'Unknown';
+    if (type != null) {
+      try {
+        typeLabel = type.label ?? 'Unknown';
+      } catch (_) {
+        typeLabel = type.toString();
+      }
+    }
+
+    // Generate a local ID
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final localId = 'QC-$timestamp';
+
+    // Create finding data with local photo path
+    final findingData = {
+      'id': localId,
+      'name': description?.isNotEmpty == true ? description : 'Quick Capture ${DateTime.now().toIso8601String().split('T')[0]}',
+      'type': typeLabel,
+      'site': 'Field Site',
+      'date': DateTime.now().toIso8601String().split('T')[0],
+      'description': description ?? '',
+      'latitude': location?['latitude'] ?? 0.0,
+      'longitude': location?['longitude'] ?? 0.0,
+      'imageUrl': persistedPath, // Use local path
+      'photoGallery': persistedPath != null ? [persistedPath] : <String>[],
+      'createdAt': DateTime.now().toIso8601String(),
+      'source': 'quick',
+    };
+
+    // Save to local storage first (offline-first)
+    try {
+      final localStorage = LocalStorageService();
+      await localStorage.initialize();
+      // Cache locally and queue for cloud sync
+      await localStorage.cacheFinding(findingId: localId, data: findingData);
+      await localStorage.queueForUpload(findingId: localId, data: findingData);
+      debugPrint('QuickCapture: Saved locally as $localId');
+
+      // Show success immediately
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Quick capture saved locally ($typeLabel)'),
+            backgroundColor: const Color(0xFF4CAF50),
+          ),
+        );
+      }
+
+      // Try to sync to cloud in background (non-blocking)
+      _syncQuickCaptureToCloud(findingData, photos);
+    } catch (e) {
+      debugPrint('QuickCapture: Local save error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Background sync to cloud (non-blocking)
+  Future<void> _syncQuickCaptureToCloud(Map<String, dynamic> findingData, List<dynamic> photos) async {
+    try {
+      // Try to upload photos to imgbb
+      final List<String> photoUrls = [];
+      for (final photo in photos) {
+        try {
+          final xfile = photo as XFile;
+          final bytes = await xfile.readAsBytes();
+          final base64Image = base64Encode(bytes);
+
+          final response = await http.post(
+            Uri.parse('https://api.imgbb.com/1/upload'),
+            body: {
+              'key': imgbbApiKey,
+              'image': base64Image,
+            },
+          ).timeout(const Duration(seconds: 10));
+
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            if (data['success'] == true) {
+              photoUrls.add(data['data']['url']);
+            }
+          }
+        } catch (e) {
+          debugPrint('QuickCapture: Photo upload failed: $e');
+        }
+      }
+
+      // Create a copy for cloud upload to avoid mutating the original local data
+      final cloudData = Map<String, dynamic>.from(findingData);
+
+      // Update cloud data with cloud URLs if available
+      if (photoUrls.isNotEmpty) {
+        cloudData['imageUrl'] = photoUrls.first;
+        cloudData['photoGallery'] = photoUrls;
+      }
+      cloudData['createdAt'] = FieldValue.serverTimestamp();
+
+      // Try to save to Firestore
+      await FirebaseFirestore.instance
+          .collection('findings')
+          .doc(cloudData['id'] as String)
+          .set(cloudData)
+          .timeout(const Duration(seconds: 10));
+
+      debugPrint('QuickCapture: Synced to cloud');
+    } catch (e) {
+      debugPrint('QuickCapture: Cloud sync failed (will retry later): $e');
+      // Data is already saved locally, will sync when online
     }
   }
 }
