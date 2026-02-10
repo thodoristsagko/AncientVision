@@ -706,7 +706,7 @@ class _FindingsViewState extends State<FindingsView> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
-                                );
+                                ).then((_) => _loadFindings());
                               },
                               icon: const Icon(Icons.add_rounded),
                               label: const Text('Add First Finding'),
@@ -1077,44 +1077,104 @@ class _BatchExportSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
       decoration: const BoxDecoration(
         color: Color(0xFF1C2523),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
+      padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Export $selectedCount findings',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+          // Handle bar
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
+
+          // Title
+          Row(
+            children: [
+              const Icon(Icons.file_download, color: Color(0xFFFFC107), size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Batch Export',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '$selectedCount findings selected',
+                      style: TextStyle(
+                        color: Colors.white.withAlpha(179),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Format options
+          const Text(
+            'Select export format:',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+
           _buildFormatOption(
             context,
             ExportFormat.json,
             Icons.code,
             'JSON',
-            'Machine-readable format',
+            'Full data with all fields',
           ),
+          const SizedBox(height: 8),
+
           _buildFormatOption(
             context,
             ExportFormat.csv,
             Icons.table_chart,
             'CSV',
-            'Spreadsheet format',
+            'Spreadsheet compatible',
           ),
+          const SizedBox(height: 8),
+
           _buildFormatOption(
             context,
             ExportFormat.geojson,
             Icons.map,
             'GeoJSON',
             'For mapping applications',
+          ),
+          const SizedBox(height: 8),
+
+          _buildFormatOption(
+            context,
+            ExportFormat.kml,
+            Icons.public,
+            'KML',
+            'For Google Earth',
+          ),
+
+          const SizedBox(height: 16),
+          SafeArea(
+            child: Container(),
           ),
         ],
       ),
@@ -1128,11 +1188,60 @@ class _BatchExportSheet extends StatelessWidget {
     String title,
     String subtitle,
   ) {
-    return ListTile(
-      leading: Icon(icon, color: const Color(0xFFFFC107)),
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(subtitle, style: const TextStyle(color: Colors.white70)),
-      onTap: () => Navigator.pop(context, format),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => Navigator.pop(context, format),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(26),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFC107).withAlpha(51),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: const Color(0xFFFFC107), size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withAlpha(153),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.white.withAlpha(102),
+                size: 16,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
