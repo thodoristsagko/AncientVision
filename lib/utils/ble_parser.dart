@@ -44,6 +44,14 @@ class AlertBleData extends BleParseResult {
   AlertBleData({required this.level, required this.message, required this.type});
 }
 
+class BatteryData extends BleParseResult {
+  final double voltage;
+  final int percent;
+  final bool charging;
+
+  BatteryData({required this.voltage, required this.percent, required this.charging});
+}
+
 class BleParseError extends BleParseResult {
   final String reason;
   BleParseError(this.reason);
@@ -112,6 +120,15 @@ BleParseResult parseBleJson(String jsonStr, String charUuid) {
       level: data['level'] as String? ?? 'safe',
       message: data['message'] as String? ?? '',
       type: data['type'] as String? ?? 'none',
+    );
+  }
+
+  // Battery: UUID ends with 26ab (v4.1)
+  if (charUuid.endsWith('26ab') || charUuid.contains('b26ab')) {
+    return BatteryData(
+      voltage: (data['voltage'] as num?)?.toDouble() ?? 0.0,
+      percent: (data['percent'] as num?)?.toInt() ?? 0,
+      charging: data['charging'] as bool? ?? false,
     );
   }
 

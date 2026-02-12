@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,8 +10,12 @@ import '../models/alert_data.dart';
 import '../widgets/safety_widgets.dart';
 import '../widgets/full_screen_alert_overlay.dart';
 import '../services/vibration_anomaly_service.dart';
+import '../services/vibration_metrics_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
+import '../services/wavelet_service.dart';
+import '../widgets/spectrogram_widget.dart';
+import '../services/ppv_prediction_service.dart';
 import 'vibration_event_log_screen.dart';
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -70,16 +76,47 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   double _dwt2 = 0.0;          // DWT level 2 energy (25-50Hz)
   double _dwt3 = 0.0;          // DWT level 3 energy (12-25Hz)
 
+  // v4.1 fields
+  double _batteryVoltage = 0.0;  // Battery voltage (V)
+  int _batteryPercent = 100;      // Battery percentage (0-100%)
+  bool _batteryCharging = false;  // Charging status
+
+  // Wavelet analysis (app-side DWT on rolling buffer)
+  final List<double> _waveletBuffer = [];
+  static const int _waveletBufferSize = 256;
+  Map<String, double> _waveletBandEnergy = {};
+  List<TransientEvent> _waveletTransients = [];
+  bool _transientFlash = false;
+  DateTime _lastTransientTime = DateTime(2000);
+
+  // Spectrogram rolling buffer (synthesized from BLE frequency data)
+  final SpectrogramBuffer _spectrogramBuffer = SpectrogramBuffer(maxColumns: 120);
+  String _spectrogramColorMap = 'viridis';
+
   // PPV history for trend graph (DIN 4150-3)
   final List<Map<String, dynamic>> _ppvHistory = [];
 
   // Vibration feature log for ML training data
   final List<Map<String, dynamic>> _vibrationFeatureLog = [];
 
+  // Kalman filter + trend prediction (v4.2)
+  final _kalmanFilter = KalmanPPVFilter(q: 0.01, r: 0.5);
+  final _trendPredictor = PPVTrendPredictor(windowSize: 20, sampleIntervalSec: 0.5);
+  double _ppvKalman = 0.0;
+  PPVPrediction? _ppvPrediction;
+  final List<double> _ppvKalmanHistory = [];
+
   // ML Anomaly Detection (Tier 2)
   final _anomalyService = VibrationAnomalyService();
   AnomalyResult _lastAnomalyResult = const AnomalyResult(score: 0, level: AnomalyLevel.unknown, rawError: 0);
   bool _mlModelLoaded = false;
+  final List<double> _anomalyScoreHistory = []; // last 30 scores for sparkline
+  Map<String, double> _lastMLFeatures = {}; // features passed to last detect() call
+
+  // Multi-standard classification (VibrationMetricsService)
+  List<StandardClassification> _standardClassifications = [];
+  final VibrationMetrics _vibrationMetrics = VibrationMetrics();
+  double _housnerSI = 0.0;
 
   final List<AlertData> _alerts = [];
 
@@ -99,6 +136,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   Timer? _keepAliveTimer;
   DateTime? _lastDataReceived;
   String? _lastNotifiedAlertLevel; // Prevent duplicate notifications
+  int _truncatedPackets = 0; // Count of dropped truncated BLE packets
 
   @override
   void initState() {
@@ -207,7 +245,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
           // Log all devices found for debugging
           if (name.isNotEmpty && devicesFound < 20) {
-            debugPrint('BLE Found: "$name" (${r.device.remoteId})');
+            debugPrint('BLE Found: "$name" (${r.device.remoteId}) RSSI=${r.rssi}');
             devicesFound++;
           }
 
@@ -477,6 +515,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       // Check for truncated JSON (missing closing brace)
       if (!jsonStr.endsWith('}')) {
         debugPrint('>>> WARNING: Truncated BLE data! MTU too small. Raw length=${value.length}');
+        setState(() => _truncatedPackets++);
         return;
       }
 
@@ -523,7 +562,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           _dwt3 = (data['dwt3'] as num?)?.toDouble() ?? 0.0;
 
           // PPV EMA smoothing (alpha = 0.3)
-          _ppvSmoothed = 0.3 * _ppv + 0.7 * _ppvSmoothed;
+          _ppvSmoothed = _kalmanFilter.update(_ppv);
+          _ppvKalman = _ppvSmoothed;
 
           // 5-second peak hold
           if (_ppv > _ppvPeakHold) {
@@ -568,20 +608,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           });
           if (_vibrationFeatureLog.length > 500) _vibrationFeatureLog.removeAt(0);
 
-          // Run ML anomaly detection (Tier 2) with v3.0 features
-          if (_mlModelLoaded && (_rms > 0 || _ppv > 0)) {
-            _lastAnomalyResult = _anomalyService.detect({
-              'rms': _rms,
-              'ppv': _ppv,
-              'freq': _dominantFreq,
-              'crest': _crestFactor,
-              'cent': _centroid,
-              'kurt': _kurtosis,
-              'stalta': _staLtaRatio,
-            });
-          }
-
-          debugPrint('>>> VIBRATION v3.0: PPV=${_ppv}mm/s(smooth=${_ppvSmoothed.toStringAsFixed(1)}) Freq=${_dominantFreq}Hz Crest=$_crestFactor Kurt=$_kurtosis STA/LTA=$_staLtaRatio ML=${_lastAnomalyResult.levelLabel}');
+          debugPrint('>>> VIBRATION v4.0: PPV=${_ppv}mm/s Freq=${_dominantFreq}Hz Crest=$_crestFactor Kurt=$_kurtosis STA/LTA=$_staLtaRatio Arias=$_arias CAV=$_cav Temp=${_temp}C DWT=[$_dwt1,$_dwt2,$_dwt3] History=${_ppvHistory.length} pts ML=${_lastAnomalyResult.levelLabel}');
         } else if (charUuid.endsWith('26a9') || charUuid.contains('b26a9')) {
           // Moisture characteristic (also includes vibration for reliability)
           _moisturePercent = (data['percent'] as num?)?.toInt() ?? 0;
@@ -615,10 +642,194 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
           _alertLevel = newLevel;
           _alertMessage = newMessage;
+        } else if (charUuid.endsWith('26ab') || charUuid.contains('b26ab')) {
+          // Battery characteristic (v4.1)
+          _batteryVoltage = (data['voltage'] as num?)?.toDouble() ?? 0.0;
+          _batteryPercent = (data['percent'] as num?)?.toInt() ?? 100;
+          _batteryCharging = data['charging'] as bool? ?? false;
+
+          debugPrint('>>> BATTERY: ${_batteryPercent}% (${_batteryVoltage}V) ${_batteryCharging ? 'CHARGING' : ''}');
+
+          // Low battery warning
+          if (_batteryPercent < 20 && !_batteryCharging) {
+            NotificationService().showSafetyWarning(
+              message: 'M5StickC Plus 2 battery low: ${_batteryPercent}%',
+              sensorType: 'Device Battery',
+            );
+          }
         }
       });
+
+      // Run heavy processing outside setState to avoid blocking BLE
+      if (charUuid.endsWith('26a8') || charUuid.contains('b26a8')) {
+        _runDeferredProcessing();
+      }
     } catch (e) {
       debugPrint('Error parsing BLE data: $e');
+    }
+  }
+
+  /// Run heavy analytics after setState to avoid blocking BLE notifications.
+  /// Feeds wavelet buffer, spectrogram, ML anomaly detection, multi-standard
+  /// classification, and vibration metrics.
+  void _runDeferredProcessing() {
+    if (!mounted) return;
+
+    // 1. Feed wavelet buffer with vibration magnitude
+    _waveletBuffer.add(_vibration > 0 ? _vibration : _rms);
+    if (_waveletBuffer.length > _waveletBufferSize) {
+      _waveletBuffer.removeAt(0);
+    }
+
+    // 2. Run app-side wavelet analysis when buffer is full enough
+    if (_waveletBuffer.length >= 32) {
+      final bandEnergy = WaveletService.bandEnergy(
+        _waveletBuffer,
+        levels: 3,
+        sampleRate: 200.0,
+      );
+      final transients = WaveletService.detectTransients(
+        _waveletBuffer,
+        sensitivity: 3.0,
+        sampleRate: 200.0,
+      );
+
+      // Check for new transients (flash indicator)
+      bool hasNewTransient = false;
+      if (transients.isNotEmpty) {
+        final now = DateTime.now();
+        if (now.difference(_lastTransientTime).inMilliseconds > 500) {
+          hasNewTransient = true;
+          _lastTransientTime = now;
+        }
+      }
+
+      setState(() {
+        _waveletBandEnergy = bandEnergy;
+        _waveletTransients = transients;
+        if (hasNewTransient) _transientFlash = true;
+      });
+
+      // Clear flash after short delay
+      if (hasNewTransient) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) setState(() => _transientFlash = false);
+        });
+      }
+    }
+
+    // 3. Feed spectrogram buffer (synthesize FFT column from BLE frequency data)
+    // Create a synthetic FFT magnitude column using dominant freq and RMS
+    if (_dominantFreq > 0 || _rms > 0) {
+      const fftBins = 128; // 256/2 bins for 0-100Hz
+      final column = List<double>.filled(fftBins, 0.0);
+      final binResolution = 200.0 / 256; // ~0.78 Hz per bin
+
+      // Place energy at the dominant frequency bin
+      if (_dominantFreq > 0 && _rms > 0) {
+        final dominantBin = (_dominantFreq / binResolution).round().clamp(0, fftBins - 1);
+        column[dominantBin] = _rms * 100; // Scale for visibility
+
+        // Spread energy around the dominant bin (Gaussian-like)
+        for (int i = 1; i <= 3; i++) {
+          final spread = _rms * 100 * math.exp(-i * i * 0.5);
+          if (dominantBin + i < fftBins) column[dominantBin + i] = spread;
+          if (dominantBin - i >= 0) column[dominantBin - i] = spread;
+        }
+      }
+
+      // Add DWT band energies to corresponding frequency regions
+      if (_dwt1 > 0) {
+        final startBin = (50.0 / binResolution).round().clamp(0, fftBins - 1);
+        final endBin = (100.0 / binResolution).round().clamp(0, fftBins - 1);
+        for (int i = startBin; i < endBin && i < fftBins; i++) {
+          column[i] += _dwt1 * 50;
+        }
+      }
+      if (_dwt2 > 0) {
+        final startBin = (25.0 / binResolution).round().clamp(0, fftBins - 1);
+        final endBin = (50.0 / binResolution).round().clamp(0, fftBins - 1);
+        for (int i = startBin; i < endBin && i < fftBins; i++) {
+          column[i] += _dwt2 * 50;
+        }
+      }
+      if (_dwt3 > 0) {
+        final startBin = (12.5 / binResolution).round().clamp(0, fftBins - 1);
+        final endBin = (25.0 / binResolution).round().clamp(0, fftBins - 1);
+        for (int i = startBin; i < endBin && i < fftBins; i++) {
+          column[i] += _dwt3 * 50;
+        }
+      }
+
+      _spectrogramBuffer.addColumn(column);
+    }
+
+    // 4. Multi-standard classification
+    if (_ppv > 0 || _rms > 0) {
+      final classifications = VibrationMetricsService.classifyAllStandards(
+        _ppv,
+        _dominantFreq,
+      );
+
+      // Update vibration metrics (damage index, Housner SI)
+      _vibrationMetrics.updateWithSample(_rms, 1.0 / 2.0); // BLE rate is 2Hz
+      _housnerSI = _vibrationMetrics.housnerSI;
+
+      // Update damage index from PPV
+      if (_ppv > 0 && _dominantFreq > 0) {
+        _vibrationMetrics.damageIndex = VibrationMetricsService.updateDamageIndex(
+          _vibrationMetrics.damageIndex,
+          _ppv,
+          0.5, // 500ms window (BLE interval)
+          _dominantFreq,
+        );
+      }
+
+      setState(() {
+        _standardClassifications = classifications;
+      });
+    }
+
+    // 5. ML anomaly detection
+    if (_mlModelLoaded && (_ppv > 0 || _rms > 0)) {
+      final features = {
+        'rms': _rms,
+        'ppv': _ppv,
+        'freq': _dominantFreq,
+        'crest': _crestFactor,
+        'centroid': _centroid,
+        'kurtosis': _kurtosis,
+        'stalta': _staLtaRatio,
+        'arias': _arias,
+        'cav': _cav,
+        'temp': _temp,
+      };
+
+      final result = _anomalyService.detect(features);
+
+      _anomalyScoreHistory.add(result.score);
+      if (_anomalyScoreHistory.length > 30) _anomalyScoreHistory.removeAt(0);
+
+      setState(() {
+        _lastAnomalyResult = result;
+        _lastMLFeatures = features;
+      });
+    }
+
+    // 6. PPV trend prediction
+    if (_ppv > 0 || _rms > 0) {
+      _ppvKalmanHistory.add(_ppvKalman);
+      if (_ppvKalmanHistory.length > 60) _ppvKalmanHistory.removeAt(0);
+
+      if (_ppvKalmanHistory.length >= 5) {
+        // Use DIN 4150-3 heritage limit based on current frequency
+        final limit = _dominantFreq <= 10 ? 3.0 : (_dominantFreq <= 50 ? 5.0 : 8.0);
+        final prediction = _trendPredictor.predict(
+          _ppvKalmanHistory,
+          limitMmPerSec: limit,
+        );
+        setState(() => _ppvPrediction = prediction);
+      }
     }
   }
 
@@ -879,6 +1090,10 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                       ),
                       const Spacer(),
                       LiveChip(isConnected: isConnected, status: _connectionStatus),
+                      if (isConnected) ...[
+                        const SizedBox(width: 8),
+                        _buildBatteryChip(),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -887,13 +1102,23 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      isConnected
-                        ? 'Connected to M5StickC Plus 2'
-                        : _isConnecting
-                          ? 'Scanning for devices...'
-                          : _connectionStatus,
-                      style: TextStyle(color: Colors.white.withAlpha(190), fontSize: 13),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isConnected
+                            ? 'Connected to M5StickC Plus 2'
+                            : _isConnecting
+                              ? 'Scanning for devices...'
+                              : _connectionStatus,
+                          style: TextStyle(color: Colors.white.withAlpha(190), fontSize: 13),
+                        ),
+                        if (_truncatedPackets > 0)
+                          Text(
+                            '$_truncatedPackets packet(s) lost (MTU too small)',
+                            style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
+                          ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1022,13 +1247,75 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               ),
               const SizedBox(height: 12),
 
+              // Multi-Standard Classification Card
+              if (_ppv > 0 || _rms > 0)
+                MultiStandardCard(
+                  classifications: _standardClassifications,
+                  damageIndex: _vibrationMetrics.damageIndex,
+                  housnerSI: _housnerSI,
+                  isConnected: isConnected,
+                ),
+              if (_ppv > 0 || _rms > 0)
+                const SizedBox(height: 12),
+
+              // Wavelet Analysis Card (app-side DWT)
+              if (_waveletBandEnergy.isNotEmpty)
+                WaveletAnalysisCard(
+                  bandEnergy: _waveletBandEnergy,
+                  transients: _waveletTransients,
+                  transientFlash: _transientFlash,
+                  bufferFill: _waveletBuffer.length / _waveletBufferSize,
+                ),
+              if (_waveletBandEnergy.isNotEmpty)
+                const SizedBox(height: 12),
+
               // PPV Trend Graph with DIN 4150-3 limit lines
-              PPVTrendGraphCard(ppvHistory: _ppvHistory),
+              // PPV Trend Warning Banner
+              if (_ppvPrediction != null && _ppvPrediction!.isTrendingUp && _ppvPrediction!.minutesToLimit != null)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF8F00).withAlpha(30),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFF8F00).withAlpha(100), width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.trending_up, color: Color(0xFFFF8F00), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'PPV trending toward DIN 4150-3 limit in ~${_ppvPrediction!.minutesToLimit!.toStringAsFixed(1)} min '
+                          '(R²=${_ppvPrediction!.rSquared.toStringAsFixed(2)})',
+                          style: const TextStyle(color: Color(0xFFFF8F00), fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              PPVTrendGraphCard(
+                ppvHistory: _ppvHistory,
+                prediction: _ppvPrediction,
+                kalmanHistory: _ppvKalmanHistory,
+              ),
               const SizedBox(height: 12),
+
+              // Time-Frequency Spectrogram (real-time)
+              if (_spectrogramBuffer.length > 2)
+                _buildSpectrogramCard(),
+              if (_spectrogramBuffer.length > 2)
+                const SizedBox(height: 12),
 
               // ML Anomaly Detection Indicator (Tier 2)
               if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
-                MLAnomalyIndicator(result: _lastAnomalyResult),
+                MLAnomalyIndicator(
+                  result: _lastAnomalyResult,
+                  features: _lastMLFeatures,
+                  anomalyHistory: List.unmodifiable(_anomalyScoreHistory),
+                  modelVersion: _anomalyService.modelVersion,
+                ),
               if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
                 const SizedBox(height: 12),
 
@@ -1068,6 +1355,161 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       ),
     ),
       ],
+    );
+  }
+
+  /// Build the spectrogram card with colormap selector
+  Widget _buildSpectrogramCard() {
+    const colormaps = ['viridis', 'hot', 'inferno'];
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withAlpha(25),
+                Colors.white.withAlpha(13),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withAlpha(90), width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF9C27B0).withAlpha(50),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.waterfall_chart_rounded, color: Color(0xFF9C27B0), size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Time-Frequency Analysis', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                        SizedBox(height: 2),
+                        Text('Real-time spectrogram with DIN 4150-3 limits', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Colormap selector chips
+              Row(
+                children: colormaps.map((cm) {
+                  final selected = cm == _spectrogramColorMap;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _spectrogramColorMap = cm),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: selected ? const Color(0xFF9C27B0).withAlpha(80) : Colors.white.withAlpha(15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selected ? const Color(0xFF9C27B0).withAlpha(150) : Colors.white.withAlpha(40),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          cm,
+                          style: TextStyle(
+                            color: selected ? const Color(0xFFCE93D8) : Colors.white.withAlpha(160),
+                            fontSize: 11,
+                            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 10),
+              // Spectrogram widget
+              SizedBox(
+                height: 200,
+                child: SpectrogramWidget(
+                  spectrogramData: _spectrogramBuffer.data,
+                  sampleRate: 200,
+                  fftSize: 256,
+                  maxFrequency: 100,
+                  colorMap: _spectrogramColorMap,
+                  height: 200,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build battery indicator chip (v4.1)
+  Widget _buildBatteryChip() {
+    final Color batteryColor = _batteryCharging
+        ? const Color(0xFF4CAF50) // Green when charging
+        : _batteryPercent < 20
+            ? Colors.red // Red when low
+            : _batteryPercent < 50
+                ? Colors.orange // Orange when medium
+                : Colors.white; // White when good
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(36),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withAlpha(89), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _batteryCharging
+                    ? Icons.battery_charging_full
+                    : _batteryPercent > 80
+                        ? Icons.battery_full
+                        : _batteryPercent > 50
+                            ? Icons.battery_5_bar
+                            : _batteryPercent > 20
+                                ? Icons.battery_3_bar
+                                : Icons.battery_1_bar,
+                color: batteryColor,
+                size: 16,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${_batteryPercent}%',
+                style: TextStyle(
+                  color: batteryColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

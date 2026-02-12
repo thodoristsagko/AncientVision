@@ -31,7 +31,7 @@
  * - MadgwickAHRS (Arduino Library Manager, by Arduino)
  */
 
-#include <M5StickCPlus2.h>
+#include <M5Unified.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -98,6 +98,8 @@ const float TEMP_REF = 25.0f;           // Reference temperature
 #define CHAR_IMU_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define CHAR_MOISTURE_UUID  "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 #define CHAR_ALERT_UUID     "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+#define CHAR_BATTERY_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26ab"  // v4.1: Battery level
+#define CHAR_FFT_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26ac"  // v4.2: FFT bins
 
 // ===================== MADGWICK FILTER =====================
 Madgwick madgwickFilter;
@@ -156,6 +158,8 @@ BLEServer* pServer = NULL;
 BLECharacteristic* pIMUChar = NULL;
 BLECharacteristic* pMoistureChar = NULL;
 BLECharacteristic* pAlertChar = NULL;
+BLECharacteristic* pBatteryChar = NULL;
+BLECharacteristic* pFFTChar = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 
@@ -199,6 +203,11 @@ const int TEMP_READ_INTERVAL = 500;  // Read temperature every 500ms
 int moisturePercent = 0;
 int rawMoisture = 0;
 
+// Battery data (v4.1)
+float batteryVoltage = 0.0;  // Battery voltage (V)
+int batteryPercent = 100;    // Battery percentage (0-100%)
+bool batteryCharging = false; // Charging status
+
 // Alert states
 enum AlertState { SAFE, WARNING, CRITICAL };
 AlertState currentAlert = SAFE;
@@ -230,9 +239,11 @@ int windowCount = 0;
 unsigned long lastBLESend = 0;
 unsigned long lastDisplayUpdate = 0;
 unsigned long lastMoistureRead = 0;
+unsigned long lastBatteryRead = 0;  // v4.1
 const int BLE_INTERVAL = 500;        // Send BLE every 500ms
 const int DISPLAY_INTERVAL = 250;    // Update display 4x/sec
 const int MOISTURE_INTERVAL = 1000;  // Read moisture every 1s
+const int BATTERY_INTERVAL = 2000;   // Read battery every 2s (v4.1)
 
 // ===================== MPU6886 DLPF CONFIGURATION =====================
 void configureDLPF() {
@@ -293,6 +304,21 @@ void computeDWTEnergy() {
   for (int i = 0; i < 64; i++)  dwtEnergy2 += dwtDetail2[i] * dwtDetail2[i];
   for (int i = 0; i < 32; i++)  dwtEnergy3 += dwtDetail3[i] * dwtDetail3[i];
 }
+
+// ===================== FORWARD DECLARATIONS =====================
+void configureDLPF();
+void readIMUTemperature();
+void computeHaarDWT(float* signal, int length);
+void computeDWTEnergy();
+void setupBLE();
+void collectSample();
+void processVibrationWindow();
+void classifyHazard();
+void readMoisture();
+void readBattery();
+void sendBLEData();
+void updateDisplay();
+void testAlert();
 
 // ===================== BLE CALLBACKS =====================
 class MyServerCallbacks: public BLEServerCallbacks {
@@ -411,6 +437,20 @@ void setupBLE() {
   );
   pAlertChar->addDescriptor(new BLE2902());
 
+  pBatteryChar = pService->createCharacteristic(
+    CHAR_BATTERY_UUID,
+    BLECharacteristic::PROPERTY_READ |
+    BLECharacteristic::PROPERTY_NOTIFY
+  );
+  pBatteryChar->addDescriptor(new BLE2902());
+
+  pFFTChar = pService->createCharacteristic(
+    CHAR_FFT_UUID,
+    BLECharacteristic::PROPERTY_READ |
+    BLECharacteristic::PROPERTY_NOTIFY
+  );
+  pFFTChar->addDescriptor(new BLE2902());
+
   pService->start();
 
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
@@ -463,6 +503,12 @@ void loop() {
     readMoisture();
   }
 
+  // ---- Read battery at 0.5 Hz (v4.1) ----
+  if (currentMillis - lastBatteryRead >= BATTERY_INTERVAL) {
+    lastBatteryRead = currentMillis;
+    readBattery();
+  }
+
   // ---- Send BLE data at 2 Hz ----
   if (currentMillis - lastBLESend >= BLE_INTERVAL) {
     lastBLESend = currentMillis;
@@ -508,16 +554,14 @@ void collectSample() {
   // Madgwick expects gyro in degrees/sec, accel in any consistent unit
   madgwickFilter.updateIMU(gyroX, gyroY, gyroZ, accX, accY, accZ);
 
-  // Get quaternion from Madgwick
-  float q0 = madgwickFilter.getQuatW();
-  float q1 = madgwickFilter.getQuatX();
-  float q2 = madgwickFilter.getQuatY();
-  float q3 = madgwickFilter.getQuatZ();
+  // Compute gravity vector from Madgwick Euler angles
+  float rollRad = madgwickFilter.getRollRadians();
+  float pitchRad = madgwickFilter.getPitchRadians();
 
-  // Compute gravity vector from quaternion (in sensor frame)
-  float gx_est = 2.0f * (q1 * q3 - q0 * q2);
-  float gy_est = 2.0f * (q0 * q1 + q2 * q3);
-  float gz_est = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
+  // Gravity vector in sensor frame from roll/pitch
+  float gx_est = -sin(pitchRad);
+  float gy_est = sin(rollRad) * cos(pitchRad);
+  float gz_est = cos(rollRad) * cos(pitchRad);
 
   // Remove gravity to get linear acceleration (per axis)
   linAccX = accX - gx_est;
@@ -866,6 +910,31 @@ void readMoisture() {
   moisturePercent = constrain(moisturePercent, 0, 100);
 }
 
+// ===================== BATTERY MONITORING (v4.1) =====================
+void readBattery() {
+  // Read battery voltage from M5StickC Plus 2 power management
+  batteryVoltage = M5.Power.getBatteryVoltage() / 1000.0;  // Convert mV to V
+
+  // Calculate percentage based on LiPo discharge curve
+  // 4.2V = 100%, 3.7V = 50%, 3.0V = 0%
+  if (batteryVoltage >= 4.1) {
+    batteryPercent = 100;
+  } else if (batteryVoltage >= 3.7) {
+    // Linear interpolation 3.7V-4.1V = 50-100%
+    batteryPercent = (int)((batteryVoltage - 3.7) / 0.4 * 50.0 + 50.0);
+  } else if (batteryVoltage >= 3.0) {
+    // Linear interpolation 3.0V-3.7V = 0-50%
+    batteryPercent = (int)((batteryVoltage - 3.0) / 0.7 * 50.0);
+  } else {
+    batteryPercent = 0;
+  }
+
+  batteryPercent = constrain(batteryPercent, 0, 100);
+
+  // Check if charging (voltage is increasing or > 4.2V)
+  batteryCharging = (batteryVoltage > 4.2);
+}
+
 // ===================== DISPLAY =====================
 void updateDisplay() {
   uint16_t bgColor;
@@ -935,6 +1004,11 @@ void updateDisplay() {
   M5.Lcd.setTextSize(1);
   M5.Lcd.setCursor(5, 118);
   M5.Lcd.printf("AI:%.4f CAV:%.3f RMS:%.4f K:%.1f", ariasIntensity, cav, vibrationRMS, kurtosis);
+
+  // Row 7: Battery status (v4.1)
+  M5.Lcd.setCursor(5, 128);
+  M5.Lcd.setTextColor(batteryPercent < 20 ? RED : (batteryCharging ? TFT_CYAN : WHITE));
+  M5.Lcd.printf("Bat:%d%% %.2fV%s", batteryPercent, batteryVoltage, batteryCharging ? " CHG" : "");
 }
 
 // ===================== BLE FUNCTIONS =====================
@@ -942,21 +1016,25 @@ void sendBLEData() {
   if (!deviceConnected) return;
 
   // Send IMU data with all v4.0 features
+  // Use explicit strlen to send only the actual JSON string, not null padding
   char imuData[384];
-  snprintf(imuData, sizeof(imuData),
+  int imuLen = snprintf(imuData, sizeof(imuData),
     "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"vib\":%.4f,\"ppv\":%.1f,\"rms\":%.4f,\"freq\":%.1f,\"crest\":%.1f,\"cent\":%.1f,\"kurt\":%.2f,\"stalta\":%.2f,\"arias\":%.6f,\"cav\":%.4f,\"temp\":%.1f,\"dwt1\":%.4f,\"dwt2\":%.4f,\"dwt3\":%.4f}",
     accX, accY, accZ, vibrationMagnitude, vibrationPPV, vibrationRMS,
     dominantFreq, crestFactor, spectralCentroid, kurtosis, staLtaRatio,
     ariasIntensity, cav, imuTemp, dwtEnergy1, dwtEnergy2, dwtEnergy3);
-  pIMUChar->setValue(imuData);
+  if (imuLen >= (int)sizeof(imuData)) {
+    Serial.printf("BLE WARNING: IMU JSON truncated (%d >= %d)\n", imuLen, (int)sizeof(imuData));
+  }
+  pIMUChar->setValue((uint8_t*)imuData, strlen(imuData));
   pIMUChar->notify();
 
-  // Send moisture data (unchanged)
+  // Send moisture data
   char moistureData[50];
   snprintf(moistureData, sizeof(moistureData),
     "{\"percent\":%d,\"raw\":%d}",
     moisturePercent, rawMoisture);
-  pMoistureChar->setValue(moistureData);
+  pMoistureChar->setValue((uint8_t*)moistureData, strlen(moistureData));
   pMoistureChar->notify();
 
   // Send alert data with hazard type
@@ -966,8 +1044,35 @@ void sendBLEData() {
   snprintf(alertData, sizeof(alertData),
     "{\"level\":\"%s\",\"message\":\"%s\",\"type\":\"%s\"}",
     alertLevel, alertMessage.c_str(), hazardType.c_str());
-  pAlertChar->setValue(alertData);
+  pAlertChar->setValue((uint8_t*)alertData, strlen(alertData));
   pAlertChar->notify();
+
+  // Send battery data (v4.1)
+  char batteryData[80];
+  snprintf(batteryData, sizeof(batteryData),
+    "{\"voltage\":%.2f,\"percent\":%d,\"charging\":%s}",
+    batteryVoltage, batteryPercent, batteryCharging ? "true" : "false");
+  pBatteryChar->setValue((uint8_t*)batteryData, strlen(batteryData));
+  pBatteryChar->notify();
+
+  // Send FFT magnitude bins as binary uint16 (v4.2)
+  // 64 bins covering 0-100Hz, each bin scaled to uint16 range
+  {
+    uint8_t fftBuf[130]; // 1 byte header + 64 * 2 bytes
+    fftBuf[0] = 64; // number of bins
+    fftBuf[1] = 0;  // reserved
+    double maxMag = 0.001; // prevent divide by zero
+    for (int i = 0; i < 64; i++) {
+      if (vReal[i] > maxMag) maxMag = vReal[i];
+    }
+    for (int i = 0; i < 64; i++) {
+      uint16_t val = (uint16_t)((vReal[i] / maxMag) * 65535.0);
+      fftBuf[2 + i * 2] = val & 0xFF;
+      fftBuf[2 + i * 2 + 1] = (val >> 8) & 0xFF;
+    }
+    pFFTChar->setValue(fftBuf, 130);
+    pFFTChar->notify();
+  }
 }
 
 void testAlert() {
@@ -978,7 +1083,7 @@ void testAlert() {
     char alertData[150];
     snprintf(alertData, sizeof(alertData),
       "{\"level\":\"warning\",\"message\":\"Test alert from button\",\"type\":\"test\"}");
-    pAlertChar->setValue(alertData);
+    pAlertChar->setValue((uint8_t*)alertData, strlen(alertData));
     pAlertChar->notify();
   }
 }

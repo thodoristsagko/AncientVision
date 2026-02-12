@@ -341,7 +341,7 @@ class VibrationMetricsService {
 
     // Also check continuous limit of 2.5 mm/s
     const continuousLimit = 2.5;
-    final effectiveLimit = min(limit, limit); // transient limit
+    final effectiveLimit = min(limit, continuousLimit);
     final level = ppv >= effectiveLimit
         ? 'critical'
         : ppv >= effectiveLimit * 0.7
@@ -415,16 +415,17 @@ class VibrationMetricsService {
     }
 
     const continuousLimit = 2.5;
-    final level = ppv >= limit
+    final effectiveLimit = min(limit, continuousLimit);
+    final level = ppv >= effectiveLimit
         ? 'critical'
-        : ppv >= limit * 0.7
+        : ppv >= effectiveLimit * 0.7
             ? 'warning'
             : 'safe';
 
     return StandardClassification(
       standard: VibrationStandard.sn640312a,
       level: level,
-      limit: limit,
+      limit: effectiveLimit,
       description:
           'SN 640 312a heritage: ${limit.toStringAsFixed(1)} mm/s '
           '@ ${freq.toStringAsFixed(0)} Hz '

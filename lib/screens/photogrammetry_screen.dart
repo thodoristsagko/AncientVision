@@ -14,9 +14,11 @@ import 'package:sensors_plus/sensors_plus.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/reconstruction_result.dart';
 import '../services/reconstruction_service.dart';
 import '../services/cloud_photogrammetry_service.dart';
 import '../services/notification_service.dart';
+import '../services/metadata_export_service.dart';
 import '../utils/quality_analyzer.dart';
 import '../widgets/model_3d_viewer.dart';
 import 'manual_entry_form_screen.dart';
@@ -71,6 +73,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   bool _isReconstructing = false; // Currently generating 3D model
   double _reconstructionProgress = 0.0; // Progress 0.0 to 1.0
   String _reconstructionStatus = ''; // Current status message
+  ReconstructionResult? _lastReconstructionResult; // Last successful result for metadata export
 
   // Define the optimal capture angles for photogrammetry
   // 12 angles around the object + 2 top angles + 2 detail angles = 16 total
@@ -1304,8 +1307,8 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       );
 
       setState(() {
-
         _isReconstructing = false;
+        if (result.isComplete) _lastReconstructionResult = result;
       });
 
       // Save result to history
@@ -1314,11 +1317,39 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       }
 
       if (result.isComplete && mounted) {
+        // Build quality notification message
+        final grade = result.qualityMetrics['quality_grade'] as String?;
+        final gsd = result.qualityMetrics['gsd_mm_per_pixel'] as double?;
+        final gradeDisplay = grade != null ? ' [${grade.toUpperCase()}]' : '';
+        final gsdDisplay = gsd != null ? ' | GSD: ${gsd.toStringAsFixed(2)} mm/px' : '';
+
         // Send success notification
         await NotificationService().showProcessingComplete(
           projectName: 'On-Device Model',
           pointCount: result.pointCount,
         );
+
+        // Show quality grade snackbar
+        if (grade != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  _qualityGradeBadge(grade),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '${result.pointCount} points$gradeDisplay$gsdDisplay',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF1C2523),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
 
         // Go directly to 3D viewer - user can save from there
         Navigator.push(
@@ -1524,14 +1555,33 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       );
 
       setState(() {
-
         _isReconstructing = false;
+        if (result.isComplete) _lastReconstructionResult = result;
       });
 
       if (result.isComplete) {
         await _reconstructionService.saveResult(result);
 
         if (mounted) {
+          // Show quality grade if available
+          final grade = result.qualityMetrics['quality_grade'] as String?;
+          if (grade != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    _qualityGradeBadge(grade),
+                    const SizedBox(width: 12),
+                    Text('Quality: ${grade.toUpperCase()}',
+                        style: const TextStyle(color: Colors.white)),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF1C2523),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -1561,6 +1611,157 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('On-device error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Build a quality grade badge widget
+  Widget _qualityGradeBadge(String grade) {
+    Color badgeColor;
+    String label;
+    switch (grade.toLowerCase()) {
+      case 'excellent':
+        badgeColor = const Color(0xFF4CAF50);
+        label = 'A';
+        break;
+      case 'good':
+        badgeColor = const Color(0xFF8BC34A);
+        label = 'B';
+        break;
+      case 'acceptable':
+        badgeColor = const Color(0xFFFFC107);
+        label = 'C';
+        break;
+      default:
+        badgeColor = Colors.red;
+        label = 'F';
+    }
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: badgeColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
+      ),
+    );
+  }
+
+  /// Show metadata export options dialog
+  Future<void> _showMetadataExportDialog(ReconstructionResult result) async {
+    final format = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C2523),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Export Metadata', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.description, color: Color(0xFF00BCD4)),
+              title: const Text('Dublin Core XML', style: TextStyle(color: Colors.white)),
+              subtitle: Text('Standard library metadata', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+              onTap: () => Navigator.pop(ctx, 'dublin_core'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_balance, color: Color(0xFF7C4DFF)),
+              title: const Text('CIDOC-CRM RDF/XML', style: TextStyle(color: Colors.white)),
+              subtitle: Text('ISO 21127 heritage standard', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+              onTap: () => Navigator.pop(ctx, 'cidoc_crm'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
+
+    if (format == null || !mounted) return;
+
+    try {
+      final id = result.id;
+      final title = widget.findingName ?? 'Archaeological Finding';
+      final date = result.startedAt;
+      final lat = result.qualityMetrics['gps_latitude'] as double?;
+      final lon = result.qualityMetrics['gps_longitude'] as double?;
+      final grade = result.qualityMetrics['quality_grade'] as String?;
+
+      String xml;
+      String filename;
+
+      if (format == 'dublin_core') {
+        xml = MetadataExportService.exportDublinCore(
+          id: id,
+          title: title,
+          description: 'Photogrammetric reconstruction with ${result.pointCount} points. '
+              'Quality: ${grade ?? "unknown"}.',
+          date: date,
+          latitude: lat,
+          longitude: lon,
+          additionalFields: {
+            'source': 'AncientVision on-device photogrammetry',
+            if (grade != null) 'quality': grade,
+          },
+        );
+        filename = 'finding_${id.substring(0, 8)}_dublin_core.xml';
+      } else {
+        xml = MetadataExportService.exportCidocCRM(
+          id: id,
+          title: title,
+          description: 'Photogrammetric reconstruction with ${result.pointCount} points. '
+              'Quality: ${grade ?? "unknown"}.',
+          objectType: 'Archaeological Object',
+          dateFound: date,
+          latitude: lat,
+          longitude: lon,
+          additionalProperties: {
+            'reconstruction_method': result.methodName,
+            'point_count': result.pointCount.toString(),
+            if (grade != null) 'quality_grade': grade,
+          },
+        );
+        filename = 'finding_${id.substring(0, 8)}_cidoc_crm.xml';
+      }
+
+      // Save to app documents directory
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$filename');
+      await file.writeAsString(xml);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported: $filename'),
+            backgroundColor: const Color(0xFF4CAF50),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1842,7 +2043,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                       ),
                       tooltip: 'Generate 3D Model',
                     ),
-                    // Export button
+                    // Export photos button
                     IconButton(
                       onPressed: _captures.isNotEmpty ? _exportPhotos : null,
                       icon: Icon(
@@ -1850,6 +2051,19 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                         color: _captures.isNotEmpty ? const Color(0xFF4CAF50) : Colors.white30,
                       ),
                       tooltip: 'Export Photos',
+                    ),
+                    // Export metadata button (available after reconstruction)
+                    IconButton(
+                      onPressed: _lastReconstructionResult != null
+                          ? () => _showMetadataExportDialog(_lastReconstructionResult!)
+                          : null,
+                      icon: Icon(
+                        Icons.description_outlined,
+                        color: _lastReconstructionResult != null
+                            ? const Color(0xFF00BCD4)
+                            : Colors.white30,
+                      ),
+                      tooltip: 'Export Metadata (Dublin Core / CIDOC-CRM)',
                     ),
                     // Info button
                     IconButton(

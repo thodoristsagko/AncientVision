@@ -3,6 +3,16 @@ import 'package:vector_math/vector_math_64.dart' as vector;
 import '../models/point_cloud.dart';
 import 'dart:math' as math;
 
+/// Render mode for point cloud visualization.
+enum PointCloudRenderMode {
+  /// Standard color rendering from photo textures.
+  color,
+  /// Confidence heatmap (green=high, red=low).
+  confidence,
+  /// Reprojection error visualization.
+  error,
+}
+
 /// Helper class to store projected point data for depth sorting
 class _ProjectedPoint {
   final double x;
@@ -30,6 +40,7 @@ class PointCloudPainter extends CustomPainter {
   final bool showColors;
   final List<int> measurePointIndices;
   final double? measureDistance;
+  final PointCloudRenderMode renderMode;
 
   PointCloudPainter({
     required this.pointCloud,
@@ -38,6 +49,7 @@ class PointCloudPainter extends CustomPainter {
     this.showColors = true,
     this.measurePointIndices = const [],
     this.measureDistance,
+    this.renderMode = PointCloudRenderMode.color,
   });
 
   @override
@@ -94,12 +106,22 @@ class PointCloudPainter extends CustomPainter {
         continue;
       }
 
+      final ({double r, double g, double b, double a}) pointColor;
+      switch (renderMode) {
+        case PointCloudRenderMode.color:
+          pointColor = (r: point.color.r, g: point.color.g, b: point.color.b, a: point.color.a);
+        case PointCloudRenderMode.confidence:
+          pointColor = _mapConfidenceColor(point.confidence);
+        case PointCloudRenderMode.error:
+          pointColor = _mapErrorColor(point.confidence);
+      }
+
       projectedPoints.add(_ProjectedPoint(
         x: x,
         y: y,
         z: transformedPoint.z,
         scale: scale,
-        color: (r: point.color.r, g: point.color.g, b: point.color.b, a: point.color.a),
+        color: pointColor,
         originalIndex: i,
       ));
     }
@@ -237,13 +259,36 @@ class PointCloudPainter extends CustomPainter {
     }
   }
 
+  ({double r, double g, double b, double a}) _mapConfidenceColor(double confidence) {
+    // Green (high confidence) to Red (low confidence)
+    final c = confidence.clamp(0.0, 1.0);
+    return (
+      r: 1.0 - c,
+      g: c,
+      b: 0.0,
+      a: 1.0,
+    );
+  }
+
+  ({double r, double g, double b, double a}) _mapErrorColor(double confidence) {
+    // Blue (low error/high confidence) to Red (high error/low confidence)
+    final error = 1.0 - confidence.clamp(0.0, 1.0);
+    return (
+      r: error,
+      g: 0.0,
+      b: 1.0 - error,
+      a: 1.0,
+    );
+  }
+
   @override
   bool shouldRepaint(PointCloudPainter oldDelegate) {
     return oldDelegate.transform != transform ||
         oldDelegate.pointSize != pointSize ||
         oldDelegate.showColors != showColors ||
         oldDelegate.measurePointIndices != measurePointIndices ||
-        oldDelegate.measureDistance != measureDistance;
+        oldDelegate.measureDistance != measureDistance ||
+        oldDelegate.renderMode != renderMode;
   }
 }
 
