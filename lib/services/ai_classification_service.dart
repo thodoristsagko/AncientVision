@@ -16,7 +16,9 @@ class AIClassificationService {
   ImageLabeler? _imageLabeler;
   ObjectDetector? _objectDetector;
 
-  // Classification cache for performance
+  // LRU classification cache — bounded to 50 entries to prevent unbounded growth
+  // O'Neil, O'Neil & Weikum (1993) "The LRU-K Page Replacement Algorithm"
+  static const int _maxCacheSize = 50;
   final Map<String, ArtifactClassificationResult> _cache = {};
 
   // ═══════════════════════════════════════════════════════════════
@@ -463,6 +465,10 @@ class AIClassificationService {
       isHighConfidence: typeConfidence > 0.6 || materialConfidence > 0.6,
     );
 
+    // Evict oldest entry if cache is full (LRU approximation)
+    if (_cache.length >= _maxCacheSize) {
+      _cache.remove(_cache.keys.first);
+    }
     _cache[cacheKey] = result;
     return result;
   }

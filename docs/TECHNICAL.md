@@ -1154,6 +1154,48 @@ service cloud.firestore {
 
 ---
 
+## v4.1 Reliability & Safety Improvements
+
+### Circular Buffers (O(1) vs O(N))
+Replaced 7 instances of `list.removeAt(0)` (O(N) shift) with `CircularBuffer<T>` backed by `Queue<T>` (O(1) dequeue). Affects `safety_view.dart` (6 buffers) and `spectrogram_widget.dart` (1 buffer).
+
+**Academic basis**: Knuth (1997) "The Art of Computer Programming, Vol. 1" Section 2.2.2
+
+### Rule-Based Anomaly Fallback
+When TFLite model is unavailable, a weighted scoring engine uses:
+- PPV (DIN 4150-3 heritage thresholds) — 30%
+- STA/LTA (Allen 1978 seismic trigger) — 20%
+- CAV (EPRI damage threshold 0.16 g-s) — 15%
+- Crest factor (ISO 10816 impact detection) — 10%
+- Kurtosis (impulsive event detection) — 10%
+- Seismic frequency analysis (0.5-10 Hz) — 10%
+- RMS energy (sustained vibration) — 5%
+
+**Critical**: Anomaly detection is NEVER disabled. The ML path and rule-based path both produce valid anomaly scores and classifications.
+
+### Low Power Mode Safety Escalation
+Firmware skips FFT/DWT/kurtosis in low power mode to save battery. But when PPV exceeds PPV_SAFE_MAX (0.3 mm/s), automatically escalates to full DSP processing for that window, ensuring frequency-dependent hazard rules (seismic, machinery, DWT transient) still fire.
+
+### Memory Leak Fixes
+- `anomalyService.dispose()` called in SafetyView dispose
+- LRU cache (50 entries) in AI classification service
+- `clearCache()` in reconstruction service after completion
+- Temp file tracking and cleanup in image service
+
+### setState Batching
+SafetyView's deferred processing consolidated to single `setState` + `Future.microtask` + `RepaintBoundary` around expensive chart widgets.
+
+### Offline Queue Batching
+Replaced sequential Firestore writes with `WriteBatch` (max 500 ops) and exponential backoff between retries.
+
+### BLE Connection Resilience
+- RSSI signal strength indicator
+- 3-second keepalive polling (was 5s)
+- Manual reconnect button when disconnected
+- Attempt count in connection status
+
+---
+
 ## Performance Optimizations
 
 ### Image Compression

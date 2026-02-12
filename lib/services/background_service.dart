@@ -114,6 +114,9 @@ Future<void> onStart(ServiceInstance service) async {
   final sessionStartTime = DateTime.now().millisecondsSinceEpoch;
   await prefs.setInt('background_session_start', sessionStartTime);
 
+  // Heartbeat timer reference — declared early so stop listener can cancel it
+  Timer? heartbeatTimer;
+
   // Update notification with field session status
   if (service is AndroidServiceInstance) {
     service.on('updateNotification').listen((event) {
@@ -126,6 +129,7 @@ Future<void> onStart(ServiceInstance service) async {
     });
 
     service.on('stop').listen((event) {
+      heartbeatTimer?.cancel();
       service.stopSelf();
     });
 
@@ -134,7 +138,7 @@ Future<void> onStart(ServiceInstance service) async {
   }
 
   // Keep-alive timer - sends heartbeat every 30 seconds
-  Timer.periodic(const Duration(seconds: 30), (timer) async {
+  heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
         // Calculate session duration

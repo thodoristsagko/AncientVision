@@ -11,9 +11,93 @@ class LogoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Image.asset(
       'assets/logo.png',
-      width: 80,
-      height: 80,
+      width: 56,
+      height: 56,
       fit: BoxFit.contain,
+    );
+  }
+}
+
+/// Combined stat card showing Total Findings and New Today in a single row
+class CombinedStatCard extends StatelessWidget {
+  final String totalFindings;
+  final String todayFindings;
+
+  const CombinedStatCard({
+    super.key,
+    required this.totalFindings,
+    required this.todayFindings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(26),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withAlpha(89)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Total Findings',
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(217),
+                          fontSize: 13,
+                        )),
+                    const SizedBox(height: 4),
+                    Text(
+                      totalFindings,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 40,
+                color: Colors.white.withAlpha(51),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('New Today',
+                          style: TextStyle(
+                            color: Colors.white.withAlpha(217),
+                            fontSize: 13,
+                          )),
+                      const SizedBox(height: 4),
+                      Text(
+                        todayFindings,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -372,7 +456,6 @@ class LastFindingsCard extends StatelessWidget {
         filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           width: double.infinity,
-          height: 160,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           decoration: BoxDecoration(
             color: Colors.white.withAlpha(26),

@@ -4,7 +4,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/point_cloud.dart';
 import '../models/reconstruction_result.dart';
+import '../services/gaussian_splatting_service.dart';
+import '../widgets/gaussian_splat_renderer.dart';
 import 'point_cloud_painter.dart';
+import 'quality_visualization_widget.dart';
 
 /// 3D viewer widget for displaying point clouds and meshes
 class Model3DViewer extends StatefulWidget {
@@ -27,6 +30,10 @@ class _Model3DViewerState extends State<Model3DViewer> {
   bool _showColors = true;
   bool _autoRotate = false;
   bool _measureMode = false;
+  PointCloudRenderMode _renderMode = PointCloudRenderMode.color;
+  bool _showGaussians = false;
+  GaussianScene? _gaussianScene;
+  bool _convertingToGaussians = false;
   final GlobalKey<PointCloudViewerState> _viewerKey = GlobalKey();
 
   PointCloud? get _pointCloud {
@@ -125,13 +132,17 @@ class _Model3DViewerState extends State<Model3DViewer> {
       ),
       body: Stack(
         children: [
-          // 3D Viewer
-          PointCloudViewer(
-            key: _viewerKey,
-            pointCloud: pointCloud,
-            initialPointSize: _pointSize,
-            initialShowColors: _showColors,
-          ),
+          // 3D Viewer — Gaussian Splatting or Point Cloud
+          if (_showGaussians && _gaussianScene != null)
+            GaussianSplatRenderer(scene: _gaussianScene!)
+          else
+            PointCloudViewer(
+              key: _viewerKey,
+              pointCloud: pointCloud,
+              initialPointSize: _pointSize,
+              initialShowColors: _showColors,
+              renderMode: _renderMode,
+            ),
 
           // Sparse point cloud warning
           if (showSparseWarning)
@@ -310,9 +321,40 @@ class _Model3DViewerState extends State<Model3DViewer> {
               'Confidence',
               '${(result.qualityMetrics['average_confidence'] * 100).toStringAsFixed(0)}%',
             ),
+          // Quality visualization summary
+          if (result.qualityMetrics['quality_grade'] != null) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: 260,
+              child: QualityVisualizationWidget(
+                data: QualityVisualizationData(
+                  qualityGrade: _mapGradeToLetter(result.qualityMetrics['quality_grade'] as String),
+                  meanReprojError: (result.qualityMetrics['mean_reprojection_error'] as num?)?.toDouble() ?? 0.0,
+                  completeness: (result.qualityMetrics['completeness'] as num?)?.toDouble() ?? 0.0,
+                  pointCount: result.pointCount,
+                  matchedImages: (result.qualityMetrics['matched_images'] as int?) ?? (result.inputImageCount ?? 0),
+                  totalImages: result.inputImageCount ?? 0,
+                  processingTime: Duration(
+                    milliseconds: ((result.processingTimeSeconds ?? 0) * 1000).toInt(),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// Map quality grade string to letter grade for the visualization widget.
+  String _mapGradeToLetter(String grade) {
+    switch (grade.toLowerCase()) {
+      case 'excellent': return 'A';
+      case 'good': return 'B';
+      case 'acceptable': return 'C';
+      case 'poor': return 'D';
+      default: return 'F';
+    }
   }
 
   Widget _buildInfoRow(IconData icon, String label, String value) {
@@ -381,19 +423,26 @@ class _Model3DViewerState extends State<Model3DViewer> {
 
           const SizedBox(height: 8),
 
+          // Render mode toggle row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildMiniToggle('Color', PointCloudRenderMode.color),
+              const SizedBox(width: 6),
+              _buildMiniToggle('Confidence', PointCloudRenderMode.confidence),
+              const SizedBox(width: 6),
+              _buildMiniToggle('Error', PointCloudRenderMode.error),
+            ],
+          ),
+          const SizedBox(height: 8),
+
           // Control buttons
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _buildControlButton(
-                icon: _showColors ? Icons.palette : Icons.palette_outlined,
-                label: 'Colors',
-                isActive: _showColors,
-                onTap: () => setState(() => _showColors = !_showColors),
-              ),
-              _buildControlButton(
                 icon: _autoRotate ? Icons.replay : Icons.replay_outlined,
-                label: 'Auto Rotate',
+                label: 'Rotate',
                 isActive: _autoRotate,
                 onTap: () {
                   setState(() => _autoRotate = !_autoRotate);
@@ -402,7 +451,7 @@ class _Model3DViewerState extends State<Model3DViewer> {
               ),
               _buildControlButton(
                 icon: Icons.center_focus_strong,
-                label: 'Reset View',
+                label: 'Reset',
                 onTap: () {
                   _viewerKey.currentState?.resetView();
                 },
@@ -416,11 +465,66 @@ class _Model3DViewerState extends State<Model3DViewer> {
                   _viewerKey.currentState?.toggleMeasureMode();
                 },
               ),
+              _buildControlButton(
+                icon: _showGaussians ? Icons.blur_on : Icons.blur_circular,
+                label: _convertingToGaussians ? 'Loading...' : 'Gaussians',
+                isActive: _showGaussians,
+                onTap: _convertingToGaussians ? () {} : _toggleGaussians,
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildMiniToggle(String label, PointCloudRenderMode mode) {
+    final selected = _renderMode == mode && !_showGaussians;
+    return GestureDetector(
+      onTap: () => setState(() {
+        _renderMode = mode;
+        _showGaussians = false;
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF00BCD4).withValues(alpha: 0.3) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: selected ? const Color(0xFF00BCD4) : Colors.white24),
+        ),
+        child: Text(label, style: TextStyle(
+          color: selected ? const Color(0xFF00BCD4) : Colors.white54,
+          fontSize: 11,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+        )),
+      ),
+    );
+  }
+
+  Future<void> _toggleGaussians() async {
+    if (_showGaussians) {
+      setState(() => _showGaussians = false);
+      return;
+    }
+
+    final pc = _pointCloud;
+    if (pc == null) return;
+
+    // Convert on first tap
+    if (_gaussianScene == null) {
+      setState(() => _convertingToGaussians = true);
+      final service = GaussianSplattingService();
+      final scene = await service.convertFromPointCloud(pc);
+      if (mounted) {
+        setState(() {
+          _gaussianScene = scene;
+          _showGaussians = true;
+          _convertingToGaussians = false;
+        });
+      }
+    } else {
+      setState(() => _showGaussians = true);
+    }
   }
 
   Widget _buildControlButton({

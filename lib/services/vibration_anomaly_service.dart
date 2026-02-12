@@ -112,11 +112,8 @@ class VibrationAnomalyService {
   /// Returns: [AnomalyResult] with score and classification.
   AnomalyResult detect(Map<String, double> features) {
     if (!_isInitialized || _interpreter == null) {
-      return const AnomalyResult(
-        score: 0,
-        level: AnomalyLevel.unknown,
-        rawError: 0,
-      );
+      // Fall back to rule-based anomaly detection when ML model unavailable
+      return _ruleBasedDetect(features);
     }
 
     try {
@@ -177,12 +174,8 @@ class VibrationAnomalyService {
         rawError: anomalyScore,
       );
     } catch (e) {
-      debugPrint('VibrationAnomalyService: Inference error: $e');
-      return const AnomalyResult(
-        score: 0,
-        level: AnomalyLevel.unknown,
-        rawError: 0,
-      );
+      debugPrint('VibrationAnomalyService: Inference error: $e — using rule-based fallback');
+      return _ruleBasedDetect(features);
     }
   }
 
@@ -204,6 +197,93 @@ class VibrationAnomalyService {
       'cav': (bleData['cav'] as num?)?.toDouble() ?? 0.0,
       'temp': (bleData['temp'] as num?)?.toDouble() ?? 0.0,
     };
+  }
+
+  /// Rule-based anomaly detection fallback when TFLite model is unavailable.
+  ///
+  /// Uses engineering thresholds from DIN 4150-3 (heritage structures),
+  /// EPRI CAV damage criteria, and structural health monitoring heuristics.
+  /// Each feature contributes a weighted sub-score; the aggregate determines
+  /// the anomaly level. This ensures anomaly detection is NEVER disabled.
+  AnomalyResult _ruleBasedDetect(Map<String, double> features) {
+    final ppv = features['ppv'] ?? 0.0;
+    final rms = features['rms'] ?? 0.0;
+    final crest = features['crest'] ?? 0.0;
+    final kurtosis = features['kurtosis'] ?? 0.0;
+    final stalta = features['stalta'] ?? 0.0;
+    final cav = features['cav'] ?? 0.0;
+    final freq = features['freq'] ?? 0.0;
+
+    // DIN 4150-3 heritage PPV thresholds (mm/s)
+    const ppvSafe = 0.3;
+    const ppvHeritageLow = 3.0;
+    const ppvStructural = 10.0;
+
+    // Weighted sub-scores (0.0 = normal, 1.0 = severe)
+    double ppvScore = 0.0;
+    if (ppv > ppvStructural) {
+      ppvScore = 1.0;
+    } else if (ppv > ppvHeritageLow) {
+      ppvScore = 0.5 + 0.5 * (ppv - ppvHeritageLow) / (ppvStructural - ppvHeritageLow);
+    } else if (ppv > ppvSafe) {
+      ppvScore = 0.5 * (ppv - ppvSafe) / (ppvHeritageLow - ppvSafe);
+    }
+
+    // Crest factor: impacts above 5.0 are concerning (ISO 10816)
+    double crestScore = (crest > 5.0) ? min(1.0, (crest - 5.0) / 5.0) : 0.0;
+
+    // Kurtosis: excess kurtosis > 3 indicates impulsive events
+    double kurtosisScore = (kurtosis > 3.0) ? min(1.0, (kurtosis - 3.0) / 7.0) : 0.0;
+
+    // STA/LTA: seismic trigger above 4.0 (Allen, 1978)
+    double staltaScore = 0.0;
+    if (stalta > 4.0) {
+      staltaScore = 1.0;
+    } else if (stalta > 2.0) {
+      staltaScore = (stalta - 2.0) / 2.0;
+    }
+
+    // CAV: EPRI damage threshold 0.16 g·s
+    double cavScore = (cav > 0.16) ? 1.0 : (cav > 0.08) ? (cav - 0.08) / 0.08 : 0.0;
+
+    // RMS energy: elevated RMS indicates sustained vibration
+    double rmsScore = (rms > 0.5) ? min(1.0, (rms - 0.5) / 2.0) : 0.0;
+
+    // Low-frequency seismic concern (0.5-10 Hz with elevated PPV)
+    double seismicScore = 0.0;
+    if (freq > 0.5 && freq <= 10.0 && ppv > 1.0) {
+      seismicScore = min(1.0, ppv / ppvHeritageLow);
+    }
+
+    // Weighted aggregate — PPV dominates as the primary structural metric
+    final aggregate = ppvScore * 0.30 +
+        rmsScore * 0.05 +
+        crestScore * 0.10 +
+        kurtosisScore * 0.10 +
+        staltaScore * 0.20 +
+        cavScore * 0.15 +
+        seismicScore * 0.10;
+
+    final score = aggregate.clamp(0.0, 1.0);
+
+    AnomalyLevel level;
+    if (score < 0.25) {
+      level = AnomalyLevel.normal;
+    } else if (score < 0.6) {
+      level = AnomalyLevel.unusual;
+    } else {
+      level = AnomalyLevel.anomaly;
+    }
+
+    debugPrint('VibrationAnomalyService: Rule-based fallback — '
+        'score=${score.toStringAsFixed(3)} level=${level.name} '
+        '(ppv=$ppvScore sta=$staltaScore cav=$cavScore)');
+
+    return AnomalyResult(
+      score: score,
+      level: level,
+      rawError: aggregate,
+    );
   }
 
   void dispose() {

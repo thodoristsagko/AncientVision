@@ -234,77 +234,69 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Notifications button
-                  GestureDetector(
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-                      );
-                      _loadUnreadNotifications();
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(26),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withAlpha(51)),
-                      ),
-                      child: Stack(
-                        children: [
-                          const Center(
-                            child: Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
-                          ),
-                          if (_unreadNotifications > 0)
-                            Positioned(
-                              top: 6,
-                              right: 6,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFFFC107),
-                                  shape: BoxShape.circle,
-                                ),
-                                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                                child: Text(
-                                  _unreadNotifications > 9 ? '9+' : '$_unreadNotifications',
-                                  style: const TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
+                  // Compact icon row: notifications + QR
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      GestureDetector(
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                          );
+                          _loadUnreadNotifications();
+                        },
+                        child: SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: Stack(
+                            children: [
+                              const Center(
+                                child: Icon(Icons.notifications_outlined, color: Colors.white, size: 20),
                               ),
-                            ),
-                        ],
+                              if (_unreadNotifications > 0)
+                                Positioned(
+                                  top: 2,
+                                  right: 2,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFFFC107),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                                    child: Text(
+                                      _unreadNotifications > 9 ? '9+' : '$_unreadNotifications',
+                                      style: const TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+                          );
+                        },
+                        child: const SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: Center(
+                            child: Icon(Icons.qr_code_scanner, color: Colors.white, size: 20),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  // QR Scanner button
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const QRScannerScreen()),
-                      );
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.qr_code_scanner, color: Colors.white, size: 24),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
                   // Offline indicator chip
                   const OfflineChip(),
                   const LogoCard(),
@@ -375,23 +367,10 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
                   ),
                 ),
 
-              // STATS ROW
-              Row(
-                children: [
-                  Expanded(
-                    child: StatCard(
-                      title: 'Total Findings',
-                      value: '$_totalFindings',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: StatCard(
-                      title: 'New Today',
-                      value: '$_todayFindings',
-                    ),
-                  ),
-                ],
+              // STATS ROW (combined)
+              CombinedStatCard(
+                totalFindings: '$_totalFindings',
+                todayFindings: '$_todayFindings',
               ),
 
               const SizedBox(height: 12),
@@ -421,10 +400,9 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
     return Row(
       children: [
         Expanded(
-          child: GlassActionButton(
+          child: _buildCompactAction(
             icon: Icons.monetization_on_rounded,
-            title: 'Coin AI',
-            subtitle: 'Gemini AI',
+            label: 'Coin AI',
             onTap: () async {
               final result = await Navigator.push<Map<String, dynamic>>(
                 context,
@@ -443,10 +421,9 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: GlassActionButton(
+          child: _buildCompactAction(
             icon: Icons.camera_alt_outlined,
-            title: 'Photogrammetry',
-            subtitle: '3D Scanning',
+            label: 'Photogrammetry',
             onTap: () {
               Navigator.push(
                 context,
@@ -458,6 +435,39 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCompactAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(20),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withAlpha(51)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 20, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

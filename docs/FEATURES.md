@@ -417,11 +417,34 @@ On-device frequency band decomposition:
 - **NEW: DWT Visualization** - 3 frequency band bars (D1/D2/D3) with amplitude colors
 - **Conditional Rendering** - v4.0 features only show when v4.0 firmware detected
 
+### Rule-Based Anomaly Fallback (v4.1)
+When the TFLite ML model is unavailable or inference fails, a rule-based scoring engine ensures anomaly detection is **never disabled**:
+
+| Feature | Threshold Basis | Weight |
+|---------|----------------|--------|
+| PPV | DIN 4150-3 heritage limits (0.3/3.0/10.0 mm/s) | 30% |
+| STA/LTA | Allen (1978) seismic trigger (>4.0) | 20% |
+| CAV | EPRI damage threshold (0.16 g-s) | 15% |
+| Crest Factor | ISO 10816 impact detection (>5.0) | 10% |
+| Kurtosis | Impulsive event detection (>3.0 excess) | 10% |
+| Seismic Freq | Low-frequency concern (0.5-10 Hz + PPV>1.0) | 10% |
+| RMS | Sustained vibration energy (>0.5 g) | 5% |
+
+### Low Power Mode (v4.1)
+Activated by holding the M5 button for 3 seconds on the device:
+- BLE rate reduced from 2Hz to 0.5Hz
+- Display refresh reduced from 4Hz to 1Hz
+- LCD brightness dimmed to 20%
+- **Safety-critical auto-escalation**: When PPV > 0.3 mm/s, automatically runs full DSP (FFT+DWT+kurtosis) so all frequency-dependent hazard rules still fire
+- Audio feedback: low tone entering, high tone exiting
+
 ### Connection Management
 - **Auto-scan** - Automatically finds nearby AncientVision-Sensor devices
 - **Persistent connection** - BLE stays connected when switching tabs (IndexedStack)
 - **Auto-reconnect** - Exponential backoff reconnection on signal loss (up to 10 attempts)
-- **Keep-alive monitor** - Detects stale connections after 15 seconds of no data
+- **Keep-alive monitor** - 3-second polling for faster disconnect detection
+- **RSSI indicator** - Signal strength shown when connected
+- **Manual reconnect** - Reconnect button visible when disconnected
 - **MTU negotiation** - Requests 512-byte MTU to prevent JSON truncation
 - **Backward Compatibility** - App supports v2.0, v3.0, and v4.0 firmware automatically
 
@@ -474,10 +497,9 @@ Quick access hub for all features:
 - Manual Entry Form
 - Quick Photo Capture
 
-### AI & Analysis
-- **AI Recognition** - Coming Soon
-- Smart Field Suggestions
-- Quality Assessment
+### AI & 3D
+- **Coin AI** - AI-powered coin identification and classification
+- **Photogrammetry** - 3D reconstruction from photos (also accessible from Findings tab)
 
 ### Export & Reports
 - PDF Report Generator
@@ -707,7 +729,7 @@ When saving incomplete records:
 | Cloud Processing | ✅ Complete | OpenScan API |
 | Photo Capture | ✅ Complete | Camera + Gallery |
 | PDF Export | ✅ Complete | Professional |
-| Trench Safety Monitoring v4.0 | ✅ Complete | DWT + Arias + CAV + Temp |
+| Trench Safety Monitoring v4.1 | ✅ Complete | DWT + Arias + CAV + Temp + Rule-based fallback |
 | Offline Support | ✅ Complete | Auto-save + Queue |
 | Cloud Database | ✅ Complete | Firebase Firestore |
 | Field Journal | ✅ Complete | Daily logging |
@@ -717,5 +739,8 @@ When saving incomplete records:
 | Settings Sync | ✅ Complete | Cross-device |
 | Quick Capture | ✅ Complete | Simplified single-photo |
 | Data Validation | ✅ Complete | Quality checks |
-| ML Anomaly Detection v4.0 | ✅ Complete | VAE with 10 features |
-| Modular Architecture v4.0 | ✅ Complete | 25+ services, 181 tests |
+| ML Anomaly Detection v4.1 | ✅ Complete | VAE with 10 features + rule-based fallback |
+| Low Power Mode v4.1 | ✅ Complete | 3s hold toggle, auto-escalation on elevated vibration |
+| Coin AI | ✅ Complete | AI-powered coin identification |
+| Reliability Suite v4.1 | ✅ Complete | Circular buffers, memory leak fixes, setState batching |
+| Modular Architecture v4.1 | ✅ Complete | 25+ services, 181 tests |

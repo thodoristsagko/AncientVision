@@ -1,5 +1,6 @@
 import 'point_cloud.dart';
 import 'mesh_model.dart';
+import 'camera_pose.dart';
 
 /// Enum for reconstruction method types
 enum ReconstructionMethod {
@@ -44,6 +45,9 @@ class ReconstructionResult {
   final String? exportPath;
   final List<String> exportedFiles; // List of file paths that were exported
 
+  // Camera poses from SfM (needed for dense reconstruction)
+  final List<CameraPose>? cameraPoses;
+
   // Metadata
   final Map<String, dynamic> metadata;
 
@@ -61,6 +65,7 @@ class ReconstructionResult {
     this.inputImageCount,
     this.processingTimeSeconds,
     Map<String, dynamic>? qualityMetrics,
+    this.cameraPoses,
     this.exportPath,
     List<String>? exportedFiles,
     Map<String, dynamic>? metadata,
@@ -110,6 +115,7 @@ class ReconstructionResult {
     int? inputImageCount,
     double? processingTimeSeconds,
     Map<String, dynamic>? qualityMetrics,
+    List<CameraPose>? cameraPoses,
     String? exportPath,
     List<String>? exportedFiles,
     Map<String, dynamic>? metadata,
@@ -128,6 +134,7 @@ class ReconstructionResult {
       inputImageCount: inputImageCount ?? this.inputImageCount,
       processingTimeSeconds: processingTimeSeconds ?? this.processingTimeSeconds,
       qualityMetrics: qualityMetrics ?? this.qualityMetrics,
+      cameraPoses: cameraPoses ?? this.cameraPoses,
       exportPath: exportPath ?? this.exportPath,
       exportedFiles: exportedFiles ?? this.exportedFiles,
       metadata: metadata ?? this.metadata,

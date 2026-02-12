@@ -13,6 +13,7 @@ import 'package:archive/archive_io.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/reconstruction_result.dart';
 import '../services/reconstruction_service.dart';
@@ -21,6 +22,15 @@ import '../services/notification_service.dart';
 import '../services/metadata_export_service.dart';
 import '../utils/quality_analyzer.dart';
 import '../widgets/model_3d_viewer.dart';
+import '../widgets/reconstruction_progress_widget.dart';
+import '../widgets/capture_quality_overlay.dart';
+import '../widgets/quality_visualization_widget.dart';
+import '../widgets/point_cloud_painter.dart';
+import '../models/point_cloud.dart';
+import '../services/incremental_sfm_service.dart';
+import '../services/dense_reconstruction_service.dart';
+import '../services/multi_provider_photogrammetry.dart';
+import '../services/image_service.dart';
 import 'manual_entry_form_screen.dart';
 
 class PhotogrammetryScreen extends StatefulWidget {
@@ -39,6 +49,7 @@ class PhotogrammetryScreen extends StatefulWidget {
 
 class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     with SingleTickerProviderStateMixin {
+  static const String _tutorialSeenKey = 'photogrammetry_tutorial_seen';
   final ImagePicker _imagePicker = ImagePicker();
   final List<PhotogrammetryCapture> _captures = [];
   int _currentAngleIndex = 0;
@@ -46,7 +57,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   bool _isCapturing = false;
   late AnimationController _pulseController;
 
-  // VIDEO CAPTURE MODE - NEW ULTRA FEATURE!
+  // Video capture mode
   bool _isVideoMode = false; // Toggle between photo and video mode
   bool _isRecording = false; // Currently recording video
   XFile? _recordedVideo; // Recorded video file
@@ -74,6 +85,21 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   double _reconstructionProgress = 0.0; // Progress 0.0 to 1.0
   String _reconstructionStatus = ''; // Current status message
   ReconstructionResult? _lastReconstructionResult; // Last successful result for metadata export
+  CaptureQualityMetrics _captureQualityMetrics = const CaptureQualityMetrics();
+
+  // Incremental SfM real-time preview
+  final IncrementalSfMService _incrementalSfm = IncrementalSfMService();
+  bool _showIncrementalPreview = false;
+  PointCloud? _incrementalPreviewCloud;
+
+  // Dense reconstruction
+  final DenseReconstructionService _denseService = DenseReconstructionService();
+  bool _isDenseReconstructing = false;
+  double _denseProgress = 0.0;
+  String _denseStatus = '';
+
+  // Advanced settings panel (collapsed by default for cleaner UI)
+  bool _showAdvancedSettings = false;
 
   // Define the optimal capture angles for photogrammetry
   // 12 angles around the object + 2 top angles + 2 detail angles = 16 total
@@ -111,11 +137,13 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     // Initialize AR-like sensor guidance
     _initializeSensors();
 
-    // Initialize ULTRA++ voice commands
+    // Initialize voice commands
     _initializeVoiceCommands();
 
     // 🌟 Initialize World-Class AI & Analytics
     _loadSmartSuggestions();
+
+    _loadTutorialPreference();
   }
 
   @override
@@ -125,7 +153,17 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     _magnetometerSubscription?.cancel();
     _speechToText?.stop();
     _flutterTts?.stop();
+    _incrementalSfm.reset();
+    ImageService().cleanupTempFiles();
     super.dispose();
+  }
+
+  Future<void> _loadTutorialPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool(_tutorialSeenKey) ?? false;
+    if (seen && mounted) {
+      setState(() => _showTutorial = false);
+    }
   }
 
   // Initialize device sensors for AR-like guidance
@@ -147,7 +185,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     });
   }
 
-  // ULTRA++ Initialize voice commands for hands-free operation
+  // Initialize voice commands for hands-free operation
   Future<void> _initializeVoiceCommands() async {
     final sttInstance = stt.SpeechToText();
     final ttsInstance = FlutterTts();
@@ -345,11 +383,27 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
         setState(() {
           _captures.add(capture);
+          _captureQualityMetrics = CaptureQualityMetrics(
+            sharpness: quality,
+            overlap: _captures.length > 1 ? 0.6 : 0.0,
+            baselineQuality: _captures.length > 1 ? 0.7 : 0.0,
+            featureCount: (quality * 200).toInt(),
+          );
           // Auto-advance to next angle if enabled
           if (_currentAngleIndex < _captureAngles.length - 1 && _autoAdvance) {
             _currentAngleIndex++;
           }
         });
+
+        // Feed to incremental SfM for real-time preview
+        _incrementalSfm.addImage(
+          File(finalImage.path),
+          onUpdate: (cloud, poses, count) {
+            if (mounted) {
+              setState(() => _incrementalPreviewCloud = cloud);
+            }
+          },
+        );
 
         // Show quality feedback
         if (mounted) {
@@ -386,7 +440,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   }
 
   // ============================================================================
-  // VIDEO CAPTURE MODE - ULTRA-ADVANCED FEATURE!
+  // Video capture mode - frame extraction from video walkthrough
   // ============================================================================
   // Record a smooth video while walking around the object, then automatically
   // extract the best frames for photogrammetry processing
@@ -664,7 +718,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     }
   }
 
-  // ULTRA-ADVANCED image quality analysis using QualityAnalyzer
+  // Advanced image quality analysis using QualityAnalyzer
   Future<double> _analyzeImageQuality(XFile image) async {
     try {
       final file = File(image.path);
@@ -870,7 +924,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       final exportDir = Directory('${directory.path}/photogrammetry_$timestamp');
       await exportDir.create(recursive: true);
 
-      // === ULTRA-ADVANCED EXPORT ===
+      // === Advanced Export ===
 
       // Copy all photos to export directory
       for (int i = 0; i < _captures.length; i++) {
@@ -1078,7 +1132,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       return;
     }
 
-    // Show method selection dialog
+    // Show simplified method selection dialog
     final method = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1088,15 +1142,15 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
           children: [
             Icon(Icons.view_in_ar_rounded, color: Color(0xFF7C4DFF), size: 28),
             SizedBox(width: 12),
-            Expanded(child: Text('Choose Processing Method', style: TextStyle(color: Colors.white, fontSize: 18))),
+            Expanded(child: Text('Create 3D Model', style: TextStyle(color: Colors.white, fontSize: 18))),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Cloud Processing Option - RECOMMENDED
+            // Best Quality (Cloud) - RECOMMENDED
             InkWell(
-              onTap: () => Navigator.pop(ctx, 'cloud'),
+              onTap: () => Navigator.pop(ctx, 'best_quality'),
               borderRadius: BorderRadius.circular(16),
               child: Container(
                 padding: const EdgeInsets.all(16),
@@ -1118,8 +1172,8 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Cloud Processing', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                              Text('FREE via OpenScan', style: TextStyle(color: Color(0xFF4CAF50), fontSize: 12)),
+                              Text('Best Quality', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                              Text('Cloud processing with auto-failover', style: TextStyle(color: Color(0xFF4CAF50), fontSize: 12)),
                             ],
                           ),
                         ),
@@ -1146,7 +1200,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
               ),
             ),
             const SizedBox(height: 12),
-            // On-Device Option
+            // Quick Scan (On-Device)
             InkWell(
               onTap: () => Navigator.pop(ctx, 'device'),
               borderRadius: BorderRadius.circular(16),
@@ -1168,8 +1222,8 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('On-Device Preview', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                              Text('Quick sparse point cloud', style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 12)),
+                              const Text('Quick Scan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                              Text('On-device preview, works offline', style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 12)),
                             ],
                           ),
                         ),
@@ -1177,10 +1231,10 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '• Sparse point cloud only\n'
+                      '• Instant point cloud preview\n'
                       '• 1-3 min processing time\n'
-                      '• Works offline\n'
-                      '• Lower quality preview',
+                      '• No internet needed\n'
+                      '• Auto-enhances if enough data',
                       style: TextStyle(color: Colors.white.withAlpha(128), fontSize: 12, height: 1.5),
                     ),
                   ],
@@ -1200,8 +1254,9 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
 
     if (method == null) return;
 
-    if (method == 'cloud') {
-      await _generateCloudModel();
+    if (method == 'best_quality') {
+      // Try multi-provider first for best quality, falls back to standard cloud
+      await _generateMultiProviderModel();
       return;
     }
 
@@ -1304,6 +1359,11 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
             _reconstructionStatus = status;
           });
         },
+      ).timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {
+          throw TimeoutException('Reconstruction timed out after 60s');
+        },
       );
 
       setState(() {
@@ -1320,7 +1380,6 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         // Build quality notification message
         final grade = result.qualityMetrics['quality_grade'] as String?;
         final gsd = result.qualityMetrics['gsd_mm_per_pixel'] as double?;
-        final gradeDisplay = grade != null ? ' [${grade.toUpperCase()}]' : '';
         final gsdDisplay = gsd != null ? ' | GSD: ${gsd.toStringAsFixed(2)} mm/px' : '';
 
         // Send success notification
@@ -1329,27 +1388,38 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
           pointCount: result.pointCount,
         );
 
-        // Show quality grade snackbar
-        if (grade != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  _qualityGradeBadge(grade),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '${result.pointCount} points$gradeDisplay$gsdDisplay',
-                      style: const TextStyle(color: Colors.white),
-                    ),
+        // Show quality summary snackbar using QualityVisualizationData
+        final qualityData = QualityVisualizationData(
+          qualityGrade: _mapGradeStringToLetter(grade ?? 'unknown'),
+          meanReprojError: (result.qualityMetrics['mean_reprojection_error'] as num?)?.toDouble() ?? 0.0,
+          completeness: (result.qualityMetrics['completeness'] as num?)?.toDouble() ?? 0.0,
+          pointCount: result.pointCount,
+          matchedImages: (result.qualityMetrics['matched_images'] as int?) ?? (result.inputImageCount ?? 0),
+          totalImages: result.inputImageCount ?? 0,
+          processingTime: Duration(
+            milliseconds: ((result.processingTimeSeconds ?? 0) * 1000).toInt(),
+          ),
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                _qualityGradeBadge(grade ?? 'unknown'),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '${qualityData.pointCount} points [${qualityData.qualityGrade}]'
+                    '${gsdDisplay.isNotEmpty ? gsdDisplay : ""}',
+                    style: const TextStyle(color: Colors.white),
                   ),
-                ],
-              ),
-              backgroundColor: const Color(0xFF1C2523),
-              duration: const Duration(seconds: 4),
+                ),
+              ],
             ),
-          );
-        }
+            backgroundColor: const Color(0xFF1C2523),
+            duration: const Duration(seconds: 4),
+          ),
+        );
 
         // Go directly to 3D viewer - user can save from there
         Navigator.push(
@@ -1372,6 +1442,11 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
             ),
           ),
         );
+
+        // Auto-enhance to dense reconstruction in background if enough points
+        if (result.pointCount > 50) {
+          _enhanceToDense(result);
+        }
       } else if (result.hasFailed && mounted) {
         // Send failure notification
         await NotificationService().showProcessingFailed(
@@ -1533,6 +1608,48 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     }
   }
 
+  /// Generate 3D model using multi-provider cloud service with auto-failover
+  Future<void> _generateMultiProviderModel() async {
+    setState(() {
+      _isReconstructing = true;
+      _reconstructionProgress = 0.0;
+      _reconstructionStatus = 'Checking available providers...';
+    });
+
+    try {
+      final multiService = MultiProviderPhotogrammetryService();
+      final health = await multiService.checkAllProviders();
+
+      if (health['allDown'] == true) {
+        setState(() => _isReconstructing = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('All cloud providers unavailable. Try on-device processing.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() {
+        _reconstructionStatus = 'Using ${multiService.currentProvider.name}...';
+        _reconstructionProgress = 0.1;
+      });
+
+      // Fall back to standard cloud processing via the active provider
+      await _generateCloudModel();
+    } catch (e) {
+      setState(() => _isReconstructing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Multi-provider error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   /// Run on-device reconstruction (extracted from _generate3DModel for reuse)
   Future<void> _runOnDeviceReconstruction() async {
     final imageFiles = _captures.map((c) => File(c.file.path)).toList();
@@ -1601,6 +1718,11 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
               ),
             ),
           );
+
+          // Auto-enhance to dense reconstruction in background if enough points
+          if (result.pointCount > 50) {
+            _enhanceToDense(result);
+          }
         }
       }
     } catch (e) {
@@ -1613,6 +1735,89 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
           SnackBar(content: Text('On-device error: $e'), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+  /// Enhance sparse result to dense reconstruction
+  Future<void> _enhanceToDense(ReconstructionResult sparseResult) async {
+    final imageFiles = _captures.map((c) => File(c.file.path)).toList();
+
+    setState(() {
+      _isDenseReconstructing = true;
+      _denseProgress = 0.0;
+      _denseStatus = 'Starting dense reconstruction...';
+    });
+
+    try {
+      final denseResult = await _denseService.reconstruct(
+        imageFiles: imageFiles,
+        poses: sparseResult.cameraPoses ?? [],
+        focalLength: sparseResult.qualityMetrics['focal_length']?.toDouble() ?? 800.0,
+        onProgress: (progress, status) {
+          if (mounted) {
+            setState(() {
+              _denseProgress = progress;
+              _denseStatus = status;
+            });
+          }
+        },
+      );
+
+      setState(() => _isDenseReconstructing = false);
+
+      if (mounted && denseResult.pointCloud.points.isNotEmpty) {
+        final result = ReconstructionResult(
+          id: 'dense_${DateTime.now().millisecondsSinceEpoch}',
+          method: ReconstructionMethod.sparseSfM,
+          status: ReconstructionStatus.completed,
+          pointCloud: denseResult.pointCloud,
+          mesh: denseResult.mesh,
+          inputImageCount: imageFiles.length,
+          processingTimeSeconds: denseResult.processingTime.inMilliseconds / 1000.0,
+          qualityMetrics: {
+            'depth_maps': denseResult.depthMapsComputed,
+            'dense_points': denseResult.pointCloud.points.length,
+          },
+        );
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => Model3DViewer(
+              result: result,
+              onCompleteForm: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ManualEntryFormScreen(
+                      reconstructionResult: result,
+                      photoGallery: _captures.map((c) => c.file).toList(),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isDenseReconstructing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Dense reconstruction failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Map quality grade string to letter grade for QualityVisualizationData
+  String _mapGradeStringToLetter(String grade) {
+    switch (grade.toLowerCase()) {
+      case 'excellent': return 'A';
+      case 'good': return 'B';
+      case 'acceptable': return 'C';
+      case 'poor': return 'D';
+      default: return 'F';
     }
   }
 
@@ -1882,7 +2087,11 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => setState(() => _showTutorial = false),
+                    onPressed: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool(_tutorialSeenKey, true);
+                      if (mounted) setState(() => _showTutorial = false);
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF7C4DFF),
                       foregroundColor: Colors.white,
@@ -1943,7 +2152,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     );
   }
 
-  // ULTRA++ Feature Chip Widget
+  // Feature chip toggle widget
   Widget _buildFeatureChip({
     required IconData icon,
     required String label,
@@ -2074,52 +2283,87 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                 ),
               ),
 
-              // ULTRA++ Advanced Features Panel
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withAlpha(13),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withAlpha(26)),
+              // Capture quality indicator
+              if (_captures.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CaptureQualityOverlay(
+                    metrics: _captureQualityMetrics,
+                    capturedCount: _captures.length,
+                    targetCount: _captureAngles.length,
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.settings, color: Color(0xFF4CAF50), size: 16),
-                        SizedBox(width: 6),
-                        Text(
-                          'Capture Settings',
-                          style: TextStyle(color: Color(0xFF4CAF50), fontSize: 12, fontWeight: FontWeight.bold),
+
+              // Advanced settings (collapsed by default, gear icon to expand)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: _showAdvancedSettings
+                    ? Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(13),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white.withAlpha(26)),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        // Auto-Advance Toggle (always visible, default ON)
-                        _buildFeatureChip(
-                          icon: Icons.skip_next,
-                          label: 'Auto-Advance',
-                          isActive: _autoAdvance,
-                          onTap: () => setState(() => _autoAdvance = !_autoAdvance),
-                          color: const Color(0xFF4CAF50),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.settings, color: Color(0xFF4CAF50), size: 16),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Capture Settings',
+                                  style: TextStyle(color: Color(0xFF4CAF50), fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                                const Spacer(),
+                                GestureDetector(
+                                  onTap: () => setState(() => _showAdvancedSettings = false),
+                                  child: const Icon(Icons.close, color: Colors.white54, size: 18),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                _buildFeatureChip(
+                                  icon: Icons.skip_next,
+                                  label: 'Auto-Advance',
+                                  isActive: _autoAdvance,
+                                  onTap: () => setState(() => _autoAdvance = !_autoAdvance),
+                                  color: const Color(0xFF4CAF50),
+                                ),
+                                const SizedBox(width: 8),
+                                _buildFeatureChip(
+                                  icon: Icons.mic,
+                                  label: 'Voice',
+                                  isActive: _voiceEnabled,
+                                  onTap: _toggleVoiceCommands,
+                                  color: const Color(0xFF2196F3),
+                                ),
+                                const SizedBox(width: 8),
+                                _buildFeatureChip(
+                                  icon: Icons.view_in_ar,
+                                  label: '3D Preview',
+                                  isActive: _showIncrementalPreview,
+                                  onTap: () => setState(() => _showIncrementalPreview = !_showIncrementalPreview),
+                                  color: const Color(0xFF7C4DFF),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        // Voice Commands Toggle
-                        _buildFeatureChip(
-                          icon: Icons.mic,
-                          label: 'Voice',
-                          isActive: _voiceEnabled,
-                          onTap: _toggleVoiceCommands,
-                          color: const Color(0xFF2196F3),
+                      )
+                    : Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          onPressed: () => setState(() => _showAdvancedSettings = true),
+                          icon: const Icon(Icons.settings, color: Colors.white38, size: 22),
+                          tooltip: 'Capture Settings',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
                         ),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
               ),
 
               // Circular progress with angle indicator
@@ -2317,7 +2561,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                       ),
               ),
 
-              // ULTRA++ Voice Commands Control
+              // Voice commands control
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
                 child: Row(
@@ -2654,78 +2898,80 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
             ),
           ),
 
+          // Incremental SfM mini preview (bottom-right corner)
+          if (_showIncrementalPreview && _incrementalPreviewCloud != null && _incrementalPreviewCloud!.points.isNotEmpty)
+            Positioned(
+              bottom: 140,
+              right: 16,
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => Model3DViewer(
+                        result: ReconstructionResult(
+                          id: 'incremental-preview',
+                          method: ReconstructionMethod.sparseSfM,
+                          status: ReconstructionStatus.completed,
+                          pointCloud: _incrementalPreviewCloud!,
+                          inputImageCount: _captures.length,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF7C4DFF), width: 2),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Stack(
+                      children: [
+                        PointCloudViewer(
+                          pointCloud: _incrementalPreviewCloud!,
+                          initialPointSize: 2.0,
+                        ),
+                        Positioned(
+                          bottom: 4,
+                          left: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '${_incrementalPreviewCloud!.points.length} pts',
+                              style: const TextStyle(color: Colors.white, fontSize: 9),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
           // 🎯 3D RECONSTRUCTION PROGRESS OVERLAY
           if (_isReconstructing)
             Container(
               color: Colors.black.withValues(alpha: 0.8),
               child: Center(
-                child: Container(
-                  margin: const EdgeInsets.all(32),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1C2523),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFF7C4DFF), width: 2),
-                  ),
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.view_in_ar,
-                        size: 64,
-                        color: Color(0xFF7C4DFF),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Generating 3D Model',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _reconstructionStatus,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 14,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 24),
-                      Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          SizedBox(
-                            width: 120,
-                            height: 120,
-                            child: CircularProgressIndicator(
-                              value: _reconstructionProgress,
-                              strokeWidth: 8,
-                              backgroundColor: Colors.white.withValues(alpha: 0.1),
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                Color(0xFF7C4DFF),
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '${(_reconstructionProgress * 100).toInt()}%',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'This may take 10-30 seconds...',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 12,
-                        ),
+                      ReconstructionProgressWidget(
+                        progress: _reconstructionProgress,
+                        statusMessage: _reconstructionStatus,
+                        isProcessing: _isReconstructing,
                       ),
                       const SizedBox(height: 16),
                       TextButton(
@@ -2733,11 +2979,44 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
                           _reconstructionService.cancelReconstruction();
                           setState(() => _isReconstructing = false);
                         },
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Dense reconstruction progress overlay
+          if (_isDenseReconstructing)
+            Container(
+              color: Colors.black.withValues(alpha: 0.8),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.auto_awesome, color: Color(0xFF00E5FF), size: 48),
+                      const SizedBox(height: 16),
+                      const Text('Enhancing to Dense',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text(_denseStatus,
+                        style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                      const SizedBox(height: 16),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: LinearProgressIndicator(
+                          value: _denseProgress,
+                          backgroundColor: Colors.white24,
+                          valueColor: const AlwaysStoppedAnimation(Color(0xFF00E5FF)),
+                          minHeight: 6,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Text('${(_denseProgress * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(color: Colors.white54, fontSize: 12)),
                     ],
                   ),
                 ),

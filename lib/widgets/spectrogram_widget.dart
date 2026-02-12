@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../utils/circular_buffer.dart';
 
 // ---------------------------------------------------------------------------
 // Color Maps
@@ -72,27 +73,26 @@ class SpectrogramBuffer {
   /// Maximum number of time columns retained.
   final int maxColumns;
 
-  final List<List<double>> _data = [];
+  // O(1) circular buffer — replaces List + removeAt(0) which was O(N)
+  late final CircularBuffer<List<double>> _buf;
 
-  SpectrogramBuffer({this.maxColumns = 120});
-
-  /// Append a new FFT magnitude column. If the buffer is full the oldest
-  /// column is removed.
-  void addColumn(List<double> fftMagnitudes) {
-    _data.add(List<double>.from(fftMagnitudes));
-    if (_data.length > maxColumns) {
-      _data.removeAt(0);
-    }
+  SpectrogramBuffer({this.maxColumns = 120}) {
+    _buf = CircularBuffer<List<double>>(maxColumns);
   }
 
-  /// An unmodifiable view of the current data.
-  List<List<double>> get data => List<List<double>>.unmodifiable(_data);
+  /// Append a new FFT magnitude column. Oldest evicted automatically. O(1).
+  void addColumn(List<double> fftMagnitudes) {
+    _buf.add(List<double>.from(fftMagnitudes));
+  }
+
+  /// Snapshot of current data as a [List].
+  List<List<double>> get data => _buf.toList();
 
   /// Clear all stored columns.
-  void clear() => _data.clear();
+  void clear() => _buf.clear();
 
   /// Number of columns currently stored.
-  int get length => _data.length;
+  int get length => _buf.length;
 }
 
 // ---------------------------------------------------------------------------

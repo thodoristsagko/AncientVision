@@ -14,6 +14,7 @@ import 'findings_map_screen.dart';
 import 'quick_capture_screen.dart';
 import 'ai_recognition_screen.dart';
 import 'manual_entry_form_screen.dart';
+import 'photogrammetry_screen.dart';
 import '../widgets/finding_detail_card.dart';
 import '../main.dart' show imgbbApiKey;
 
@@ -35,6 +36,9 @@ class _FindingsViewState extends State<FindingsView> {
   // Batch selection mode
   bool _isSelectionMode = false;
   final Set<String> _selectedIds = {};
+
+  // Filter chips visibility
+  bool _showFilters = false;
 
   @override
   void initState() {
@@ -219,6 +223,176 @@ class _FindingsViewState extends State<FindingsView> {
     );
   }
 
+  void _showAddOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1C2523),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Add Finding',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Quick Capture option
+            _buildAddOption(
+              icon: Icons.flash_on_rounded,
+              title: 'Quick Capture',
+              subtitle: 'Snap a photo and save instantly',
+              color: const Color(0xFF2196F3),
+              onTap: () async {
+                Navigator.pop(context);
+                final result = await Navigator.push<Map<String, dynamic>>(
+                  context,
+                  MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
+                );
+                if (result != null && context.mounted) {
+                  _handleQuickCaptureResult(context, result);
+                }
+              },
+            ),
+            const SizedBox(height: 10),
+            // Manual Entry option
+            _buildAddOption(
+              icon: Icons.edit_note_rounded,
+              title: 'Manual Entry',
+              subtitle: 'Full archaeological recording form',
+              color: const Color(0xFFFFC107),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            // Coin Recognition option
+            _buildAddOption(
+              icon: Icons.auto_awesome_rounded,
+              title: 'Coin Recognition',
+              subtitle: 'AI-powered coin identification',
+              color: const Color(0xFF7C4DFF),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            // Photogrammetry option
+            _buildAddOption(
+              icon: Icons.view_in_ar_rounded,
+              title: 'Photogrammetry',
+              subtitle: '3D reconstruction from photos',
+              color: const Color(0xFF00BFA5),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            SafeArea(child: Container()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(26),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withAlpha(38)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withAlpha(51),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withAlpha(153),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.white.withAlpha(102),
+                size: 14,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadFindings() async {
     debugPrint('=== _loadFindings called ===');
     try {
@@ -227,7 +401,8 @@ class _FindingsViewState extends State<FindingsView> {
           .collection('findings')
           .orderBy('createdAt', descending: true)
           .limit(20)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 10));
 
       // If no results with ordering, try without (for docs missing createdAt)
       if (snapshot.docs.isEmpty) {
@@ -235,7 +410,8 @@ class _FindingsViewState extends State<FindingsView> {
         snapshot = await FirebaseFirestore.instance
             .collection('findings')
             .limit(20)
-            .get();
+            .get()
+            .timeout(const Duration(seconds: 10));
       }
       debugPrint('Firestore returned ${snapshot.docs.length} documents');
 
@@ -405,221 +581,180 @@ class _FindingsViewState extends State<FindingsView> {
                 ),
                 const SizedBox(height: 12),
 
-                // Source filter chips
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildSourceChip(null, 'All', Icons.list_alt),
-                      const SizedBox(width: 8),
-                      ...FindingSource.values.map((source) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _buildSourceChip(source, source.label, source.icon),
-                      )),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-
+                // Toolbar row: filter toggle + selection mode controls + add button
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                  // Batch Export button
-                  if (AuthService.currentUser != null && _filteredFindings.isNotEmpty)
+                    // Filter toggle button
                     GestureDetector(
-                      onTap: _isSelectionMode ? _showBatchExportDialog : _toggleSelectionMode,
+                      onTap: () => setState(() => _showFilters = !_showFilters),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: _isSelectionMode
-                              ? const Color(0xFF4CAF50)
-                              : const Color(0xFF2196F3),
-                          borderRadius: BorderRadius.circular(12),
+                          color: _showFilters || _selectedSource != null
+                              ? const Color(0xFFFFC107).withAlpha(51)
+                              : Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _selectedSource != null
+                                ? const Color(0xFFFFC107).withAlpha(128)
+                                : Colors.white.withAlpha(51),
+                            width: 1,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _isSelectionMode ? Icons.file_download : Icons.checklist,
-                              color: Colors.white,
+                              Icons.filter_list_rounded,
+                              color: _selectedSource != null
+                                  ? const Color(0xFFFFC107)
+                                  : Colors.white.withAlpha(179),
                               size: 18,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _isSelectionMode
-                                  ? 'Export (${_selectedIds.length})'
-                                  : 'Select',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                            if (_selectedSource != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                _selectedSource!.label,
+                                style: const TextStyle(
+                                  color: Color(0xFFFFC107),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ),
                     ),
-                  // Cancel selection button
-                  if (_isSelectionMode)
-                    GestureDetector(
-                      onTap: _toggleSelectionMode,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.close, color: Colors.white, size: 16),
-                      ),
-                    ),
-                  // Select All button
-                  if (_isSelectionMode)
-                    GestureDetector(
-                      onTap: _selectedIds.length == _filteredFindings.length
-                          ? _clearSelection
-                          : _selectAll,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white24),
-                        ),
-                        child: Text(
-                          _selectedIds.length == _filteredFindings.length ? 'None' : 'All',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                    const SizedBox(width: 8),
+                    // Selection mode controls
+                    if (_isSelectionMode) ...[
+                      GestureDetector(
+                        onTap: _showBatchExportDialog,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4CAF50),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        ),
-                      ),
-                    ),
-                  // Coin Recognition button
-                  if (AuthService.currentUser != null && !_isSelectionMode)
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF7C4DFF),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome_rounded,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              'Coin Recognition',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.file_download, color: Colors.white, size: 16),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Export (${_selectedIds.length})',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  // Action buttons row
-                  if (AuthService.currentUser != null)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Quick Capture button
-                        GestureDetector(
-                          onTap: () async {
-                            final result = await Navigator.push<Map<String, dynamic>>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const QuickCaptureScreen(),
-                              ),
-                            );
-                            if (result != null && context.mounted) {
-                              _handleQuickCaptureResult(context, result);
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2196F3),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.flash_on,
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: _selectedIds.length == _filteredFindings.length
+                            ? _clearSelection
+                            : _selectAll,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withAlpha(26),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Text(
+                            _selectedIds.length == _filteredFindings.length ? 'None' : 'All',
+                            style: const TextStyle(
                               color: Colors.white,
-                              size: 16,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Manual Entry button
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFC107),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.edit_note,
-                              color: Color(0xFF3E2723),
-                              size: 16,
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(38),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.lock_outline_rounded,
-                            color: Colors.white.withAlpha(102),
-                            size: 14,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Sign in',
-                            style: TextStyle(
-                              color: Colors.white.withAlpha(102),
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ],
+                        ),
                       ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: _toggleSelectionMode,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withAlpha(204),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.close, color: Colors.white, size: 16),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    // Add button (FAB-style) - opens bottom sheet with options
+                    if (AuthService.currentUser != null && !_isSelectionMode)
+                      GestureDetector(
+                        onTap: () => _showAddOptions(context),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFC107),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.add_rounded,
+                            color: Color(0xFF3E2723),
+                            size: 22,
+                          ),
+                        ),
+                      )
+                    else if (AuthService.currentUser == null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(38),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.lock_outline_rounded,
+                              color: Colors.white.withAlpha(102),
+                              size: 14,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Sign in',
+                              style: TextStyle(
+                                color: Colors.white.withAlpha(102),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+
+                // Collapsible source filter chips
+                if (_showFilters) ...[
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildSourceChip(null, 'All', Icons.list_alt),
+                        const SizedBox(width: 8),
+                        ...FindingSource.values.map((source) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _buildSourceChip(source, source.label, source.icon),
+                        )),
+                      ],
                     ),
+                  ),
                 ],
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 12),
 
               // Show loading or empty state
               if (_isLoading)
@@ -777,7 +912,30 @@ class _FindingsViewState extends State<FindingsView> {
 
                             return GestureDetector(
                               key: Key(f.id),
-                              onTap: () => setState(() => _selectedIndex = index),
+                              onTap: () {
+                                if (_isSelectionMode) {
+                                  setState(() {
+                                    if (_selectedIds.contains(f.id)) {
+                                      _selectedIds.remove(f.id);
+                                      if (_selectedIds.isEmpty) {
+                                        _isSelectionMode = false;
+                                      }
+                                    } else {
+                                      _selectedIds.add(f.id);
+                                    }
+                                  });
+                                } else {
+                                  setState(() => _selectedIndex = index);
+                                }
+                              },
+                              onLongPress: () {
+                                if (!_isSelectionMode) {
+                                  setState(() {
+                                    _isSelectionMode = true;
+                                    _selectedIds.add(f.id);
+                                  });
+                                }
+                              },
                               child: Container(
                                   margin: const EdgeInsets.symmetric(vertical: 4),
                                   padding: const EdgeInsets.all(12),
@@ -795,6 +953,19 @@ class _FindingsViewState extends State<FindingsView> {
                                   ),
                                   child: Row(
                                     children: [
+                                      // Selection checkbox (shown in selection mode)
+                                      if (_isSelectionMode) ...[
+                                        Icon(
+                                          _selectedIds.contains(f.id)
+                                              ? Icons.check_circle_rounded
+                                              : Icons.circle_outlined,
+                                          color: _selectedIds.contains(f.id)
+                                              ? const Color(0xFF4CAF50)
+                                              : Colors.white.withAlpha(102),
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 10),
+                                      ],
                                       // Type color indicator
                                       Container(
                                         width: 4,

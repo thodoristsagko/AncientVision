@@ -56,8 +56,8 @@ class GlassBottomNavBar extends StatelessWidget {
                 onTap: onItemSelected,
               ),
               NavItem(
-                icon: Icons.engineering_rounded,
-                label: 'Safety',
+                icon: Icons.shield_rounded,
+                label: 'Monitor',
                 index: 3,
                 isSelected: currentIndex == 3,
                 onTap: onItemSelected,

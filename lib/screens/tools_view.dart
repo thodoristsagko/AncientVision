@@ -11,12 +11,13 @@ import '../services/local_storage_service.dart';
 import 'field_journal_screen.dart';
 import 'quick_capture_screen.dart';
 import 'manual_entry_form_screen.dart';
-import 'ai_recognition_screen.dart';
 import 'analytics_screen.dart';
 import 'settings_screen.dart';
 import 'help_screen.dart';
 import 'admin_panel_screen.dart';
 import 'login_screen.dart';
+import 'ai_recognition_screen.dart';
+import 'photogrammetry_screen.dart';
 
 class ToolsView extends StatelessWidget {
   const ToolsView({super.key});
@@ -75,72 +76,80 @@ class ToolsView extends StatelessWidget {
                       // _buildHeroFeature(context),
                       // const SizedBox(height: 20),
 
-                      // === FIELD WORK ===
-                      _buildCategoryHeader('Field Work'),
-                      const SizedBox(height: 12),
-                      // Field Journal - Big Button (Main feature of Field Work)
+                      // === DOCUMENTATION (merged Field Work + Capture) ===
+                      _buildCategoryHeader('Documentation'),
+                      const SizedBox(height: 10),
                       _buildBigToolButton(
                         context,
                         icon: Icons.book_rounded,
                         title: 'Field Journal',
-                        description: 'Daily logs, observations, and site notes with voice support',
+                        description: 'Daily logs, observations, and site notes',
                         color: const Color(0xFF795548),
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => const FieldJournalScreen()),
                         ),
                       ),
-                      const SizedBox(height: 20),
-
-                      // === CAPTURE TOOLS ===
-                      _buildCategoryHeader('Capture & Documentation'),
-                      const SizedBox(height: 12),
-                      // Quick Capture - Big Button
-                      _buildBigToolButton(
-                        context,
-                        icon: Icons.flash_on_rounded,
-                        title: 'Quick Capture',
-                        description: 'Fast documentation - snap photo, add note, save instantly',
-                        color: const Color(0xFF2196F3),
-                        onTap: () async {
-                          final result = await Navigator.push<Map<String, dynamic>>(
-                            context,
-                            MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
-                          );
-                          if (result != null && context.mounted) {
-                            _handleQuickCaptureResult(context, result);
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      // Manual Entry & Coin Recognition - Grid
+                      const SizedBox(height: 10),
                       _buildToolGrid(context, [
+                        ToolCard(
+                          icon: Icons.flash_on_rounded,
+                          title: 'Quick Capture',
+                          description: 'Photo + note, instantly',
+                          color: const Color(0xFF2196F3),
+                          onTap: () async {
+                            final result = await Navigator.push<Map<String, dynamic>>(
+                              context,
+                              MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
+                            );
+                            if (result != null && context.mounted) {
+                              _handleQuickCaptureResult(context, result);
+                            }
+                          },
+                        ),
                         ToolCard(
                           icon: Icons.edit_note_rounded,
                           title: 'Manual Entry',
-                          description: 'Full archaeological form',
+                          description: 'Full recording form',
                           color: const Color(0xFFFFC107),
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
                           ),
                         ),
+                      ]),
+                      const SizedBox(height: 18),
+
+                      // === AI & 3D ===
+                      _buildCategoryHeader('AI & 3D'),
+                      const SizedBox(height: 10),
+                      _buildToolGrid(context, [
                         ToolCard(
-                          icon: Icons.auto_awesome_rounded,
+                          icon: Icons.monetization_on_rounded,
                           title: 'Coin AI',
-                          description: 'Gemini AI identification',
-                          color: const Color(0xFFFF9800),
+                          description: 'AI coin identification',
+                          color: const Color(0xFF7C4DFF),
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
                           ),
                         ),
+                        ToolCard(
+                          icon: Icons.view_in_ar_rounded,
+                          title: 'Photogrammetry',
+                          description: '3D reconstruction',
+                          color: const Color(0xFF00BFA5),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
+                          ),
+                        ),
                       ]),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 18),
 
                       // === DATA & REPORTS ===
                       _buildCategoryHeader('Data & Reports'),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       _buildToolGrid(context, [
                         ToolCard(
                           icon: Icons.insights_rounded,
@@ -160,11 +169,11 @@ class ToolsView extends StatelessWidget {
                           onTap: () => _showExportDialog(context),
                         ),
                       ]),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 18),
 
                       // === SETTINGS & HELP ===
                       _buildCategoryHeader('Settings & Help'),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       _buildToolGrid(context, [
                         ToolCard(
                           icon: Icons.settings_rounded,
@@ -187,7 +196,7 @@ class ToolsView extends StatelessWidget {
                           ),
                         ),
                       ]),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 18),
 
                       // === ADMIN SECTION (only visible to admins) ===
                       FutureBuilder<bool>(
@@ -198,7 +207,7 @@ class ToolsView extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildCategoryHeader('Admin'),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               _buildToolGrid(context, [
                                 ToolCard(
                                   icon: Icons.admin_panel_settings_rounded,
@@ -235,7 +244,7 @@ class ToolsView extends StatelessWidget {
       title,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: FontWeight.bold,
       ),
     );

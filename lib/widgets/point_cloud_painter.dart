@@ -297,12 +297,14 @@ class PointCloudViewer extends StatefulWidget {
   final PointCloud pointCloud;
   final double initialPointSize;
   final bool initialShowColors;
+  final PointCloudRenderMode renderMode;
 
   const PointCloudViewer({
     super.key,
     required this.pointCloud,
     this.initialPointSize = 3.0,
     this.initialShowColors = true,
+    this.renderMode = PointCloudRenderMode.color,
   });
 
   @override
@@ -447,6 +449,7 @@ class PointCloudViewerState extends State<PointCloudViewer>
               showColors: widget.initialShowColors,
               measurePointIndices: _measurePointIndices,
               measureDistance: _measureDistance,
+              renderMode: widget.renderMode,
             ),
             size: Size.infinite,
           ),

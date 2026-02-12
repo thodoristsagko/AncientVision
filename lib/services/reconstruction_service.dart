@@ -13,6 +13,8 @@ import 'package:path/path.dart' as path;
 import 'package:device_info_plus/device_info_plus.dart';
 import '../models/point_cloud.dart';
 import '../models/mesh_model.dart';
+import '../models/camera_pose.dart';
+export '../models/camera_pose.dart';
 import '../models/reconstruction_result.dart';
 import 'sfm_robust.dart';
 import 'bundle_adjustment_service.dart' as ba;
@@ -42,6 +44,13 @@ class ReconstructionService {
   /// Cancel ongoing reconstruction
   void cancelReconstruction() {
     _isCancelled = true;
+    clearCache();
+  }
+
+  /// Release cached keypoints and image references to free memory.
+  void clearCache() {
+    _keypointsCache.clear();
+    _imageFilesRef = [];
   }
 
   /// Reset cancellation flag
@@ -286,6 +295,7 @@ class ReconstructionService {
       var currentPoses = cameraPoses;
 
       // Step 6: Bundle Adjustment - refine poses and points together (80%)
+      if (_isCancelled) throw Exception('Reconstruction cancelled by user');
       onProgress?.call(0.80, 'Optimizing reconstruction...');
       try {
         final bundleResult = await _bundleAdjustment(
@@ -302,6 +312,7 @@ class ReconstructionService {
       }
 
       // Step 7: Statistical outlier removal (85%)
+      if (_isCancelled) throw Exception('Reconstruction cancelled by user');
       onProgress?.call(0.85, 'Filtering outliers...');
       try {
         final beforeCount = currentCloud.points.length;
@@ -313,6 +324,7 @@ class ReconstructionService {
       }
 
       // Step 8: Multi-view color sampling (88%)
+      if (_isCancelled) throw Exception('Reconstruction cancelled by user');
       onProgress?.call(0.88, 'Enhancing colors...');
       try {
         currentCloud = await _multiViewColorSampling(
@@ -399,6 +411,7 @@ class ReconstructionService {
         startedAt: startTime,
         completedAt: endTime,
         pointCloud: currentCloud,
+        cameraPoses: currentPoses,
         progress: 1.0,
         statusMessage: 'Reconstruction completed with ${currentCloud.points.length} points',
         inputImageCount: imageFiles.length,
@@ -2051,19 +2064,6 @@ class FeatureMatch {
     required this.feature1,
     required this.feature2,
     required this.distance,
-  });
-}
-
-/// Represents a camera pose in 3D space
-class CameraPose {
-  final Vector3 position;
-  final Matrix3 rotation;
-  final double focalLength;
-
-  CameraPose({
-    required this.position,
-    required this.rotation,
-    required this.focalLength,
   });
 }
 

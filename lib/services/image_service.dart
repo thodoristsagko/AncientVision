@@ -10,6 +10,8 @@ class ImageService {
   factory ImageService() => _instance;
   ImageService._internal();
 
+  final List<String> _tempFiles = [];
+
   /// Compress image intelligently based on size and content
   /// Achieves 10x smaller file size while maintaining visual quality
   Future<File> compressImage(
@@ -53,6 +55,7 @@ class ImageService {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final tempFile = File('${tempDir.path}/compressed_$timestamp.jpg');
       await tempFile.writeAsBytes(compressed);
+      _tempFiles.add(tempFile.path);
 
       // Log compression results
       final originalSize = bytes.length;
@@ -221,6 +224,42 @@ class ImageService {
     final file = File(xFile.path);
     final compressed = await compressImage(file);
     return XFile(compressed.path);
+  }
+
+  /// Delete all tracked temp files created by compression.
+  Future<void> cleanupTempFiles() async {
+    final paths = List<String>.from(_tempFiles);
+    _tempFiles.clear();
+    for (final path in paths) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+          debugPrint('ImageService: Cleaned up $path');
+        }
+      } catch (e) {
+        debugPrint('ImageService: Failed to clean $path: $e');
+      }
+    }
+  }
+
+  /// Delete compressed temp files older than 1 hour from system temp dir.
+  Future<void> cleanupOldTempFiles() async {
+    try {
+      final tempDir = Directory.systemTemp;
+      final cutoff = DateTime.now().subtract(const Duration(hours: 1));
+      await for (final entity in tempDir.list()) {
+        if (entity is File && entity.path.contains('compressed_') && entity.path.endsWith('.jpg')) {
+          final stat = await entity.stat();
+          if (stat.modified.isBefore(cutoff)) {
+            await entity.delete();
+            debugPrint('ImageService: Removed old temp ${entity.path}');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('ImageService: Old temp cleanup error: $e');
+    }
   }
 }
 
