@@ -138,6 +138,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   Timer? _reconnectTimer;
   Timer? _keepAliveTimer;
   DateTime? _lastDataReceived;
+  DateTime? _keepAliveStartTime;
   String? _lastNotifiedAlertLevel; // Prevent duplicate notifications
   int _truncatedPackets = 0; // Count of dropped truncated BLE packets
 
@@ -251,7 +252,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
       int devicesFound = 0;
       final lockedMac = SettingsService().settings.lockedSensorMac;
+      bool alreadyMatched = false;
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+        if (alreadyMatched || _isConnecting || _connectedDevice != null) return;
         for (ScanResult r in results) {
           final name = r.device.platformName;
           final nameLower = name.toLowerCase();
@@ -276,6 +279,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           }
 
           if (matched) {
+            alreadyMatched = true;
             debugPrint('>>> MATCHED DEVICE: $name (${r.device.remoteId}) - connecting...');
             FlutterBluePlus.stopScan();
             _scanSubscription?.cancel();
@@ -286,7 +290,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       });
 
       await Future.delayed(const Duration(seconds: 20));
-      if (_connectedDevice == null && mounted) {
+      if (_connectedDevice == null && !_isConnecting && !alreadyMatched && mounted) {
         setState(() {
           _isScanning = false;
           _connectionStatus = 'Sensor not found - check device is on';
@@ -414,6 +418,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   void _startKeepAliveMonitor() {
     _keepAliveTimer?.cancel();
     _lastDataReceived = DateTime.now();
+    _keepAliveStartTime = DateTime.now();
 
     _keepAliveTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       if (!mounted || _connectedDevice == null) {
@@ -426,10 +431,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         final rssi = await _connectedDevice!.readRssi();
         if (mounted) setState(() => _lastRssi = rssi);
       } catch (e) {
-        // RSSI read failed — check if connection is stale
+        // RSSI read failed — only disconnect if we HAD data before and lost it
         final now = DateTime.now();
-        if (_lastDataReceived != null &&
-            now.difference(_lastDataReceived!).inSeconds > 15) {
+        final lastData = _lastDataReceived;
+        // Don't trigger disconnect if we never received data yet (still setting up)
+        if (lastData != null &&
+            now.difference(lastData).inSeconds > 15 &&
+            now.difference(_keepAliveStartTime ?? now).inSeconds > 20) {
           debugPrint('Connection stale - no data for 15s, RSSI read failed');
           _handleDisconnection();
           return;
