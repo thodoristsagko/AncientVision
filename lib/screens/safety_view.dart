@@ -204,7 +204,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           if (device.remoteId.str.toLowerCase() != lockedMac.toLowerCase()) continue;
         } else {
           final name = device.platformName.toLowerCase();
-          if (!(name.contains('ancientvision') || name.contains('ancient') ||
+          // platformName may be empty for some devices — accept any already-connected BLE device
+          // since we only connect to our device in the first place
+          if (name.isNotEmpty && !(name.contains('ancientvision') || name.contains('ancient') ||
               name.contains('m5stick') || name.contains('m5-') || name.startsWith('m5'))) {
             continue;
           }
@@ -256,12 +258,15 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
         if (alreadyMatched || _isConnecting || _connectedDevice != null) return;
         for (ScanResult r in results) {
-          final name = r.device.platformName;
+          // Check both platformName and advertisementData name (Android often has empty platformName)
+          final platformName = r.device.platformName;
+          final advName = r.advertisementData.advName;
+          final name = platformName.isNotEmpty ? platformName : advName;
           final nameLower = name.toLowerCase();
 
-          // Log all devices found for debugging
-          if (name.isNotEmpty && devicesFound < 20) {
-            debugPrint('BLE Found: "$name" (${r.device.remoteId}) RSSI=${r.rssi}');
+          // Log ALL devices for debugging (including those with empty names)
+          if (devicesFound < 30) {
+            debugPrint('BLE Found: platform="$platformName" adv="$advName" (${r.device.remoteId}) RSSI=${r.rssi}');
             devicesFound++;
           }
 
@@ -270,7 +275,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           if (lockedMac.isNotEmpty) {
             matched = r.device.remoteId.str.toLowerCase() == lockedMac.toLowerCase();
           } else {
-            // Match our device by name (case insensitive)
+            // Match our device by name (case insensitive) — check both name sources
             matched = nameLower.contains('ancientvision') ||
                 nameLower.contains('ancient') ||
                 nameLower.contains('m5stick') ||
