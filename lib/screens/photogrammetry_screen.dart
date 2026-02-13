@@ -644,6 +644,12 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
             maxWidth: 2048,
             quality: 90,
             timeMs: timeMs,
+          ).timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              debugPrint('Frame extraction timeout at ${timeMs}ms');
+              return null;
+            },
           );
 
           if (thumbnailPath != null) {
@@ -1489,10 +1495,14 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     final user = FirebaseAuth.instance.currentUser;
     final email = user?.email ?? 'ancientvision@fll.app';
 
+    // Reset incremental SfM state when starting new reconstruction
+    _incrementalSfm.reset();
+
     setState(() {
       _isReconstructing = true;
       _reconstructionProgress = 0.0;
       _reconstructionStatus = 'Preparing cloud upload...';
+      _incrementalPreviewCloud = null;
     });
 
     try {
@@ -1654,10 +1664,14 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   Future<void> _runOnDeviceReconstruction() async {
     final imageFiles = _captures.map((c) => File(c.file.path)).toList();
 
+    // Reset incremental SfM state when starting new reconstruction
+    _incrementalSfm.reset();
+
     setState(() {
       _isReconstructing = true;
       _reconstructionProgress = 0.0;
       _reconstructionStatus = 'Starting on-device processing...';
+      _incrementalPreviewCloud = null;
     });
 
     try {

@@ -22,6 +22,369 @@ import 'exif_service.dart';
 import 'reconstruction_quality_service.dart';
 import 'lightglue_feature_service.dart';
 
+// ============================================================================
+// TOP-LEVEL ISOLATE FUNCTIONS (required by compute())
+// ============================================================================
+
+/// Top-level function for triangulation in isolate (no closures allowed)
+Future<_TriangulationResult> _triangulatePointsIsolate(_TriangulationParams params) async {
+  final points = <Point3D>[];
+  final seenFeatures = <String>{};
+  int totalTriangulated = 0;
+  int passed = 0;
+  int failedDepth = 0;
+  int failedAngle = 0;
+  int failedReprojection = 0;
+
+  // Triangulate points from image pairs
+  for (int i = 0; i < params.matches.length; i++) {
+    final pairMatches = params.matches[i];
+    final CameraPose pose1;
+    final CameraPose pose2;
+    final int img1Idx;
+
+    if (i < params.poses.length - 1) {
+      pose1 = params.poses[i];
+      pose2 = params.poses[i + 1];
+      img1Idx = i;
+    } else if (i == params.matches.length - 1 && params.matches.length > params.poses.length - 1) {
+      pose1 = params.poses.last;
+      pose2 = params.poses.first;
+      img1Idx = params.poses.length - 1;
+    } else {
+      continue;
+    }
+
+    for (final match in pairMatches) {
+      final featureId = '${i}_${match.feature1.x}_${match.feature1.y}';
+      if (seenFeatures.contains(featureId)) continue;
+      seenFeatures.add(featureId);
+      totalTriangulated++;
+
+      // Transform rays to world coordinates
+      final cx = params.imageWidth / 2.0;
+      final cy = params.imageHeight / 2.0;
+      final ray1Dir = pose1.rotation.transposed().transform(Vector3(
+        (match.feature1.x - cx) / pose1.focalLength,
+        (match.feature1.y - cy) / pose1.focalLength,
+        1.0,
+      ).normalized());
+
+      final ray2Dir = pose2.rotation.transposed().transform(Vector3(
+        (match.feature2.x - cx) / pose2.focalLength,
+        (match.feature2.y - cy) / pose2.focalLength,
+        1.0,
+      ).normalized());
+
+      // Triangulate point
+      final point3D = _triangulateRayPairStatic(
+        pose1.position,
+        ray1Dir,
+        pose2.position,
+        ray2Dir,
+      );
+
+      // Quality check 1: Depth validation
+      final depth1 = (point3D - pose1.position).dot(pose1.rotation.transposed().transform(Vector3(0, 0, 1)));
+      final depth2 = (point3D - pose2.position).dot(pose2.rotation.transposed().transform(Vector3(0, 0, 1)));
+
+      if (depth1 < 0.1 || depth2 < 0.1) {
+        failedDepth++;
+        continue;
+      }
+
+      // Quality check 2: Triangulation angle
+      final angle = _calculateTriangulationAngleStatic(pose1.position, pose2.position, point3D);
+      final angleDegrees = angle * (180.0 / math.pi);
+
+      if (angleDegrees < 5 || angleDegrees > 175) {
+        failedAngle++;
+        continue;
+      }
+
+      // Quality check 3: Reprojection error
+      final reproj1 = _reprojectPointStatic(point3D, pose1, params.imageWidth, params.imageHeight);
+      final reproj2 = _reprojectPointStatic(point3D, pose2, params.imageWidth, params.imageHeight);
+
+      final error1 = math.sqrt(
+        math.pow(reproj1.x - match.feature1.x, 2) +
+        math.pow(reproj1.y - match.feature1.y, 2)
+      );
+      final error2 = math.sqrt(
+        math.pow(reproj2.x - match.feature2.x, 2) +
+        math.pow(reproj2.y - match.feature2.y, 2)
+      );
+
+      final maxError = math.max(error1, error2);
+      if (maxError > 5.0) {
+        failedReprojection++;
+        continue;
+      }
+
+      passed++;
+
+      // Get color from color sample data
+      final colorData = params.colorSamples[img1Idx.clamp(0, params.colorSamples.length - 1)];
+      final color = _getColorFromSample(
+        colorData,
+        match.feature1.x.toInt(),
+        match.feature1.y.toInt(),
+        params.imageWidth,
+        params.imageHeight,
+      );
+
+      // Calculate confidence
+      final angleConfidence = angleDegrees > 30 && angleDegrees < 60 ? 1.0 : 0.7;
+      final reprojConfidence = 1.0 - (maxError / 5.0).clamp(0.0, 1.0);
+      final confidence = angleConfidence * reprojConfidence;
+
+      points.add(Point3D(
+        position: point3D,
+        color: color,
+        confidence: confidence,
+      ));
+    }
+  }
+
+  return _TriangulationResult(
+    points: points,
+    totalTriangulated: totalTriangulated,
+    passed: passed,
+    failedDepth: failedDepth,
+    failedAngle: failedAngle,
+    failedReprojection: failedReprojection,
+  );
+}
+
+/// Top-level function for bundle adjustment in isolate
+Future<_BundleAdjustmentIsolateResult> _bundleAdjustIsolate(_BundleAdjustParams params) async {
+  final baResult = ba.BundleAdjustmentService.optimize(
+    cameraPoses: params.cameraPoseMatrices,
+    points3D: params.points3D,
+    observations: params.observations,
+    focalLength: params.focalLength,
+    cx: params.cx,
+    cy: params.cy,
+    maxIterations: params.maxIterations,
+    robustCost: params.robustCost,
+    robustParam: params.robustParam,
+  );
+
+  return _BundleAdjustmentIsolateResult(
+    refinedPoses: baResult.refinedPoses,
+    refinedPoints: baResult.refinedPoints,
+    iterations: baResult.iterations,
+    converged: baResult.converged,
+    initialError: baResult.initialError,
+    finalError: baResult.finalError,
+  );
+}
+
+/// Top-level function for point interpolation in isolate with timeout
+Future<List<Point3D>> _interpolatePointsIsolate(_InterpolationParams params) async {
+  final startTime = DateTime.now();
+  const timeoutDuration = Duration(seconds: 5);
+
+  final interpolated = List<Point3D>.from(params.points);
+  final original = params.points;
+  int added = 0;
+
+  // Early termination: Check timeout every N iterations
+  const checkInterval = 100;
+  int iterCount = 0;
+
+  for (int i = 0; i < original.length && added < params.maxNewPoints; i++) {
+    for (int j = i + 1; j < original.length && added < params.maxNewPoints; j++) {
+      iterCount++;
+
+      // Check timeout periodically
+      if (iterCount % checkInterval == 0) {
+        if (DateTime.now().difference(startTime) > timeoutDuration) {
+          debugPrint(' Interpolation timeout reached, returning early with $added points added');
+          return interpolated;
+        }
+      }
+
+      final dist = (original[i].position - original[j].position).length;
+
+      // Only interpolate between nearby points
+      if (dist > 0.01 && dist < 0.5) {
+        final midPos = (original[i].position + original[j].position) / 2;
+
+        final midColor = Color.fromARGB(
+          255,
+          ((original[i].color.r + original[j].color.r) / 2).round(),
+          ((original[i].color.g + original[j].color.g) / 2).round(),
+          ((original[i].color.b + original[j].color.b) / 2).round(),
+        );
+
+        final midConf = (original[i].confidence + original[j].confidence) / 2;
+
+        Vector3? midNormal;
+        if (original[i].normal != null && original[j].normal != null) {
+          midNormal = ((original[i].normal! + original[j].normal!) / 2).normalized();
+        }
+
+        interpolated.add(Point3D(
+          position: midPos,
+          color: midColor,
+          confidence: midConf * 0.9,
+          normal: midNormal,
+        ));
+        added++;
+      }
+    }
+  }
+
+  return interpolated;
+}
+
+// Static helper functions for isolate (no instance access)
+Vector3 _triangulateRayPairStatic(Vector3 o1, Vector3 d1, Vector3 o2, Vector3 d2) {
+  final w = o1 - o2;
+  final a = d1.dot(d1);
+  final b = d1.dot(d2);
+  final c = d2.dot(d2);
+  final d = d1.dot(w);
+  final e = d2.dot(w);
+
+  final denom = a * c - b * b;
+  final t1 = (b * e - c * d) / denom;
+  final t2 = (a * e - b * d) / denom;
+
+  final p1 = o1 + d1 * t1;
+  final p2 = o2 + d2 * t2;
+
+  return (p1 + p2) / 2;
+}
+
+Vector2 _reprojectPointStatic(Vector3 point3D, CameraPose pose, double imageWidth, double imageHeight) {
+  final pCam = pose.rotation.transform(point3D - pose.position);
+  final x = (pCam.x / pCam.z) * pose.focalLength + imageWidth / 2.0;
+  final y = (pCam.y / pCam.z) * pose.focalLength + imageHeight / 2.0;
+  return Vector2(x, y);
+}
+
+double _calculateTriangulationAngleStatic(Vector3 cam1, Vector3 cam2, Vector3 point) {
+  final dir1 = (point - cam1).normalized();
+  final dir2 = (point - cam2).normalized();
+  return math.acos(dir1.dot(dir2).clamp(-1.0, 1.0));
+}
+
+Color _getColorFromSample(_ColorSampleData sampleData, int x, int y, double originalWidth, double originalHeight) {
+  // Scale coordinates to sample resolution
+  final sampleX = (x * sampleData.width / originalWidth).toInt().clamp(0, sampleData.width - 1);
+  final sampleY = (y * sampleData.height / originalHeight).toInt().clamp(0, sampleData.height - 1);
+  final index = sampleY * sampleData.width + sampleX;
+
+  if (index >= 0 && index < sampleData.colors.length) {
+    return sampleData.colors[index];
+  }
+  return const Color(0xFF808080); // Gray fallback
+}
+
+// ============================================================================
+// PARAMETER CLASSES FOR ISOLATES
+// ============================================================================
+
+class _TriangulationParams {
+  final List<List<FeatureMatch>> matches;
+  final List<CameraPose> poses;
+  final List<_ColorSampleData> colorSamples;
+  final double imageWidth;
+  final double imageHeight;
+
+  _TriangulationParams({
+    required this.matches,
+    required this.poses,
+    required this.colorSamples,
+    required this.imageWidth,
+    required this.imageHeight,
+  });
+}
+
+class _TriangulationResult {
+  final List<Point3D> points;
+  final int totalTriangulated;
+  final int passed;
+  final int failedDepth;
+  final int failedAngle;
+  final int failedReprojection;
+
+  _TriangulationResult({
+    required this.points,
+    required this.totalTriangulated,
+    required this.passed,
+    required this.failedDepth,
+    required this.failedAngle,
+    required this.failedReprojection,
+  });
+}
+
+class _BundleAdjustParams {
+  final List<Matrix4> cameraPoseMatrices;
+  final List<Vector3> points3D;
+  final List<List<Vector2?>> observations;
+  final double focalLength;
+  final double cx;
+  final double cy;
+  final int maxIterations;
+  final ba.RobustCost robustCost;
+  final double robustParam;
+
+  _BundleAdjustParams({
+    required this.cameraPoseMatrices,
+    required this.points3D,
+    required this.observations,
+    required this.focalLength,
+    required this.cx,
+    required this.cy,
+    required this.maxIterations,
+    required this.robustCost,
+    required this.robustParam,
+  });
+}
+
+class _BundleAdjustmentIsolateResult {
+  final List<Matrix4> refinedPoses;
+  final List<Vector3> refinedPoints;
+  final int iterations;
+  final bool converged;
+  final double initialError;
+  final double finalError;
+
+  _BundleAdjustmentIsolateResult({
+    required this.refinedPoses,
+    required this.refinedPoints,
+    required this.iterations,
+    required this.converged,
+    required this.initialError,
+    required this.finalError,
+  });
+}
+
+class _InterpolationParams {
+  final List<Point3D> points;
+  final int maxNewPoints;
+
+  _InterpolationParams({
+    required this.points,
+    required this.maxNewPoints,
+  });
+}
+
+class _ColorSampleData {
+  final int width;
+  final int height;
+  final List<Color> colors;
+
+  _ColorSampleData({
+    required this.width,
+    required this.height,
+    required this.colors,
+  });
+}
+
 /// Service for 3D reconstruction from photogrammetry captures
 class ReconstructionService {
   static final ReconstructionService _instance = ReconstructionService._internal();
@@ -41,6 +404,9 @@ class ReconstructionService {
   /// Cached keypoints per image for LightGlue matching path
   List<List<Keypoint>> _keypointsCache = [];
 
+  /// Cached color sample data (extracted during image loading)
+  List<_ColorSampleData> _colorSamplesCache = [];
+
   /// Cancel ongoing reconstruction
   void cancelReconstruction() {
     _isCancelled = true;
@@ -51,6 +417,7 @@ class ReconstructionService {
   void clearCache() {
     _keypointsCache.clear();
     _imageFilesRef = [];
+    _colorSamplesCache.clear();
   }
 
   /// Reset cancellation flag
@@ -270,15 +637,12 @@ class ReconstructionService {
       // Step 5: Triangulate 3D points (70%)
       onProgress?.call(0.70, 'Reconstructing 3D points...');
       PointCloud? pointCloud;
-      List<img.Image>? colorImages;
       try {
-        // Reload only necessary images for color extraction
-        colorImages = await _loadImagesForColor(imageFiles);
+        // Use cached color samples (already extracted during image loading)
         pointCloud = await _triangulatePoints(
           features,
           matches,
           cameraPoses,
-          colorImages,
         );
         if (_isCancelled) throw Exception('Reconstruction cancelled by user');
 
@@ -330,7 +694,6 @@ class ReconstructionService {
         currentCloud = await _multiViewColorSampling(
           currentCloud,
           currentPoses,
-          colorImages,
         );
         debugPrint(' Multi-view color sampling complete');
       } catch (e) {
@@ -350,7 +713,7 @@ class ReconstructionService {
       onProgress?.call(0.96, 'Densifying point cloud...');
       try {
         final beforeCount = currentCloud.points.length;
-        currentCloud = _interpolatePoints(currentCloud);
+        currentCloud = await _interpolatePoints(currentCloud);
         final added = currentCloud.points.length - beforeCount;
         debugPrint(' Added $added interpolated points');
       } catch (e) {
@@ -358,11 +721,11 @@ class ReconstructionService {
       }
 
       // Clear intermediate data
-      colorImages.clear();
       features.clear();
       matches.clear();
       _keypointsCache.clear();
       _imageFilesRef = [];
+      _colorSamplesCache.clear();
 
       // Step 11: Quality assessment (98%)
       onProgress?.call(0.98, 'Assessing reconstruction quality...');
@@ -467,11 +830,13 @@ class ReconstructionService {
   }
 
   /// Load and downsample images for processing with progress updates
+  /// Also extracts color samples in a single pass (no need to reload later)
   Future<List<img.Image>> _loadAndDownsampleImages(
     List<File> imageFiles,
     Function(double, String)? onProgress,
   ) async {
     final images = <img.Image>[];
+    _colorSamplesCache = [];
 
     for (int i = 0; i < imageFiles.length; i++) {
       try {
@@ -504,6 +869,37 @@ class ReconstructionService {
           }
           images.add(downsampled);
 
+          // ALSO: Extract color sample at 512px resolution for later use
+          const colorMaxDim = 512;
+          img.Image colorSample;
+          if (image.width >= image.height) {
+            colorSample = img.copyResize(
+              image,
+              width: colorMaxDim,
+              interpolation: img.Interpolation.average,
+            );
+          } else {
+            colorSample = img.copyResize(
+              image,
+              height: colorMaxDim,
+              interpolation: img.Interpolation.average,
+            );
+          }
+
+          // Store color data as flat array (lightweight)
+          final colorData = <Color>[];
+          for (int y = 0; y < colorSample.height; y++) {
+            for (int x = 0; x < colorSample.width; x++) {
+              final pixel = colorSample.getPixel(x, y);
+              colorData.add(Color.fromARGB(255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt()));
+            }
+          }
+          _colorSamplesCache.add(_ColorSampleData(
+            width: colorSample.width,
+            height: colorSample.height,
+            colors: colorData,
+          ));
+
           // Store dimensions from first image for coordinate normalization
           if (i == 0) {
             _imageWidth = downsampled.width;
@@ -525,46 +921,7 @@ class ReconstructionService {
     return images;
   }
 
-  /// Load images at reduced size for color extraction only (memory efficient)
-  Future<List<img.Image>> _loadImagesForColor(List<File> imageFiles) async {
-    final images = <img.Image>[];
-
-    for (int i = 0; i < imageFiles.length; i++) {
-      try {
-        if (_isCancelled) break;
-
-        final file = imageFiles[i];
-        final bytes = await file.readAsBytes();
-        final image = img.decodeImage(bytes);
-
-        if (image != null) {
-          // Smaller size for color extraction, preserving aspect ratio
-          const colorMaxDim = 512;
-          img.Image downsampled;
-          if (image.width >= image.height) {
-            downsampled = img.copyResize(
-              image,
-              width: colorMaxDim,
-              interpolation: img.Interpolation.average,
-            );
-          } else {
-            downsampled = img.copyResize(
-              image,
-              height: colorMaxDim,
-              interpolation: img.Interpolation.average,
-            );
-          }
-          images.add(downsampled);
-        }
-      } catch (e) {
-        debugPrint(' Error loading image ${i + 1} for color: $e');
-        // Add placeholder if loading fails
-        images.add(img.Image(width: 512, height: 384));
-      }
-    }
-
-    return images;
-  }
+  // Removed: _loadImagesForColor() - color samples now extracted during initial load
 
   /// Extract corner features from images using LightGlue (preferred) or Harris corner detector (fallback)
   Future<List<List<ImageFeature>>> _extractFeatures(
@@ -1051,149 +1408,33 @@ class ReconstructionService {
   }
 
   /// Triangulate 3D points from feature matches and camera poses with ROBUST filtering
+  /// Uses compute() to run heavy calculations in isolate (off main thread)
   Future<PointCloud> _triangulatePoints(
     List<List<ImageFeature>> features,
     List<List<FeatureMatch>> matches,
     List<CameraPose> poses,
-    List<img.Image> images,
   ) async {
-    final points = <Point3D>[];
-    final seenFeatures = <String>{};
-    int totalTriangulated = 0;
-    int passed = 0;
-    int failedDepth = 0;
-    int failedAngle = 0;
-    int failedReprojection = 0;
+    debugPrint(' Starting ROBUST triangulation (in isolate)...');
 
-    debugPrint(' Starting ROBUST triangulation...');
+    // Run heavy triangulation in isolate using cached color samples
+    final params = _TriangulationParams(
+      matches: matches,
+      poses: poses,
+      colorSamples: _colorSamplesCache,
+      imageWidth: _imageWidth.toDouble(),
+      imageHeight: _imageHeight.toDouble(),
+    );
 
-    // Triangulate points from image pairs (consecutive + loop closure)
-    for (int i = 0; i < matches.length; i++) {
-      final pairMatches = matches[i];
-      // For loop closure (last entry), use last and first poses
-      final CameraPose pose1;
-      final CameraPose pose2;
-      final int img1Idx;
-      if (i < poses.length - 1) {
-        pose1 = poses[i];
-        pose2 = poses[i + 1];
-        img1Idx = i;
-      } else if (i == matches.length - 1 && matches.length > poses.length - 1) {
-        // Loop closure: last→first
-        pose1 = poses.last;
-        pose2 = poses.first;
-        img1Idx = poses.length - 1;
-      } else {
-        continue;
-      }
-
-      int pairPoints = 0;
-
-      for (final match in pairMatches) {
-        // Unique ID for this feature track
-        final featureId = '${i}_${match.feature1.x}_${match.feature1.y}';
-
-        if (seenFeatures.contains(featureId)) continue;
-        seenFeatures.add(featureId);
-        totalTriangulated++;
-
-        // Transform rays to world coordinates
-        final cx = _imageWidth / 2.0;
-        final cy = _imageHeight / 2.0;
-        final ray1Dir = pose1.rotation.transposed().transform(Vector3(
-          (match.feature1.x - cx) / pose1.focalLength,
-          (match.feature1.y - cy) / pose1.focalLength,
-          1.0,
-        ).normalized());
-
-        final ray2Dir = pose2.rotation.transposed().transform(Vector3(
-          (match.feature2.x - cx) / pose2.focalLength,
-          (match.feature2.y - cy) / pose2.focalLength,
-          1.0,
-        ).normalized());
-
-        // Triangulate point
-        final point3D = _triangulateRayPair(
-          pose1.position,
-          ray1Dir,
-          pose2.position,
-          ray2Dir,
-        );
-
-        // ✅ QUALITY CHECK 1: Depth validation (must be in front of both cameras)
-        final depth1 = (point3D - pose1.position).dot(pose1.rotation.transposed().transform(Vector3(0, 0, 1)));
-        final depth2 = (point3D - pose2.position).dot(pose2.rotation.transposed().transform(Vector3(0, 0, 1)));
-
-        if (depth1 < 0.1 || depth2 < 0.1) {
-          failedDepth++;
-          continue; // Behind camera or too close
-        }
-
-        // ✅ QUALITY CHECK 2: Triangulation angle (30-150 degrees optimal)
-        final angle = _calculateTriangulationAngle(pose1.position, pose2.position, point3D);
-        final angleDegrees = angle * (180.0 / math.pi);
-
-        if (angleDegrees < 5 || angleDegrees > 175) {
-          failedAngle++;
-          continue; // Poor triangulation geometry
-        }
-
-        // ✅ QUALITY CHECK 3: Reprojection error
-        final reproj1 = _reprojectPoint(point3D, pose1);
-        final reproj2 = _reprojectPoint(point3D, pose2);
-
-        final error1 = math.sqrt(
-          math.pow(reproj1.x - match.feature1.x, 2) +
-          math.pow(reproj1.y - match.feature1.y, 2)
-        );
-        final error2 = math.sqrt(
-          math.pow(reproj2.x - match.feature2.x, 2) +
-          math.pow(reproj2.y - match.feature2.y, 2)
-        );
-
-        final maxError = math.max(error1, error2);
-        if (maxError > 5.0) {
-          // Reprojection error > 5 pixels
-          failedReprojection++;
-          continue;
-        }
-
-        // ✅ Point passed all checks!
-        passed++;
-        pairPoints++;
-
-        // Get color from first image
-        final color = _getColorFromImage(
-          images[img1Idx.clamp(0, images.length - 1)],
-          match.feature1.x.toInt(),
-          match.feature1.y.toInt(),
-        );
-
-        // Calculate confidence score
-        final angleConfidence = angleDegrees > 30 && angleDegrees < 60 ? 1.0 : 0.7;
-        final reprojConfidence = 1.0 - (maxError / 5.0).clamp(0.0, 1.0);
-        final confidence = angleConfidence * reprojConfidence;
-
-        points.add(Point3D(
-          position: point3D,
-          color: color,
-          confidence: confidence,
-        ));
-      }
-
-      if (pairPoints > 0) {
-        debugPrint(' Pair ${i + 1}-${i + 2}: $pairPoints points triangulated');
-      }
-    }
+    final result = await compute(_triangulatePointsIsolate, params);
 
     debugPrint(' Triangulation complete:');
-    debugPrint('   Total: $totalTriangulated');
-    debugPrint(' Passed: $passed (${(passed / totalTriangulated * 100).toInt()}%)');
-    debugPrint(' Failed depth: $failedDepth');
-    debugPrint(' Failed angle: $failedAngle');
-    debugPrint(' Failed reproj: $failedReprojection');
+    debugPrint('   Total: ${result.totalTriangulated}');
+    debugPrint(' Passed: ${result.passed} (${(result.passed / result.totalTriangulated * 100).toInt()}%)');
+    debugPrint(' Failed depth: ${result.failedDepth}');
+    debugPrint(' Failed angle: ${result.failedAngle}');
+    debugPrint(' Failed reproj: ${result.failedReprojection}');
 
-    if (passed < 100) {
+    if (result.passed < 100) {
       debugPrint('Warning: Low point count. Consider:');
       debugPrint('   • Better lighting');
       debugPrint('   • More textured object');
@@ -1201,73 +1442,40 @@ class ReconstructionService {
     }
 
     // Light bundle adjustment: 3 iterations of gradient descent on point positions
-    if (points.length > 3 && poses.length >= 2) {
+    if (result.points.length > 3 && poses.length >= 2) {
       debugPrint(' Running light bundle adjustment (3 iterations)...');
-      _lightBundleAdjust(points, poses, matches, features);
+      await _lightBundleAdjust(result.points, poses, matches, features);
     }
 
     return PointCloud(
-      points: points,
+      points: result.points,
       method: 'robust_sfm_ransac',
       metadata: {
-        'image_count': images.length,
-        'total_triangulated': totalTriangulated,
-        'passed_filters': passed,
-        'pass_rate': passed / totalTriangulated,
-        'failed_depth': failedDepth,
-        'failed_angle': failedAngle,
-        'failed_reprojection': failedReprojection,
+        'image_count': _colorSamplesCache.length,
+        'total_triangulated': result.totalTriangulated,
+        'passed_filters': result.passed,
+        'pass_rate': result.passed / result.totalTriangulated,
+        'failed_depth': result.failedDepth,
+        'failed_angle': result.failedAngle,
+        'failed_reprojection': result.failedReprojection,
       },
     );
   }
 
   /// Reproject 3D point back to 2D image coordinates
   Vector2 _reprojectPoint(Vector3 point3D, CameraPose pose) {
-    // Transform to camera coordinates
-    final pCam = pose.rotation.transform(point3D - pose.position);
-
-    // Project to image plane
-    final x = (pCam.x / pCam.z) * pose.focalLength + _imageWidth / 2.0;
-    final y = (pCam.y / pCam.z) * pose.focalLength + _imageHeight / 2.0;
-
-    return Vector2(x, y);
-  }
-
-  /// Calculate triangulation angle between two camera rays
-  double _calculateTriangulationAngle(Vector3 cam1, Vector3 cam2, Vector3 point) {
-    final dir1 = (point - cam1).normalized();
-    final dir2 = (point - cam2).normalized();
-    return math.acos(dir1.dot(dir2).clamp(-1.0, 1.0));
-  }
-
-  /// Triangulate 3D point from two rays
-  Vector3 _triangulateRayPair(Vector3 o1, Vector3 d1, Vector3 o2, Vector3 d2) {
-    // Find closest point between two rays using least squares
-    final w = o1 - o2;
-    final a = d1.dot(d1);
-    final b = d1.dot(d2);
-    final c = d2.dot(d2);
-    final d = d1.dot(w);
-    final e = d2.dot(w);
-
-    final denom = a * c - b * b;
-    final t1 = (b * e - c * d) / denom;
-    final t2 = (a * e - b * d) / denom;
-
-    final p1 = o1 + d1 * t1;
-    final p2 = o2 + d2 * t2;
-
-    return (p1 + p2) / 2; // Midpoint
+    return _reprojectPointStatic(point3D, pose, _imageWidth.toDouble(), _imageHeight.toDouble());
   }
 
   /// Light bundle adjustment: refine point positions using Levenberg-Marquardt
   /// Only optimizes points (cameras fixed) with fewer iterations than full BA.
-  void _lightBundleAdjust(
+  /// Light bundle adjustment using compute() to avoid blocking main thread
+  Future<void> _lightBundleAdjust(
     List<Point3D> points,
     List<CameraPose> poses,
     List<List<FeatureMatch>> matches,
     List<List<ImageFeature>> features,
-  ) {
+  ) async {
     final nCams = poses.length;
     final nPts = points.length;
 
@@ -1309,41 +1517,54 @@ class ReconstructionService {
       }
     }
 
-    // Run L-M with fewer iterations (light version)
-    final baResult = ba.BundleAdjustmentService.optimize(
-      cameraPoses: cameraPoseMatrices,
-      points3D: points3D,
-      observations: observations,
-      focalLength: focalLength,
-      cx: cx,
-      cy: cy,
-      maxIterations: 10,
-      robustCost: ba.RobustCost.huber,
-      robustParam: 2.0,
-    );
-
-    debugPrint('   Light LM BA: ${baResult.iterations} iters, '
-        'error ${baResult.initialError.toStringAsFixed(2)} -> ${baResult.finalError.toStringAsFixed(2)} px');
-
-    // Update points in-place with refined positions
-    for (int i = 0; i < nPts; i++) {
-      points[i] = Point3D(
-        position: baResult.refinedPoints[i],
-        color: points[i].color,
-        confidence: points[i].confidence,
-        normal: points[i].normal,
+    // Run L-M in isolate with max 50 iterations and 10 second timeout (light version)
+    final startTime = DateTime.now();
+    try {
+      final params = _BundleAdjustParams(
+        cameraPoseMatrices: cameraPoseMatrices,
+        points3D: points3D,
+        observations: observations,
+        focalLength: focalLength,
+        cx: cx,
+        cy: cy,
+        maxIterations: 50,
+        robustCost: ba.RobustCost.huber,
+        robustParam: 2.0,
       );
+
+      final baResult = await compute(_bundleAdjustIsolate, params).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('   Light LM BA: TIMEOUT after 10s, keeping original points');
+          throw TimeoutException('Bundle adjustment timed out');
+        },
+      );
+
+      final duration = DateTime.now().difference(startTime);
+      debugPrint('   Light LM BA: ${baResult.iterations} iters in ${duration.inSeconds}s, '
+          'error ${baResult.initialError.toStringAsFixed(2)} -> ${baResult.finalError.toStringAsFixed(2)} px');
+
+      // Update points in-place with refined positions
+      for (int i = 0; i < nPts; i++) {
+        points[i] = Point3D(
+          position: baResult.refinedPoints[i],
+          color: points[i].color,
+          confidence: points[i].confidence,
+          normal: points[i].normal,
+        );
+      }
+    } catch (e) {
+      final duration = DateTime.now().difference(startTime);
+      if (e is TimeoutException) {
+        debugPrint('   Light LM BA: Timed out after ${duration.inSeconds}s, keeping original points');
+      } else {
+        debugPrint('   Light LM BA: Failed: $e');
+      }
+      // Keep original points if optimization fails
     }
   }
 
-  /// Get color from image at pixel coordinates
-  Color _getColorFromImage(img.Image image, int x, int y) {
-    final pixel = image.getPixel(
-      x.clamp(0, image.width - 1),
-      y.clamp(0, image.height - 1),
-    );
-    return Color.fromARGB(255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt());
-  }
+  // Removed: _getColorFromImage() - now uses cached color samples
 
   /// Calculate average confidence of point cloud
   double _calculateAverageConfidence(PointCloud cloud) {
@@ -1727,10 +1948,10 @@ class ReconstructionService {
   }
 
   /// Multi-view color sampling - average colors from multiple camera views
+  /// Multi-view color sampling using cached color samples (no image reload)
   Future<PointCloud> _multiViewColorSampling(
     PointCloud cloud,
     List<CameraPose> poses,
-    List<img.Image> images,
   ) async {
     final enhancedPoints = <Point3D>[];
 
@@ -1739,9 +1960,9 @@ class ReconstructionService {
       final weights = <double>[];
 
       // Sample color from each camera that can see this point
-      for (int c = 0; c < poses.length && c < images.length; c++) {
+      for (int c = 0; c < poses.length && c < _colorSamplesCache.length; c++) {
         final pose = poses[c];
-        final image = images[c];
+        final colorSample = _colorSamplesCache[c];
 
         // Check if point is in front of camera
         final camDir = pose.rotation.transposed().transform(Vector3(0, 0, 1));
@@ -1754,18 +1975,20 @@ class ReconstructionService {
           final x = reproj.x.toInt();
           final y = reproj.y.toInt();
 
-          // Scale to color image size
-          final imgX = (x * image.width / _imageWidth).toInt().clamp(0, image.width - 1);
-          final imgY = (y * image.height / _imageHeight).toInt().clamp(0, image.height - 1);
+          // Get color from cached sample data
+          final color = _getColorFromSample(
+            colorSample,
+            x,
+            y,
+            _imageWidth.toDouble(),
+            _imageHeight.toDouble(),
+          );
 
-          if (imgX >= 0 && imgX < image.width && imgY >= 0 && imgY < image.height) {
-            final pixel = image.getPixel(imgX, imgY);
-            colors.add(Color.fromARGB(255, pixel.r.toInt(), pixel.g.toInt(), pixel.b.toInt()));
+          colors.add(color);
 
-            // Weight by viewing angle (prefer frontal views)
-            final viewAngle = toPoint.normalized().dot(camDir).abs();
-            weights.add(viewAngle);
-          }
+          // Weight by viewing angle (prefer frontal views)
+          final viewAngle = toPoint.normalized().dot(camDir).abs();
+          weights.add(viewAngle);
         }
       }
 
@@ -1868,56 +2091,28 @@ class ReconstructionService {
   }
 
   /// Interpolate points to create denser point cloud
-  PointCloud _interpolatePoints(PointCloud cloud, {int maxNewPoints = 500}) {
+  /// Interpolate points using compute() with 5-second timeout
+  Future<PointCloud> _interpolatePoints(PointCloud cloud, {int maxNewPoints = 500}) async {
     if (cloud.points.length < 10) return cloud;
 
-    final interpolated = List<Point3D>.from(cloud.points);
-    final original = cloud.points;
-    int added = 0;
+    try {
+      final params = _InterpolationParams(
+        points: cloud.points,
+        maxNewPoints: maxNewPoints,
+      );
 
-    // Find point pairs that are close together and add midpoints
-    for (int i = 0; i < original.length && added < maxNewPoints; i++) {
-      for (int j = i + 1; j < original.length && added < maxNewPoints; j++) {
-        final dist = (original[i].position - original[j].position).length;
+      final interpolated = await compute(_interpolatePointsIsolate, params);
+      final added = interpolated.length - cloud.points.length;
 
-        // Only interpolate between nearby points
-        if (dist > 0.01 && dist < 0.5) {
-          // Midpoint
-          final midPos = (original[i].position + original[j].position) / 2;
-
-          // Average color
-          final midColor = Color.fromARGB(
-            255,
-            ((original[i].color.r + original[j].color.r) / 2).round(),
-            ((original[i].color.g + original[j].color.g) / 2).round(),
-            ((original[i].color.b + original[j].color.b) / 2).round(),
-          );
-
-          // Average confidence
-          final midConf = (original[i].confidence + original[j].confidence) / 2;
-
-          // Interpolated normal
-          Vector3? midNormal;
-          if (original[i].normal != null && original[j].normal != null) {
-            midNormal = ((original[i].normal! + original[j].normal!) / 2).normalized();
-          }
-
-          interpolated.add(Point3D(
-            position: midPos,
-            color: midColor,
-            confidence: midConf * 0.9, // Slightly lower confidence for interpolated
-            normal: midNormal,
-          ));
-          added++;
-        }
-      }
+      return PointCloud(
+        points: interpolated,
+        method: cloud.method,
+        metadata: {...cloud.metadata, 'interpolated_points': added},
+      );
+    } catch (e) {
+      debugPrint(' Interpolation failed: $e, returning original cloud');
+      return cloud;
     }
-
-    return PointCloud(
-      points: interpolated,
-      method: cloud.method,
-      metadata: {...cloud.metadata, 'interpolated_points': added},
-    );
   }
 
   /// Generate a simple triangle mesh from point cloud using k-nearest neighbor triangulation

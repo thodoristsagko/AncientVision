@@ -17,12 +17,14 @@ class DenseReconstructionResult {
   final MeshModel? mesh;
   final int depthMapsComputed;
   final Duration processingTime;
+  final String? errorMessage;
 
   DenseReconstructionResult({
     required this.pointCloud,
     this.mesh,
     required this.depthMapsComputed,
     required this.processingTime,
+    this.errorMessage,
   });
 }
 
@@ -191,11 +193,14 @@ class DenseReconstructionService {
       }
     }
 
-    if (depthMaps.isEmpty) {
+    if (depthMaps.length < 3) {
       return DenseReconstructionResult(
         pointCloud: PointCloud(points: [], method: 'dense_mvs_failed'),
-        depthMapsComputed: 0,
+        depthMapsComputed: depthMaps.length,
         processingTime: DateTime.now().difference(startTime),
+        errorMessage: 'Dense reconstruction failed: Only ${depthMaps.length} depth maps succeeded (need at least 3). '
+            'This usually means stereo matching failed for most image pairs. '
+            'Try: better lighting, more textured object, or different capture angles.',
       );
     }
 
