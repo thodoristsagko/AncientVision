@@ -59,6 +59,11 @@ class AdaptiveAnomalyService {
   static const double _trendThresholdLow = 1.5;  // Short-term 1.5σ above long-term
   static const double _trendThresholdHigh = 2.5; // Short-term 2.5σ above long-term
 
+  // Sliding window feature matrix for precursor pattern detection
+  // ~20 min at 0.5Hz BLE rate
+  final List<Map<String, double>> _featureHistory = [];
+  static const int _featureHistoryMax = 600;
+
   // Per-feature running statistics (Welford's algorithm)
   final Map<String, _WelfordStats> _stats = {};
 
@@ -117,6 +122,11 @@ class AdaptiveAnomalyService {
       }
       debugPrint('AdaptiveAnomalyService: Calibration complete after $_sampleCount samples');
       debugPrint('  Baseline: ${_featureKeys.map((k) => "$k: μ=${_emaMean[k]!.toStringAsFixed(3)} σ=${sqrt(_emaVariance[k]!).toStringAsFixed(3)}").join(", ")}');
+    }
+
+    _featureHistory.add(Map.of(features));
+    if (_featureHistory.length > _featureHistoryMax) {
+      _featureHistory.removeAt(0);
     }
 
     // Update EMA baseline (very slow drift tracking)
@@ -233,10 +243,71 @@ class AdaptiveAnomalyService {
       }
     }
 
-    // Final score = max of instantaneous and trend
-    // This way EITHER a sudden event OR a slow buildup triggers
-    final finalScore = max(instantScore, trendScore).clamp(0.0, 1.0);
-    final isTrendDriven = trendScore > instantScore;
+    // --- Physics-informed precursor pattern detection ---
+    double precursorScore = 0.0;
+    String? precursorPattern;
+
+    if (_featureHistory.length >= 300) { // Need ~10 min of data
+      const windowSamples = 150; // ~5 min window
+
+      final ppvDeriv = _computeDerivative('ppv', windowSamples);
+      final freqDeriv = _computeDerivative('freq', windowSamples);
+      final kurtDeriv = _computeDerivative('kurtosis', windowSamples);
+      final staltaDeriv = _computeDerivative('stalta', windowSamples);
+      final ppvAccel = _computeAcceleration('ppv', windowSamples);
+
+      // Pattern A: Soil creep — slow PPV rise + frequency drop + kurtosis spikes
+      // Physics: soil grains rearranging under load, friction decreasing
+      double patternA = 0.0;
+      if (ppvDeriv > 0 && freqDeriv < 0 && kurtDeriv > 0) {
+        patternA = (ppvDeriv.abs() * 100).clamp(0.0, 1.0) * 0.3 +
+                   (freqDeriv.abs() * 50).clamp(0.0, 1.0) * 0.4 +
+                   (kurtDeriv.abs() * 20).clamp(0.0, 1.0) * 0.3;
+      }
+
+      // Pattern B: Crack propagation — intermittent kurtosis bursts + STA/LTA ratcheting
+      // Physics: discrete crack events with increasing frequency
+      double patternB = 0.0;
+      if (kurtDeriv > 0 && staltaDeriv > 0) {
+        patternB = (kurtDeriv.abs() * 30).clamp(0.0, 1.0) * 0.5 +
+                   (staltaDeriv.abs() * 20).clamp(0.0, 1.0) * 0.5;
+      }
+
+      // Pattern C: Imminent failure — all features rising, frequency collapsed to <5Hz
+      // Physics: large-scale mass movement beginning
+      double patternC = 0.0;
+      final recentFreq = _rangeAverage('freq', _featureHistory.length - 30, _featureHistory.length);
+      if (ppvDeriv > 0 && kurtDeriv > 0 && staltaDeriv > 0 && recentFreq > 0 && recentFreq < 5.0) {
+        patternC = min(1.0, ppvAccel.abs() * 500 + 0.5); // Accelerating = very bad
+      }
+
+      // Take the max pattern match
+      precursorScore = max(patternA, max(patternB, patternC));
+      if (patternC >= patternA && patternC >= patternB && patternC > 0.3) {
+        precursorPattern = 'imminent_failure';
+      } else if (patternB >= patternA && patternB > 0.3) {
+        precursorPattern = 'crack_propagation';
+      } else if (patternA > 0.3) {
+        precursorPattern = 'soil_creep';
+      }
+
+      // Cross-feature correlation bonus: kurtosis rising WHILE frequency dropping
+      if (kurtDeriv > 0 && freqDeriv < 0) {
+        precursorScore = min(1.0, precursorScore * 1.3); // 30% confidence bonus
+      }
+
+      if (precursorScore > 0.2) {
+        debugPrint('Precursor: score=${precursorScore.toStringAsFixed(3)} '
+            'pattern=$precursorPattern A=${patternA.toStringAsFixed(2)} '
+            'B=${patternB.toStringAsFixed(2)} C=${patternC.toStringAsFixed(2)}');
+      }
+    }
+
+    // Final score = max of instantaneous, trend, and precursor
+    // This way EITHER a sudden event OR a slow buildup OR a physics pattern triggers
+    final finalScore = max(instantScore, max(trendScore, precursorScore)).clamp(0.0, 1.0);
+    final isTrendDriven = trendScore > instantScore && trendScore >= precursorScore;
+    final isPrecursorDriven = precursorScore > instantScore && precursorScore > trendScore;
 
     // Classify
     AdaptiveAnomalyLevel level;
@@ -262,10 +333,16 @@ class AdaptiveAnomalyService {
       }
     }
 
+    if (isPrecursorDriven && precursorPattern != null) {
+      dominantFeature = 'precursor: $precursorPattern';
+    }
+
     if (level != AdaptiveAnomalyLevel.normal) {
       debugPrint('AdaptiveAnomaly: ${level.name} score=${finalScore.toStringAsFixed(3)} '
-          '${isTrendDriven ? "TREND" : "INSTANT"} dominant=$dominantFeature '
-          'instantZ=${rmsZ.toStringAsFixed(2)} trendScore=${trendScore.toStringAsFixed(3)}');
+          '${isPrecursorDriven ? "PRECURSOR($precursorPattern)" : isTrendDriven ? "TREND" : "INSTANT"} '
+          'dominant=$dominantFeature '
+          'instantZ=${rmsZ.toStringAsFixed(2)} trendScore=${trendScore.toStringAsFixed(3)} '
+          'precursorScore=${precursorScore.toStringAsFixed(3)}');
     }
 
     return AdaptiveAnomalyResult(
@@ -276,6 +353,9 @@ class AdaptiveAnomalyService {
       dominantFeature: dominantFeature,
       isTrendDriven: isTrendDriven,
       trendScore: trendScore,
+      isPrecursorDriven: isPrecursorDriven,
+      precursorScore: precursorScore,
+      precursorPattern: precursorPattern,
     );
   }
 
@@ -290,6 +370,7 @@ class AdaptiveAnomalyService {
       _shortWindow[key] = [];
       _longWindow[key] = [];
     }
+    _featureHistory.clear();
     debugPrint('AdaptiveAnomalyService: Baseline reset');
   }
 
@@ -303,6 +384,57 @@ class AdaptiveAnomalyService {
           'stdDev': sqrt(_emaVariance[key] ?? 0),
         },
     };
+  }
+
+  // --- Temporal derivative helpers for precursor detection ---
+
+  /// Compute rate of change (derivative) of a feature over a window.
+  /// Returns change per sample. Positive = rising.
+  double _computeDerivative(String feature, int windowSamples) {
+    if (_featureHistory.length < windowSamples + 1) return 0.0;
+    final start = _featureHistory.length - windowSamples;
+    final oldAvg = _rangeAverage(feature, start, start + windowSamples ~/ 3);
+    final newAvg = _rangeAverage(feature, _featureHistory.length - windowSamples ~/ 3, _featureHistory.length);
+    return (newAvg - oldAvg) / windowSamples;
+  }
+
+  /// Compute acceleration (2nd derivative) — is the trend speeding up?
+  double _computeAcceleration(String feature, int windowSamples) {
+    if (_featureHistory.length < windowSamples * 2) return 0.0;
+    final d1 = _computeDerivative(feature, windowSamples);
+    // Compute derivative from the earlier half
+    final halfLen = _featureHistory.length ~/ 2;
+    final oldHistory = _featureHistory.sublist(0, halfLen);
+    double oldD = 0.0;
+    if (oldHistory.length >= windowSamples + 1) {
+      final start = oldHistory.length - windowSamples;
+      double oldSum = 0.0, newSum = 0.0;
+      int oldCount = 0, newCount = 0;
+      for (int i = start; i < start + windowSamples ~/ 3; i++) {
+        oldSum += oldHistory[i][feature] ?? 0.0;
+        oldCount++;
+      }
+      for (int i = oldHistory.length - windowSamples ~/ 3; i < oldHistory.length; i++) {
+        newSum += oldHistory[i][feature] ?? 0.0;
+        newCount++;
+      }
+      if (oldCount > 0 && newCount > 0) {
+        oldD = (newSum / newCount - oldSum / oldCount) / windowSamples;
+      }
+    }
+    return d1 - oldD; // Positive = accelerating upward
+  }
+
+  double _rangeAverage(String feature, int from, int to) {
+    if (from >= to || from < 0) return 0.0;
+    final end = to.clamp(0, _featureHistory.length);
+    final start = from.clamp(0, end);
+    if (start >= end) return 0.0;
+    double sum = 0.0;
+    for (int i = start; i < end; i++) {
+      sum += _featureHistory[i][feature] ?? 0.0;
+    }
+    return sum / (end - start);
   }
 
   // --- Utility functions ---
@@ -356,6 +488,9 @@ class AdaptiveAnomalyResult {
   final String? dominantFeature; // Feature contributing most to anomaly
   final bool isTrendDriven; // True if trend detection triggered (not instantaneous)
   final double trendScore; // Trend-specific score
+  final bool isPrecursorDriven; // True if precursor pattern detection triggered
+  final double precursorScore; // Precursor-specific score
+  final String? precursorPattern; // Detected precursor pattern name
 
   const AdaptiveAnomalyResult({
     required this.score,
@@ -365,6 +500,9 @@ class AdaptiveAnomalyResult {
     this.dominantFeature,
     this.isTrendDriven = false,
     this.trendScore = 0.0,
+    this.isPrecursorDriven = false,
+    this.precursorScore = 0.0,
+    this.precursorPattern,
   });
 
   String get levelLabel {

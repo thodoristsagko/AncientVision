@@ -6,6 +6,7 @@ sealed class BleParseResult {}
 class ImuData extends BleParseResult {
   final double x, y, z, vib, ppv, rms, freq, crest, cent, kurt, stalta;
   final double arias, cav, temp, dwt1, dwt2, dwt3; // v4.0 fields
+  final double peak; // v5.0: peak acceleration
 
   ImuData({
     required this.x,
@@ -25,7 +26,17 @@ class ImuData extends BleParseResult {
     this.dwt1 = 0,
     this.dwt2 = 0,
     this.dwt3 = 0,
+    this.peak = 0,
   });
+}
+
+class RawAccelData extends BleParseResult {
+  final List<double> accelX;
+  final List<double> accelY;
+  final List<double> accelZ;
+  final int sampleCount;
+
+  RawAccelData({required this.accelX, required this.accelY, required this.accelZ, required this.sampleCount});
 }
 
 class MoistureData extends BleParseResult {
@@ -55,6 +66,72 @@ class BatteryData extends BleParseResult {
 class BleParseError extends BleParseResult {
   final String reason;
   BleParseError(this.reason);
+}
+
+/// Reassembles multi-packet raw acceleration data from BLE.
+/// Firmware sends 256 * 3 axes * 2 bytes = 1536 bytes in 3 packets of 512.
+/// Each packet has a 2-byte header: [sequenceNum, sampleCount].
+class RawAccelReassembler {
+  final Map<int, List<int>> _packets = {};
+  int _expectedSamples = 256;
+
+  /// Feed a raw BLE packet. Returns complete RawAccelData when all packets received.
+  RawAccelData? addPacket(List<int> rawBytes) {
+    if (rawBytes.length < 4) return null;
+
+    final seqNum = rawBytes[0];
+    _expectedSamples = rawBytes[1];
+    final data = rawBytes.sublist(2);
+    _packets[seqNum] = data;
+
+    // Check if we have all packets
+    final totalBytes = _expectedSamples * 3 * 2; // samples * axes * int16
+    final packetSize = 512;
+    final expectedPackets = (totalBytes + packetSize - 1) ~/ packetSize;
+
+    if (_packets.length < expectedPackets) return null;
+
+    // Reassemble
+    final allBytes = <int>[];
+    for (int i = 0; i < expectedPackets; i++) {
+      final pkt = _packets[i];
+      if (pkt == null) {
+        _packets.clear();
+        return null;
+      }
+      allBytes.addAll(pkt);
+    }
+    _packets.clear();
+
+    // Decode int16 to doubles (scale factor 1000 -> g units)
+    final accelX = <double>[];
+    final accelY = <double>[];
+    final accelZ = <double>[];
+
+    for (int i = 0; i < _expectedSamples && (i * 6 + 5) < allBytes.length; i++) {
+      final offset = i * 6;
+      final x = _readInt16(allBytes, offset) / 1000.0;
+      final y = _readInt16(allBytes, offset + 2) / 1000.0;
+      final z = _readInt16(allBytes, offset + 4) / 1000.0;
+      accelX.add(x);
+      accelY.add(y);
+      accelZ.add(z);
+    }
+
+    return RawAccelData(
+      accelX: accelX,
+      accelY: accelY,
+      accelZ: accelZ,
+      sampleCount: accelX.length,
+    );
+  }
+
+  int _readInt16(List<int> bytes, int offset) {
+    final val = bytes[offset] | (bytes[offset + 1] << 8);
+    return val >= 0x8000 ? val - 0x10000 : val;
+  }
+
+  void reset() => _packets.clear();
 }
 
 /// Clean raw BLE bytes: strip null bytes and trim whitespace.
@@ -102,6 +179,8 @@ BleParseResult parseBleJson(String jsonStr, String charUuid) {
       dwt1: (data['dwt1'] as num?)?.toDouble() ?? 0.0,
       dwt2: (data['dwt2'] as num?)?.toDouble() ?? 0.0,
       dwt3: (data['dwt3'] as num?)?.toDouble() ?? 0.0,
+      // v5.0 firmware field (backward compatible)
+      peak: (data['peak'] as num?)?.toDouble() ?? 0.0,
     );
   }
 

@@ -18,6 +18,8 @@ import '../widgets/spectrogram_widget.dart';
 import '../services/ppv_prediction_service.dart';
 import '../utils/fft_ble_parser.dart';
 import '../utils/circular_buffer.dart';
+import '../services/vibration_dsp_service.dart';
+import '../utils/ble_parser.dart' show RawAccelReassembler;
 import 'vibration_event_log_screen.dart';
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -109,12 +111,21 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   PPVPrediction? _ppvPrediction;
   final CircularBuffer<double> _ppvKalmanHistory = CircularBuffer(60);
 
+  // Phone-side DSP engine (replaces firmware FFT/DWT/kurtosis)
+  final _dspService = VibrationDspService();
+  final _rawAccelReassembler = RawAccelReassembler();
+
   // ML Anomaly Detection (Tier 2)
   final _anomalyService = VibrationAnomalyService();
   AnomalyResult _lastAnomalyResult = const AnomalyResult(score: 0, level: AnomalyLevel.unknown, rawError: 0);
   bool _mlModelLoaded = false;
   final CircularBuffer<double> _anomalyScoreHistory = CircularBuffer(30);
   Map<String, double> _lastMLFeatures = {}; // features passed to last detect() call
+
+  // Precursor detection state
+  String? _lastPrecursorPattern;
+  double _lastPrecursorScore = 0.0;
+  bool _isPrecursorDriven = false;
 
   // Multi-standard classification (VibrationMetricsService)
   List<StandardClassification> _standardClassifications = [];
@@ -336,6 +347,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         _reconnectAttempts = 0; // Reset on successful connection
       });
 
+      _dspService.reset();
+      _rawAccelReassembler.reset();
+
       // Start keepalive monitoring
       _startKeepAliveMonitor();
 
@@ -388,6 +402,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
     // Send notification about disconnection
     NotificationService().showDeviceDisconnected(deviceName: deviceName);
+
+    _dspService.reset();
+    _rawAccelReassembler.reset();
 
     // Cancel keepalive
     _keepAliveTimer?.cancel();
@@ -551,12 +568,50 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   void _handleCharacteristicData(String charUuid, List<int> value) {
     if (!mounted) return;
 
-    // FFT characteristic sends binary data, not JSON
+    // FFT characteristic now sends raw acceleration binary (v5.0 firmware)
+    // or FFT bins (v4.x firmware). Detect by checking header.
     if (isFftCharacteristic(charUuid)) {
+      _lastDataReceived = DateTime.now();
+
+      // v5.0: raw accel packets have header [seqNum, sampleCount=256]
+      if (value.length > 4 && value[1] == 256) {
+        final rawAccel = _rawAccelReassembler.addPacket(value);
+        if (rawAccel != null && rawAccel.sampleCount >= 128) {
+          // Run phone-side DSP on the reassembled buffer
+          final dspResult = _dspService.process(
+            rawAccel.accelX, rawAccel.accelY, rawAccel.accelZ,
+          );
+
+          // Update UI fields with DSP results (these used to come from firmware)
+          setState(() {
+            _dominantFreq = dspResult.dominantFreq;
+            _centroid = dspResult.spectralCentroid;
+            _kurtosis = dspResult.kurtosis;
+            _arias = dspResult.ariasIntensity;
+            _cav = dspResult.cav;
+            _dwt1 = dspResult.dwtEnergy1;
+            _dwt2 = dspResult.dwtEnergy2;
+            _dwt3 = dspResult.dwtEnergy3;
+          });
+
+          // Feed spectrogram with real FFT data from phone DSP
+          final column = List<double>.filled(128, 0.0);
+          for (int i = 0; i < dspResult.fftMagnitudes.length && i < 128; i++) {
+            column[i] = dspResult.fftMagnitudes[i] * 100;
+          }
+          _spectrogramBuffer.addColumn(column);
+
+          debugPrint('>>> Phone DSP: freq=${dspResult.dominantFreq.toStringAsFixed(1)}Hz '
+              'kurt=${dspResult.kurtosis.toStringAsFixed(2)} '
+              'dwt=[${dspResult.dwtEnergy1.toStringAsFixed(4)},${dspResult.dwtEnergy2.toStringAsFixed(4)},${dspResult.dwtEnergy3.toStringAsFixed(4)}]');
+        }
+        return;
+      }
+
+      // v4.x fallback: parse as FFT bins
       final fftData = parseFftBlePayload(value);
       if (fftData != null) {
         _lastFftData = fftData;
-        _lastDataReceived = DateTime.now();
         debugPrint('>>> FFT BLE: ${fftData.binCount} bins, dominant=${fftData.dominantFrequency.toStringAsFixed(1)}Hz');
       }
       return;
@@ -874,6 +929,20 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       _lastAnomalyResult = result;
       _lastMLFeatures = features;
       needsRebuild = true;
+    }
+
+    // 5b. Check for precursor patterns
+    if (_anomalyService.adaptiveService.isCalibrated) {
+      final adaptiveResult = _anomalyService.adaptiveService.detect({
+        'ppv': _ppv, 'rms': _rms, 'crest': _crestFactor,
+        'kurtosis': _kurtosis, 'stalta': _staLtaRatio, 'cav': _cav, 'freq': _dominantFreq,
+      });
+      if (adaptiveResult != null) {
+        _lastPrecursorPattern = adaptiveResult.precursorPattern;
+        _lastPrecursorScore = adaptiveResult.precursorScore;
+        _isPrecursorDriven = adaptiveResult.isPrecursorDriven;
+        needsRebuild = true;
+      }
     }
 
     // 6. PPV trend prediction
@@ -1462,6 +1531,41 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
                 const SizedBox(height: 12),
 
+              if (_isPrecursorDriven && _lastPrecursorPattern != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF6F00).withAlpha(30),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFF6F00).withAlpha(100), width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF6F00), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'PRECURSOR: ${_formatPrecursorPattern(_lastPrecursorPattern!)}',
+                              style: const TextStyle(color: Color(0xFFFF6F00), fontSize: 13, fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Confidence: ${(_lastPrecursorScore * 100).toStringAsFixed(0)}% — Physics-informed pattern match',
+                              style: TextStyle(color: const Color(0xFFFF6F00).withAlpha(180), fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // Live Sensors Card (legacy + enhanced)
               LiveSensorsCard(
                 accX: _accX, accY: _accY, accZ: _accZ,
@@ -1858,6 +1962,33 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                 ),
               ],
 
+              // Precursor pattern warning (simple mode)
+              if (_isPrecursorDriven && _lastPrecursorPattern != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF6F00).withAlpha(30),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFF6F00).withAlpha(100), width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF6F00), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Precursor: ${_formatPrecursorPattern(_lastPrecursorPattern!)} '
+                          '(${(_lastPrecursorScore * 100).toStringAsFixed(0)}% confidence)',
+                          style: const TextStyle(color: Color(0xFFFF6F00), fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // Connection / last update info
               const SizedBox(height: 16),
               Text(
@@ -1874,6 +2005,15 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         ),
       ),
     );
+  }
+
+  String _formatPrecursorPattern(String pattern) {
+    switch (pattern) {
+      case 'soil_creep': return 'Soil movement detected';
+      case 'crack_propagation': return 'Crack propagation detected';
+      case 'imminent_failure': return 'IMMINENT FAILURE WARNING';
+      default: return pattern;
+    }
   }
 
   /// Build the spectrogram card with colormap selector
