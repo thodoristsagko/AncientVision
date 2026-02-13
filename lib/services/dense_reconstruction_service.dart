@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:vector_math/vector_math_64.dart';
@@ -44,11 +43,11 @@ class DenseReconstructionService {
   final int stereoResolution;
 
   DenseReconstructionService({
-    int stereoResolution = 256,
+    this.stereoResolution = 256,
     PatchMatchStereo? stereo,
     DepthMapFusion? fusion,
     PoissonMeshService? mesher,
-  })  : stereoResolution = stereoResolution,
+  })  :
         _stereo = stereo ?? PatchMatchStereo(resolution: stereoResolution),
         _fusion = fusion ?? DepthMapFusion(),
         _mesher = mesher ?? PoissonMeshService();
