@@ -350,7 +350,7 @@ class SpectrogramPainter extends CustomPainter {
     // Band labels
     final labelStyle = TextStyle(
       color: Colors.white.withValues(alpha: 0.85),
-      fontSize: 9,
+      fontSize: 11,
       fontWeight: FontWeight.w600,
       shadows: const [Shadow(blurRadius: 2, color: Colors.black)],
     );
@@ -388,7 +388,7 @@ class _YAxisPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final style = TextStyle(color: textColor, fontSize: 10);
+    final style = TextStyle(color: textColor, fontSize: 12);
     final freqs = [0.0, 25.0, 50.0, 75.0, 100.0]
         .where((f) => f <= maxFrequency)
         .toList();
@@ -431,7 +431,7 @@ class _XAxisPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (columnCount == 0) return;
 
-    final style = TextStyle(color: textColor, fontSize: 10);
+    final style = TextStyle(color: textColor, fontSize: 12);
     final totalSeconds = columnCount * secondsPerColumn;
 
     // Draw a few time labels.

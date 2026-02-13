@@ -72,7 +72,7 @@ class SafetyStatCard extends StatelessWidget {
       child: BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
-          height: 125,
+          height: 140,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: Colors.white.withAlpha(26),
@@ -398,15 +398,15 @@ class MLAnomalyIndicator extends StatelessWidget {
                             Text('Score: ', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 11)),
                             Expanded(
                               child: ClipRRect(
-                                borderRadius: BorderRadius.circular(3),
+                                borderRadius: BorderRadius.circular(5),
                                 child: SizedBox(
-                                  height: 6,
+                                  height: 10,
                                   child: Stack(
                                     children: [
                                       Container(
                                         decoration: BoxDecoration(
                                           color: Colors.white.withAlpha(20),
-                                          borderRadius: BorderRadius.circular(3),
+                                          borderRadius: BorderRadius.circular(5),
                                         ),
                                       ),
                                       FractionallySizedBox(
@@ -414,7 +414,7 @@ class MLAnomalyIndicator extends StatelessWidget {
                                         child: Container(
                                           decoration: BoxDecoration(
                                             color: color,
-                                            borderRadius: BorderRadius.circular(3),
+                                            borderRadius: BorderRadius.circular(5),
                                           ),
                                         ),
                                       ),
@@ -476,9 +476,9 @@ class MLAnomalyIndicator extends StatelessWidget {
                             Text(label, style: TextStyle(color: Colors.white.withAlpha(160), fontSize: 9)),
                             const SizedBox(height: 2),
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(2),
+                              borderRadius: BorderRadius.circular(4),
                               child: SizedBox(
-                                height: 4,
+                                height: 8,
                                 child: Stack(
                                   children: [
                                     Container(color: Colors.white.withAlpha(15)),
@@ -512,7 +512,7 @@ class MLAnomalyIndicator extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 SizedBox(
-                  height: 28,
+                  height: 40,
                   width: double.infinity,
                   child: CustomPaint(
                     painter: _AnomalySparklinePainter(anomalyHistory, color),

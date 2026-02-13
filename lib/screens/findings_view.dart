@@ -1076,7 +1076,7 @@ class _FindingsViewState extends State<FindingsView> {
                   child: BackdropFilter(
                     filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                     child: Container(
-                      height: 300,
+                      height: (MediaQuery.of(context).size.height * 0.25).clamp(200.0, 350.0),
                       decoration: BoxDecoration(
                         color: Colors.white.withAlpha(26),
                         borderRadius: BorderRadius.circular(24),

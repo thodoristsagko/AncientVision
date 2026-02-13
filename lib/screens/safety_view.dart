@@ -1197,7 +1197,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                         ),
                         if (_truncatedPackets > 0)
                           Text(
-                            '$_truncatedPackets packet(s) lost (MTU too small)',
+                            '$_truncatedPackets partial packet(s) — reconnecting clears',
                             style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
                           ),
                       ],
@@ -1660,8 +1660,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             children: [
               // Large status circle
               Container(
-                width: 120,
-                height: 120,
+                width: (MediaQuery.of(context).size.width * 0.28).clamp(100.0, 140.0),
+                height: (MediaQuery.of(context).size.width * 0.28).clamp(100.0, 140.0),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: statusColor.withAlpha(40),
@@ -1948,14 +1948,14 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               const SizedBox(height: 10),
               // Spectrogram widget
               SizedBox(
-                height: 200,
+                height: (MediaQuery.of(context).size.height * 0.12).clamp(150.0, 250.0),
                 child: SpectrogramWidget(
                   spectrogramData: _spectrogramBuffer.data,
                   sampleRate: 200,
                   fftSize: 256,
                   maxFrequency: 100,
                   colorMap: _spectrogramColorMap,
-                  height: 200,
+                  height: (MediaQuery.of(context).size.height * 0.12).clamp(150.0, 250.0),
                 ),
               ),
             ],

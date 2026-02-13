@@ -388,7 +388,7 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
               // LAST FINDINGS
               LastFindingsCard(findings: _lastFindings),
 
-              const SizedBox(height: 120),
+              const SizedBox(height: 80),
             ],
           ),
         ),
