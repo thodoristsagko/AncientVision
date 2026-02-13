@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
+import 'adaptive_anomaly_service.dart';
 
 /// Vibration anomaly detection service using TFLite autoencoder / VAE.
 ///
@@ -26,6 +27,7 @@ class VibrationAnomalyService {
 
   Interpreter? _interpreter;
   bool _isInitialized = false;
+  bool _useRuleBased = false;
 
   // Scaler parameters (from training)
   List<double> _scalerMean = [];
@@ -42,7 +44,24 @@ class VibrationAnomalyService {
   String _modelType = 'autoencoder'; // 'autoencoder' or 'vae'
   double _beta = 1.0; // KL divergence weight for VAE scoring
 
+  // Adaptive statistical anomaly detection (Tier 1.5 — between rule-based and ML)
+  final AdaptiveAnomalyService _adaptiveService = AdaptiveAnomalyService();
+
   bool get isInitialized => _isInitialized;
+  bool get isRuleBased => _useRuleBased;
+  AdaptiveAnomalyService get adaptiveService => _adaptiveService;
+
+  String get modeLabel {
+    if (!_useRuleBased && _isInitialized && _interpreter != null) {
+      return 'ML v$_modelVersion';
+    }
+    if (_adaptiveService.isCalibrated) return 'Adaptive';
+    if (_adaptiveService.sampleCount > 0) {
+      return _adaptiveService.modeLabel; // 'Calibrating (X%)'
+    }
+    return 'Rule-Based';
+  }
+
   String get modelVersion => _modelVersion;
   String get modelType => _modelType;
   int get inputDim => _inputDim;
@@ -96,9 +115,10 @@ class VibrationAnomalyService {
       _isInitialized = true;
       return true;
     } catch (e) {
-      debugPrint('VibrationAnomalyService: Failed to initialize: $e');
-      _isInitialized = false;
-      return false;
+      debugPrint('VibrationAnomalyService: ML model not available — using rule-based detection');
+      _useRuleBased = true;
+      _isInitialized = true;
+      return true;
     }
   }
 
@@ -111,8 +131,33 @@ class VibrationAnomalyService {
   ///
   /// Returns: [AnomalyResult] with score and classification.
   AnomalyResult detect(Map<String, double> features) {
-    if (!_isInitialized || _interpreter == null) {
-      // Fall back to rule-based anomaly detection when ML model unavailable
+    // ALWAYS feed the adaptive baseline so it keeps learning
+    _adaptiveService.updateBaseline(features);
+
+    if (!_isInitialized || _interpreter == null || _useRuleBased) {
+      // Try adaptive statistical detection first
+      final adaptiveResult = _adaptiveService.detect(features);
+      if (adaptiveResult != null) {
+        // Convert AdaptiveAnomalyResult → AnomalyResult
+        AnomalyLevel level;
+        switch (adaptiveResult.level) {
+          case AdaptiveAnomalyLevel.normal:
+            level = AnomalyLevel.normal;
+            break;
+          case AdaptiveAnomalyLevel.unusual:
+            level = AnomalyLevel.unusual;
+            break;
+          case AdaptiveAnomalyLevel.anomaly:
+            level = AnomalyLevel.anomaly;
+            break;
+        }
+        return AnomalyResult(
+          score: adaptiveResult.score,
+          level: level,
+          rawError: adaptiveResult.rmsZScore,
+        );
+      }
+      // Still calibrating — fall back to rule-based
       return _ruleBasedDetect(features);
     }
 
@@ -285,6 +330,8 @@ class VibrationAnomalyService {
       rawError: aggregate,
     );
   }
+
+  void resetBaseline() => _adaptiveService.reset();
 
   void dispose() {
     _interpreter?.close();

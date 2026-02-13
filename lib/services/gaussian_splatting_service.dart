@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -320,37 +322,46 @@ class GaussianSplattingService {
     PointCloud cloud, {
     double? defaultScale,
   }) {
-    if (cloud.points.isEmpty) {
+    try {
+      if (cloud.points.isEmpty) {
+        return GaussianScene(
+          gaussians: [],
+          method: '3dgs_from_${cloud.method}',
+          metadata: {'source_method': cloud.method},
+        );
+      }
+
+      // Estimate a reasonable default scale from point cloud density.
+      // Sample a subset to estimate average nearest-neighbor distance.
+      final scale = defaultScale ?? _estimateScale(cloud);
+
+      final gaussians = cloud.points.map((point) {
+        return Gaussian3D(
+          position: point.position.clone(),
+          rotation: Quaternion.identity(),
+          scale: Vector3(scale, scale, scale),
+          opacity: point.confidence,
+          color: point.color,
+        );
+      }).toList();
+
+      return GaussianScene(
+        gaussians: gaussians,
+        method: '3dgs_from_${cloud.method}',
+        metadata: {
+          'source_method': cloud.method,
+          'source_point_count': cloud.points.length,
+          'initial_scale': scale,
+        },
+      );
+    } catch (e) {
+      debugPrint('GaussianSplattingService: convertFromPointCloud failed: $e');
       return GaussianScene(
         gaussians: [],
-        method: '3dgs_from_${cloud.method}',
-        metadata: {'source_method': cloud.method},
+        method: '3dgs_from_${cloud.method}_error',
+        metadata: {'error': e.toString()},
       );
     }
-
-    // Estimate a reasonable default scale from point cloud density.
-    // Sample a subset to estimate average nearest-neighbor distance.
-    final scale = defaultScale ?? _estimateScale(cloud);
-
-    final gaussians = cloud.points.map((point) {
-      return Gaussian3D(
-        position: point.position.clone(),
-        rotation: Quaternion.identity(),
-        scale: Vector3(scale, scale, scale),
-        opacity: point.confidence,
-        color: point.color,
-      );
-    }).toList();
-
-    return GaussianScene(
-      gaussians: gaussians,
-      method: '3dgs_from_${cloud.method}',
-      metadata: {
-        'source_method': cloud.method,
-        'source_point_count': cloud.points.length,
-        'initial_scale': scale,
-      },
-    );
   }
 
   /// Estimate a reasonable isotropic scale from average nearest-neighbor distance.
@@ -395,7 +406,19 @@ class GaussianSplattingService {
   ///
   /// Note: The .splat format is not fully standardized; this implements the
   /// common web-viewer variant (antimatter15/splat).
-  Future<GaussianScene> loadFromSplat(String path) async {
+  Future<GaussianScene> loadFromSplat(String path, {Duration timeout = const Duration(seconds: 60)}) async {
+    try {
+      return await _loadFromSplatImpl(path).timeout(timeout, onTimeout: () {
+        debugPrint('GaussianSplattingService: loadFromSplat timed out after ${timeout.inSeconds}s');
+        return GaussianScene(gaussians: [], method: 'splat_import_timeout', metadata: {'source': path});
+      });
+    } catch (e) {
+      debugPrint('GaussianSplattingService: loadFromSplat failed: $e');
+      return GaussianScene(gaussians: [], method: 'splat_import_error', metadata: {'error': e.toString()});
+    }
+  }
+
+  Future<GaussianScene> _loadFromSplatImpl(String path) async {
     final file = File(path);
     if (!await file.exists()) {
       throw FileSystemException('File not found', path);
@@ -471,7 +494,19 @@ class GaussianSplattingService {
   ///
   /// Expected properties: x, y, z, nx, ny, nz, f_dc_0..f_dc_2,
   /// f_rest_0..f_rest_N, opacity, scale_0..scale_2, rot_0..rot_3.
-  Future<GaussianScene> loadFromPly(String path) async {
+  Future<GaussianScene> loadFromPly(String path, {Duration timeout = const Duration(seconds: 60)}) async {
+    try {
+      return await _loadFromPlyImpl(path).timeout(timeout, onTimeout: () {
+        debugPrint('GaussianSplattingService: loadFromPly timed out after ${timeout.inSeconds}s');
+        return GaussianScene(gaussians: [], method: 'ply_3dgs_import_timeout', metadata: {'source': path});
+      });
+    } catch (e) {
+      debugPrint('GaussianSplattingService: loadFromPly failed: $e');
+      return GaussianScene(gaussians: [], method: 'ply_3dgs_import_error', metadata: {'error': e.toString()});
+    }
+  }
+
+  Future<GaussianScene> _loadFromPlyImpl(String path) async {
     final file = File(path);
     if (!await file.exists()) {
       throw FileSystemException('File not found', path);
@@ -748,10 +783,21 @@ class GaussianSplattingService {
   /// The extension encodes Gaussians as a point primitive with accessors for
   /// position, rotation (quaternion), scale, opacity, and SH coefficients.
   /// Reference: https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_gaussian_splatting
-  Future<void> exportToGltf(GaussianScene scene, String outputPath) async {
+  Future<void> exportToGltf(GaussianScene scene, String outputPath, {Duration timeout = const Duration(seconds: 60)}) async {
+    try {
+      await _exportToGltfImpl(scene, outputPath).timeout(timeout, onTimeout: () {
+        debugPrint('GaussianSplattingService: exportToGltf timed out after ${timeout.inSeconds}s');
+      });
+    } catch (e) {
+      debugPrint('GaussianSplattingService: exportToGltf failed: $e');
+    }
+  }
+
+  Future<void> _exportToGltfImpl(GaussianScene scene, String outputPath) async {
     final count = scene.gaussians.length;
     if (count == 0) {
-      throw ArgumentError('Cannot export empty scene');
+      debugPrint('GaussianSplattingService: Cannot export empty scene');
+      return;
     }
 
     // Build binary buffer containing all Gaussian data.

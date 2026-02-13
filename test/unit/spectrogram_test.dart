@@ -45,11 +45,12 @@ void main() {
       expect(buffer.data, isEmpty);
     });
 
-    test('data returns unmodifiable list', () {
+    test('data returns a snapshot copy (modifying it does not affect buffer)', () {
       final buffer = SpectrogramBuffer(maxColumns: 120);
       buffer.addColumn([1.0]);
       final data = buffer.data;
-      expect(() => data.add([2.0]), throwsUnsupportedError);
+      data.add([2.0]); // mutating the snapshot should not affect the buffer
+      expect(buffer.data.length, 1);
     });
 
     test('default maxColumns is 120', () {

@@ -163,11 +163,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     final success = await _anomalyService.initialize();
     if (mounted) {
       setState(() => _mlModelLoaded = success);
-      if (!success) {
-        debugPrint('ML anomaly model failed to load — showing badge');
-      }
     }
-    debugPrint('ML anomaly model loaded: $success');
+    debugPrint('Anomaly detection ready: ${_anomalyService.modeLabel}');
   }
 
   @override
@@ -1440,13 +1437,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               if (_spectrogramBuffer.length > 2)
                 const SizedBox(height: 12),
 
-              // ML Anomaly Detection Indicator (Tier 2)
+              // ML / Adaptive Anomaly Detection Indicator (Tier 2)
               if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
                 MLAnomalyIndicator(
                   result: _lastAnomalyResult,
                   features: _lastMLFeatures,
                   anomalyHistory: _anomalyScoreHistory.toList(),
-                  modelVersion: _anomalyService.modelVersion,
+                  modelVersion: _anomalyService.modeLabel,
                 ),
               if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
                 const SizedBox(height: 12),

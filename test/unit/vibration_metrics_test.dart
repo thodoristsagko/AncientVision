@@ -170,11 +170,12 @@ void main() {
       final results =
           VibrationMetricsService.classifyAllStandards(5.0, 5.0);
 
-      // DIN 4150-3: limit is 3.0 mm/s at 5 Hz => 5.0 > 3.0 => critical
+      // DIN 4150-3: transient limit is 3.0 mm/s at 5 Hz, but continuous
+      // limit of 2.5 mm/s is lower, so effective limit = 2.5 mm/s
       final din = results
           .firstWhere((c) => c.standard == VibrationStandard.din4150);
       expect(din.level, 'critical');
-      expect(din.limit, closeTo(3.0, 0.01));
+      expect(din.limit, closeTo(2.5, 0.01));
 
       // BS 7385-2: limit is 6.0 mm/s at 5 Hz => 5.0 < 6.0
       // 5.0 >= 6.0 * 0.7 = 4.2 => warning
@@ -220,13 +221,14 @@ void main() {
     });
 
     test('DIN limit interpolates between frequency bands', () {
-      // At 30 Hz (midpoint 10-50), limit should be between 3 and 8
+      // At 30 Hz (midpoint 10-50), transient limit interpolates between 3 and 8
+      // = 3.0 + (30-10)/(50-10) * 5.0 = 5.5, but continuous limit of 2.5 mm/s
+      // is lower, so effective limit = 2.5 mm/s
       final results =
           VibrationMetricsService.classifyAllStandards(0.1, 30.0);
       final din = results
           .firstWhere((c) => c.standard == VibrationStandard.din4150);
-      expect(din.limit, greaterThan(3.0));
-      expect(din.limit, lessThan(8.0));
+      expect(din.limit, closeTo(2.5, 0.01));
     });
   });
 

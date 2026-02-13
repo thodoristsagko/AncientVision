@@ -356,17 +356,25 @@ class MLAnomalyIndicator extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Text('ML Anomaly Detection', style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 12, fontWeight: FontWeight.w600)),
+                            Text('Anomaly Detection', style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 12, fontWeight: FontWeight.w600)),
                             const Spacer(),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF9C27B0).withAlpha(40),
+                                color: modelVersion.contains('Rule')
+                                    ? const Color(0xFFFFC107).withAlpha(40)
+                                    : const Color(0xFF9C27B0).withAlpha(40),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                'VAE v$modelVersion',
-                                style: const TextStyle(color: Color(0xFFCE93D8), fontSize: 9, fontWeight: FontWeight.w600),
+                                modelVersion,
+                                style: TextStyle(
+                                  color: modelVersion.contains('Rule')
+                                      ? const Color(0xFFFFC107)
+                                      : const Color(0xFFCE93D8),
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 6),

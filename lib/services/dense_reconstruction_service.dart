@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -62,8 +63,44 @@ class DenseReconstructionService {
     required double focalLength,
     bool generateMesh = true,
     Function(double progress, String status)? onProgress,
+    Duration timeout = const Duration(seconds: 60),
   }) async {
     final startTime = DateTime.now();
+
+    try {
+      return await _reconstructImpl(
+        imageFiles: imageFiles,
+        poses: poses,
+        focalLength: focalLength,
+        generateMesh: generateMesh,
+        onProgress: onProgress,
+        startTime: startTime,
+      ).timeout(timeout, onTimeout: () {
+        debugPrint('DenseReconstruction: Timed out after ${timeout.inSeconds}s');
+        return DenseReconstructionResult(
+          pointCloud: PointCloud(points: [], method: 'dense_mvs_timeout'),
+          depthMapsComputed: 0,
+          processingTime: DateTime.now().difference(startTime),
+        );
+      });
+    } catch (e) {
+      debugPrint('DenseReconstruction: Unexpected error: $e');
+      return DenseReconstructionResult(
+        pointCloud: PointCloud(points: [], method: 'dense_mvs_error'),
+        depthMapsComputed: 0,
+        processingTime: DateTime.now().difference(startTime),
+      );
+    }
+  }
+
+  Future<DenseReconstructionResult> _reconstructImpl({
+    required List<File> imageFiles,
+    required List<CameraPose> poses,
+    required double focalLength,
+    required bool generateMesh,
+    required DateTime startTime,
+    Function(double progress, String status)? onProgress,
+  }) async {
     final depthMaps = <DepthMap>[];
     final projections = <Matrix4>[];
     final colorArrays = <Float32List>[];
