@@ -337,6 +337,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           setState(() {
             _connectionStatus = 'Connected';
             _reconnectAttempts = 0;
+            _truncatedPackets = 0;
           });
         }
       });
