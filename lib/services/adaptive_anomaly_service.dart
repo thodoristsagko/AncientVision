@@ -1,40 +1,63 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 
-/// Adaptive statistical anomaly detector using online learning.
+/// Adaptive statistical anomaly detector using online learning + trend analysis.
 ///
 /// Phase 1 (calibration, first 5 minutes): Learns baseline vibration profile
 /// using Welford's online algorithm for numerically stable running mean/variance.
 /// During this phase, falls back to rule-based scoring.
 ///
-/// Phase 2 (detection): Scores new samples by multivariate deviation from
-/// the learned baseline — essentially a Mahalanobis-like distance without
-/// covariance (assumes feature independence for computational efficiency).
+/// Phase 2 (detection): Scores new samples by TWO methods:
+///   1. **Instantaneous**: multivariate z-score deviation from baseline
+///      (for sudden large events — actual avalanches)
+///   2. **Trend**: compares short-term (2 min) vs long-term (10 min) rolling
+///      averages to detect slow drift in vibration patterns
+///      (for micro-vibration precursors to avalanches)
 ///
-/// The baseline adapts continuously via exponential moving average (EMA)
-/// with a slow learning rate (alpha=0.01) so it tracks gradual environmental
-/// changes but flags sudden anomalies.
+/// The trend detector is the KEY innovation — soil avalanche precursors
+/// manifest as gradual increases in low-frequency energy, rising kurtosis
+/// (micro-cracks), and slowly climbing STA/LTA over minutes, NOT as
+/// sudden spikes. A spike-only detector would miss precursors entirely.
 ///
 /// Academic basis:
 /// - Welford (1962) "Note on a Method for Calculating Corrected Sums of
 ///   Squares and Products" — Technometrics 4(3)
-/// - Farrar & Worden (2007) "An Introduction to Structural Health Monitoring"
-///   — Phil. Trans. Royal Society A
-/// - Chandola, Banerjee & Kumar (2009) "Anomaly Detection: A Survey"
-///   — ACM Computing Surveys 41(3)
+/// - Helmstetter & Garambois (2010) "Seismic monitoring of Séchilienne
+///   rockslide" — precursor signals build over minutes to hours
+/// - Fäh et al. (2012) "Microseismic activity analysis for stability
+///   assessment of soil slopes" — low-frequency drift as instability indicator
 class AdaptiveAnomalyService {
   // Feature names we track (must match extractFeatures output)
   static const List<String> _featureKeys = [
     'ppv', 'rms', 'crest', 'kurtosis', 'stalta', 'cav', 'freq',
   ];
 
+  // Features most indicative of pre-avalanche drift
+  // Higher weight = more important for trend scoring
+  static const Map<String, double> _trendWeights = {
+    'ppv': 0.15,
+    'rms': 0.10,
+    'crest': 0.05,
+    'kurtosis': 0.20,   // micro-cracks cause rising kurtosis
+    'stalta': 0.25,     // slow STA/LTA rise = key precursor
+    'cav': 0.10,
+    'freq': 0.15,       // frequency shift toward low band = instability
+  };
+
   // Calibration config
   static const int _calibrationSamples = 150; // ~5 min at 0.5Hz BLE rate
-  static const double _emaAlpha = 0.01; // Slow adaptation rate
+  static const double _emaAlpha = 0.005; // Very slow adaptation — don't adapt away precursors
 
-  // Detection thresholds (in standard deviations)
-  static const double _thresholdLow = 2.0;   // > 2σ = unusual
-  static const double _thresholdHigh = 3.5;  // > 3.5σ = anomaly
+  // Instantaneous detection thresholds (in standard deviations)
+  // Raised high — only trigger on genuinely large events
+  static const double _thresholdLow = 3.0;   // > 3σ = unusual
+  static const double _thresholdHigh = 5.0;  // > 5σ = anomaly
+
+  // Trend detection config
+  static const int _shortWindowSize = 60;    // ~2 min of samples at 0.5Hz
+  static const int _longWindowSize = 300;    // ~10 min of samples
+  static const double _trendThresholdLow = 1.5;  // Short-term 1.5σ above long-term
+  static const double _trendThresholdHigh = 2.5; // Short-term 2.5σ above long-term
 
   // Per-feature running statistics (Welford's algorithm)
   final Map<String, _WelfordStats> _stats = {};
@@ -42,6 +65,10 @@ class AdaptiveAnomalyService {
   // Post-calibration EMA baseline
   final Map<String, double> _emaMean = {};
   final Map<String, double> _emaVariance = {};
+
+  // Rolling windows for trend detection
+  final Map<String, List<double>> _shortWindow = {};
+  final Map<String, List<double>> _longWindow = {};
 
   int _sampleCount = 0;
   bool _isCalibrated = false;
@@ -55,6 +82,8 @@ class AdaptiveAnomalyService {
   AdaptiveAnomalyService() {
     for (final key in _featureKeys) {
       _stats[key] = _WelfordStats();
+      _shortWindow[key] = [];
+      _longWindow[key] = [];
     }
   }
 
@@ -66,6 +95,16 @@ class AdaptiveAnomalyService {
     for (final key in _featureKeys) {
       final value = features[key] ?? 0.0;
       _stats[key]!.update(value);
+
+      // Maintain rolling windows for trend detection
+      _shortWindow[key]!.add(value);
+      if (_shortWindow[key]!.length > _shortWindowSize) {
+        _shortWindow[key]!.removeAt(0);
+      }
+      _longWindow[key]!.add(value);
+      if (_longWindow[key]!.length > _longWindowSize) {
+        _longWindow[key]!.removeAt(0);
+      }
     }
 
     // Transition from calibration to detection
@@ -80,7 +119,7 @@ class AdaptiveAnomalyService {
       debugPrint('  Baseline: ${_featureKeys.map((k) => "$k: μ=${_emaMean[k]!.toStringAsFixed(3)} σ=${sqrt(_emaVariance[k]!).toStringAsFixed(3)}").join(", ")}');
     }
 
-    // Update EMA baseline (slow drift tracking)
+    // Update EMA baseline (very slow drift tracking)
     if (_isCalibrated) {
       for (final key in _featureKeys) {
         final value = features[key] ?? 0.0;
@@ -96,10 +135,15 @@ class AdaptiveAnomalyService {
 
   /// Score a sample for anomaly detection.
   /// Returns null if not yet calibrated (caller should use rule-based fallback).
+  ///
+  /// Uses the HIGHER of instantaneous score and trend score.
+  /// This means:
+  /// - A sudden massive event (actual avalanche) triggers via instantaneous
+  /// - A slow buildup of micro-vibrations triggers via trend
   AdaptiveAnomalyResult? detect(Map<String, double> features) {
     if (!_isCalibrated) return null;
 
-    // Compute per-feature z-scores and aggregate
+    // --- Instantaneous z-score detection ---
     double sumZSq = 0.0;
     int featureCount = 0;
     final Map<String, double> zScores = {};
@@ -119,39 +163,119 @@ class AdaptiveAnomalyService {
 
     if (featureCount == 0) return null;
 
-    // Root mean squared z-score (like simplified Mahalanobis distance)
     final rmsZ = sqrt(sumZSq / featureCount);
 
-    // Classify
-    AdaptiveAnomalyLevel level;
-    double score;
+    // Instantaneous classification
+    double instantScore;
     if (rmsZ < _thresholdLow) {
-      level = AdaptiveAnomalyLevel.normal;
-      score = rmsZ / _thresholdLow;
+      instantScore = rmsZ / _thresholdLow * 0.3; // 0-0.3 range for normal
     } else if (rmsZ < _thresholdHigh) {
-      level = AdaptiveAnomalyLevel.unusual;
-      score = 0.5 + 0.5 * (rmsZ - _thresholdLow) / (_thresholdHigh - _thresholdLow);
+      instantScore = 0.3 + 0.4 * (rmsZ - _thresholdLow) / (_thresholdHigh - _thresholdLow);
     } else {
-      level = AdaptiveAnomalyLevel.anomaly;
-      score = min(1.0, 0.8 + 0.2 * (rmsZ - _thresholdHigh) / _thresholdHigh);
+      instantScore = min(1.0, 0.7 + 0.3 * (rmsZ - _thresholdHigh) / _thresholdHigh);
     }
 
-    // Find the dominant contributing feature
-    String? dominantFeature;
-    double maxZ = 0;
-    for (final entry in zScores.entries) {
-      if (entry.value > maxZ) {
-        maxZ = entry.value;
-        dominantFeature = entry.key;
+    // --- Trend detection (short-term vs long-term) ---
+    double trendScore = 0.0;
+    String? trendFeature;
+    double maxTrendZ = 0.0;
+
+    // Only compute trend if we have enough long-window data
+    if (_longWindow[_featureKeys.first]!.length >= _longWindowSize ~/ 2) {
+      double weightedTrendSum = 0.0;
+      double weightSum = 0.0;
+
+      for (final key in _featureKeys) {
+        final shortAvg = _windowMean(_shortWindow[key]!);
+        final longAvg = _windowMean(_longWindow[key]!);
+        final longStd = _windowStdDev(_longWindow[key]!, longAvg);
+
+        if (longStd > 1e-8) {
+          // How many σ is the short-term average ABOVE the long-term average?
+          // Positive = rising trend, negative = falling trend
+          // For precursors, we care about RISING trends in most features
+          // but FALLING frequency (shift to lower frequencies = instability)
+          double trendZ;
+          if (key == 'freq') {
+            // Frequency dropping = bad sign (shift to low-freq seismic band)
+            trendZ = (longAvg - shortAvg) / longStd;
+          } else {
+            // Everything else rising = bad sign
+            trendZ = (shortAvg - longAvg) / longStd;
+          }
+
+          // Only count positive trends (rising risk)
+          if (trendZ > 0) {
+            final weight = _trendWeights[key] ?? 0.1;
+            weightedTrendSum += trendZ * weight;
+            weightSum += weight;
+
+            if (trendZ > maxTrendZ) {
+              maxTrendZ = trendZ;
+              trendFeature = key;
+            }
+          }
+        }
+      }
+
+      if (weightSum > 0) {
+        final weightedTrendZ = weightedTrendSum / weightSum;
+
+        if (weightedTrendZ < _trendThresholdLow) {
+          trendScore = weightedTrendZ / _trendThresholdLow * 0.3;
+        } else if (weightedTrendZ < _trendThresholdHigh) {
+          trendScore = 0.3 + 0.4 * (weightedTrendZ - _trendThresholdLow) /
+              (_trendThresholdHigh - _trendThresholdLow);
+        } else {
+          trendScore = min(1.0, 0.7 + 0.3 * (weightedTrendZ - _trendThresholdHigh) /
+              _trendThresholdHigh);
+        }
       }
     }
 
+    // Final score = max of instantaneous and trend
+    // This way EITHER a sudden event OR a slow buildup triggers
+    final finalScore = max(instantScore, trendScore).clamp(0.0, 1.0);
+    final isTrendDriven = trendScore > instantScore;
+
+    // Classify
+    AdaptiveAnomalyLevel level;
+    if (finalScore < 0.35) {
+      level = AdaptiveAnomalyLevel.normal;
+    } else if (finalScore < 0.7) {
+      level = AdaptiveAnomalyLevel.unusual;
+    } else {
+      level = AdaptiveAnomalyLevel.anomaly;
+    }
+
+    // Find dominant contributing feature
+    String? dominantFeature;
+    if (isTrendDriven && trendFeature != null) {
+      dominantFeature = '$trendFeature (trend↑)';
+    } else {
+      double maxZ = 0;
+      for (final entry in zScores.entries) {
+        if (entry.value > maxZ) {
+          maxZ = entry.value;
+          dominantFeature = entry.key;
+        }
+      }
+    }
+
+    if (level != AdaptiveAnomalyLevel.normal) {
+      debugPrint('AdaptiveAnomaly: ${level.name} score=${finalScore.toStringAsFixed(3)} '
+          '${isTrendDriven ? "TREND" : "INSTANT"} dominant=$dominantFeature '
+          'instantZ=${rmsZ.toStringAsFixed(2)} trendScore=${trendScore.toStringAsFixed(3)}');
+    }
+
     return AdaptiveAnomalyResult(
-      score: score.clamp(0.0, 1.0),
+      score: finalScore,
       level: level,
       rmsZScore: rmsZ,
       featureZScores: zScores,
       dominantFeature: dominantFeature,
+      isTrendDriven: isTrendDriven,
+      trendScore: trendScore,
     );
   }
 
@@ -163,6 +287,8 @@ class AdaptiveAnomalyService {
     _emaVariance.clear();
     for (final key in _featureKeys) {
       _stats[key] = _WelfordStats();
+      _shortWindow[key] = [];
+      _longWindow[key] = [];
     }
     debugPrint('AdaptiveAnomalyService: Baseline reset');
   }
@@ -177,6 +303,27 @@ class AdaptiveAnomalyService {
           'stdDev': sqrt(_emaVariance[key] ?? 0),
         },
     };
+  }
+
+  // --- Utility functions ---
+
+  double _windowMean(List<double> window) {
+    if (window.isEmpty) return 0.0;
+    double sum = 0.0;
+    for (final v in window) {
+      sum += v;
+    }
+    return sum / window.length;
+  }
+
+  double _windowStdDev(List<double> window, double mean) {
+    if (window.length < 2) return 0.0;
+    double sumSq = 0.0;
+    for (final v in window) {
+      final d = v - mean;
+      sumSq += d * d;
+    }
+    return sqrt(sumSq / (window.length - 1));
   }
 }
 
@@ -207,6 +354,8 @@ class AdaptiveAnomalyResult {
   final double rmsZScore; // Root mean squared z-score
   final Map<String, double> featureZScores; // Per-feature z-scores
   final String? dominantFeature; // Feature contributing most to anomaly
+  final bool isTrendDriven; // True if trend detection triggered (not instantaneous)
+  final double trendScore; // Trend-specific score
 
   const AdaptiveAnomalyResult({
     required this.score,
@@ -214,6 +363,8 @@ class AdaptiveAnomalyResult {
     required this.rmsZScore,
     required this.featureZScores,
     this.dominantFeature,
+    this.isTrendDriven = false,
+    this.trendScore = 0.0,
   });
 
   String get levelLabel {

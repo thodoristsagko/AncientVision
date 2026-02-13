@@ -259,62 +259,64 @@ class VibrationAnomalyService {
     final cav = features['cav'] ?? 0.0;
     final freq = features['freq'] ?? 0.0;
 
-    // DIN 4150-3 heritage PPV thresholds (mm/s)
-    const ppvSafe = 0.3;
-    const ppvHeritageLow = 3.0;
-    const ppvStructural = 10.0;
+    // Thresholds tuned for MICRO-VIBRATION precursor detection.
+    // Much higher than DIN 4150-3 structural limits — we want to ignore
+    // normal site activity (footsteps, tools, wind) and only flag patterns
+    // that genuinely hint at soil instability.
+    const ppvConcern = 5.0;     // mm/s — well above normal site noise (~0.1-2.0)
+    const ppvDanger = 15.0;     // mm/s — serious ground movement
 
     // Weighted sub-scores (0.0 = normal, 1.0 = severe)
     double ppvScore = 0.0;
-    if (ppv > ppvStructural) {
+    if (ppv > ppvDanger) {
       ppvScore = 1.0;
-    } else if (ppv > ppvHeritageLow) {
-      ppvScore = 0.5 + 0.5 * (ppv - ppvHeritageLow) / (ppvStructural - ppvHeritageLow);
-    } else if (ppv > ppvSafe) {
-      ppvScore = 0.5 * (ppv - ppvSafe) / (ppvHeritageLow - ppvSafe);
+    } else if (ppv > ppvConcern) {
+      ppvScore = (ppv - ppvConcern) / (ppvDanger - ppvConcern);
     }
 
-    // Crest factor: impacts above 5.0 are concerning (ISO 10816)
-    double crestScore = (crest > 5.0) ? min(1.0, (crest - 5.0) / 5.0) : 0.0;
+    // Crest factor: only very high values matter (>8.0 = impulsive cracking)
+    double crestScore = (crest > 8.0) ? min(1.0, (crest - 8.0) / 7.0) : 0.0;
 
-    // Kurtosis: excess kurtosis > 3 indicates impulsive events
-    double kurtosisScore = (kurtosis > 3.0) ? min(1.0, (kurtosis - 3.0) / 7.0) : 0.0;
+    // Kurtosis: excess kurtosis > 6 indicates real impulsive events (not just noise)
+    double kurtosisScore = (kurtosis > 6.0) ? min(1.0, (kurtosis - 6.0) / 10.0) : 0.0;
 
-    // STA/LTA: seismic trigger above 4.0 (Allen, 1978)
+    // STA/LTA: seismic trigger — raised to 6.0 to avoid false triggers
     double staltaScore = 0.0;
-    if (stalta > 4.0) {
+    if (stalta > 8.0) {
       staltaScore = 1.0;
-    } else if (stalta > 2.0) {
-      staltaScore = (stalta - 2.0) / 2.0;
+    } else if (stalta > 6.0) {
+      staltaScore = (stalta - 6.0) / 2.0;
     }
 
-    // CAV: EPRI damage threshold 0.16 g·s
-    double cavScore = (cav > 0.16) ? 1.0 : (cav > 0.08) ? (cav - 0.08) / 0.08 : 0.0;
+    // CAV: raised threshold — 0.3 g·s is real sustained energy
+    double cavScore = (cav > 0.3) ? 1.0 : (cav > 0.16) ? (cav - 0.16) / 0.14 : 0.0;
 
-    // RMS energy: elevated RMS indicates sustained vibration
-    double rmsScore = (rms > 0.5) ? min(1.0, (rms - 0.5) / 2.0) : 0.0;
+    // RMS energy: only flag sustained high energy
+    double rmsScore = (rms > 2.0) ? min(1.0, (rms - 2.0) / 5.0) : 0.0;
 
-    // Low-frequency seismic concern (0.5-10 Hz with elevated PPV)
+    // Low-frequency seismic concern (0.5-10 Hz) — key precursor band
+    // but only with significant PPV
     double seismicScore = 0.0;
-    if (freq > 0.5 && freq <= 10.0 && ppv > 1.0) {
-      seismicScore = min(1.0, ppv / ppvHeritageLow);
+    if (freq > 0.5 && freq <= 10.0 && ppv > 3.0) {
+      seismicScore = min(1.0, ppv / ppvConcern);
     }
 
-    // Weighted aggregate — PPV dominates as the primary structural metric
-    final aggregate = ppvScore * 0.30 +
+    // Weighted aggregate — STA/LTA and seismic band get more weight
+    // as they're better precursor indicators than raw amplitude
+    final aggregate = ppvScore * 0.15 +
         rmsScore * 0.05 +
         crestScore * 0.10 +
-        kurtosisScore * 0.10 +
-        staltaScore * 0.20 +
-        cavScore * 0.15 +
-        seismicScore * 0.10;
+        kurtosisScore * 0.15 +
+        staltaScore * 0.25 +
+        cavScore * 0.10 +
+        seismicScore * 0.20;
 
     final score = aggregate.clamp(0.0, 1.0);
 
     AnomalyLevel level;
-    if (score < 0.25) {
+    if (score < 0.35) {
       level = AnomalyLevel.normal;
-    } else if (score < 0.6) {
+    } else if (score < 0.7) {
       level = AnomalyLevel.unusual;
     } else {
       level = AnomalyLevel.anomaly;
