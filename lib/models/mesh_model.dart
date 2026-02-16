@@ -226,19 +226,21 @@ class MeshModel {
         vertex.position.z.toStringAsFixed(6),
       ];
 
-      if (hasNormals && vertex.normal != null) {
+      if (hasNormals) {
+        final n = vertex.normal ?? Vector3(0, 1, 0);
         parts.addAll([
-          vertex.normal!.x.toStringAsFixed(6),
-          vertex.normal!.y.toStringAsFixed(6),
-          vertex.normal!.z.toStringAsFixed(6),
+          n.x.toStringAsFixed(6),
+          n.y.toStringAsFixed(6),
+          n.z.toStringAsFixed(6),
         ]);
       }
 
-      if (hasColors && vertex.color != null) {
+      if (hasColors) {
+        final c = vertex.color ?? const Color(0xFFCCCCCC);
         parts.addAll([
-          '${(vertex.color!.r * 255).round()}',
-          '${(vertex.color!.g * 255).round()}',
-          '${(vertex.color!.b * 255).round()}',
+          '${(c.r * 255).round()}',
+          '${(c.g * 255).round()}',
+          '${(c.b * 255).round()}',
         ]);
       }
 

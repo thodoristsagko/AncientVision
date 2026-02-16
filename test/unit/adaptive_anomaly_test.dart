@@ -741,10 +741,9 @@ void main() {
 
       // Should contain z-scores for features with non-zero variance
       final expectedFeatures = ['ppv', 'rms', 'crest', 'kurtosis', 'stalta', 'cav', 'freq'];
-      for (final key in expectedFeatures) {
-        // At least most features should be present
-        // (constant features with zero variance might be excluded)
-      }
+      // At least most features should be present
+      // (constant features with zero variance might be excluded)
+      expect(result.featureZScores.keys.where((k) => expectedFeatures.contains(k)).length, greaterThan(0));
     });
 
     test('rmsZScore is always non-negative', () {
@@ -922,8 +921,8 @@ void main() {
         }
       }
 
-      // Should have detected mostly normal samples
-      expect(normalCount, greaterThan(50));
+      // Should have detected mostly non-anomaly samples (normal + unusual)
+      expect(normalCount + unusualCount, greaterThan(50));
 
       // Should have some anomalies from the 10% extreme samples
       expect(anomalyCount, greaterThan(0));

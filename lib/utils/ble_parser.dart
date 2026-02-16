@@ -74,19 +74,35 @@ class BleParseError extends BleParseResult {
 class RawAccelReassembler {
   final Map<int, List<int>> _packets = {};
   int _expectedSamples = 256;
+  DateTime? _firstPacketTime;
+  static const Duration _packetTimeout = Duration(seconds: 5);
 
   /// Feed a raw BLE packet. Returns complete RawAccelData when all packets received.
   RawAccelData? addPacket(List<int> rawBytes) {
     if (rawBytes.length < 4) return null;
 
     final seqNum = rawBytes[0];
-    _expectedSamples = rawBytes[1];
+    // Firmware sends FFT_SAMPLES>>1 (128) since 256 overflows uint8
+    final rawCount = rawBytes[1];
+    _expectedSamples = rawCount <= 128 ? rawCount * 2 : rawCount;
     final data = rawBytes.sublist(2);
+
+    // Start timeout timer on first packet (sequence 0)
+    if (seqNum == 0) {
+      _firstPacketTime = DateTime.now();
+    }
+
+    // Check for timeout: if first packet arrived >5s ago, reset
+    if (_firstPacketTime != null && DateTime.now().difference(_firstPacketTime!) > _packetTimeout) {
+      _packets.clear();
+      _firstPacketTime = DateTime.now();
+    }
+
     _packets[seqNum] = data;
 
     // Check if we have all packets
     final totalBytes = _expectedSamples * 3 * 2; // samples * axes * int16
-    final packetSize = 512;
+    const packetSize = 512;
     final expectedPackets = (totalBytes + packetSize - 1) ~/ packetSize;
 
     if (_packets.length < expectedPackets) return null;
@@ -131,7 +147,10 @@ class RawAccelReassembler {
     return val >= 0x8000 ? val - 0x10000 : val;
   }
 
-  void reset() => _packets.clear();
+  void reset() {
+    _packets.clear();
+    _firstPacketTime = null;
+  }
 }
 
 /// Clean raw BLE bytes: strip null bytes and trim whitespace.

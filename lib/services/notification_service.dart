@@ -400,11 +400,13 @@ class NotificationService {
       'title': title,
       'body': body,
     });
-    history.insert(0, notification);
 
-    // Keep only last 50 notifications
+    // Add to end instead of beginning to avoid O(N) insert(0)
+    history.add(notification);
+
+    // Keep only last 50 notifications (remove from beginning if needed)
     if (history.length > 50) {
-      history.removeRange(50, history.length);
+      history.removeRange(0, history.length - 50);
     }
 
     await prefs.setStringList('notification_history', history);
@@ -415,7 +417,8 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     final history = prefs.getStringList('notification_history') ?? [];
 
-    return history.map((item) {
+    // Reverse to get newest first (since we now store oldest-first)
+    return history.reversed.map((item) {
       try {
         // Try JSON format first (new format)
         final map = jsonDecode(item) as Map<String, dynamic>;

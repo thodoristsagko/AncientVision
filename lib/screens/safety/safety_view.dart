@@ -3,24 +3,25 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
-import '../models/alert_data.dart';
-import '../widgets/safety_widgets.dart';
-import '../widgets/full_screen_alert_overlay.dart';
-import '../services/vibration_anomaly_service.dart';
-import '../services/vibration_metrics_service.dart';
-import '../services/notification_service.dart';
-import '../services/settings_service.dart';
-import '../services/wavelet_service.dart';
-import '../widgets/spectrogram_widget.dart';
-import '../services/ppv_prediction_service.dart';
-import '../utils/fft_ble_parser.dart';
-import '../utils/circular_buffer.dart';
-import '../services/vibration_dsp_service.dart';
-import '../utils/ble_parser.dart' show RawAccelReassembler;
-import 'vibration_event_log_screen.dart';
+import '../../models/alert_data.dart';
+import '../../widgets/safety/index.dart';
+import '../../widgets/full_screen_alert_overlay.dart';
+import '../../services/vibration_anomaly_service.dart';
+import '../../services/vibration_metrics_service.dart';
+import '../../services/notification_service.dart';
+import '../../services/settings_service.dart';
+import '../../services/wavelet_service.dart';
+import '../../widgets/spectrogram_widget.dart';
+import '../../services/ppv_prediction_service.dart';
+import '../../utils/fft_ble_parser.dart';
+import '../../utils/circular_buffer.dart';
+import '../../services/vibration_dsp_service.dart';
+import '../../utils/ble_parser.dart' show RawAccelReassembler;
+import '../vibration_event_log_screen.dart';
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 
@@ -40,7 +41,7 @@ class SafetyView extends StatefulWidget {
   State<SafetyView> createState() => _SafetyViewState();
 }
 
-class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMixin {
+class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   // Keep the BLE connection alive when switching tabs
   @override
   bool get wantKeepAlive => true;
@@ -60,6 +61,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   // New v2.0 vibration analysis fields from firmware
   double _ppv = 0.0;           // Peak Particle Velocity (mm/s)
+  double _vectorPPV = 0.0;     // Vector sum PPV (mm/s) from phone-side DSP
   double _rms = 0.0;           // RMS acceleration (g)
   double _dominantFreq = 0.0;  // Dominant frequency (Hz)
   double _crestFactor = 0.0;   // Crest factor (Peak/RMS)
@@ -127,6 +129,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   double _lastPrecursorScore = 0.0;
   bool _isPrecursorDriven = false;
 
+  // Fukuzono time-to-failure prediction
+  double? _fukuzonoTTF;       // seconds until predicted failure
+  double? _fukuzonoR2;        // fit quality
+  double? _fukuzonoAlpha;     // Voight α
+  double? _psdSlope;          // PSD log-log slope
+  String? _psdClassification; // earthquake / landslide / noise
+
   // Multi-standard classification (VibrationMetricsService)
   List<StandardClassification> _standardClassifications = [];
   final VibrationMetrics _vibrationMetrics = VibrationMetrics();
@@ -152,9 +161,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   DateTime? _keepAliveStartTime;
   String? _lastNotifiedAlertLevel; // Prevent duplicate notifications
   int _truncatedPackets = 0; // Count of dropped truncated BLE packets
+  Timer? _uiRefreshTimer; // Throttled UI refresh at fixed rate
+  bool _uiDirty = false; // Flag: new data arrived since last refresh
 
   // Simple/Detailed view mode toggle (simple by default for archaeologist UX)
   bool _simpleMode = true;
+  bool _hasReceivedVibData = false; // Latches true once PPV/RMS data arrives
 
   // FFT BLE data from firmware (real spectral bins)
   FftBleData? _lastFftData;
@@ -169,6 +181,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     _startFirebaseLogging();
     _loadSensorHistory();
     _initAnomalyModel();
+    // Throttled UI refresh: max 2 repaints/sec to prevent flickering
+    _uiRefreshTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) {
+      if (_uiDirty && mounted) {
+        _uiDirty = false;
+        setState(() {});
+      }
+    });
   }
 
   Future<void> _initAnomalyModel() async {
@@ -190,6 +209,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     _firebaseLogTimer?.cancel();
     _reconnectTimer?.cancel();
     _keepAliveTimer?.cancel();
+    _uiRefreshTimer?.cancel();
     _anomalyService.dispose();
     super.dispose();
   }
@@ -250,7 +270,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   }
 
   Future<void> _startScan() async {
-    if (_isScanning) return;
+    if (_isScanning || _isConnecting || _connectedDevice != null) return;
 
     setState(() {
       _isScanning = true;
@@ -258,35 +278,27 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     });
 
     try {
-      // Scan for ALL BLE devices (don't filter by service - ESP32 may not advertise it)
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 20),
-      );
-
       int devicesFound = 0;
       final lockedMac = SettingsService().settings.lockedSensorMac;
-      bool alreadyMatched = false;
+
+      _scanSubscription?.cancel();
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
-        if (alreadyMatched || _isConnecting || _connectedDevice != null) return;
+        if (_isConnecting || _connectedDevice != null) return;
         for (ScanResult r in results) {
-          // Check both platformName and advertisementData name (Android often has empty platformName)
           final platformName = r.device.platformName;
           final advName = r.advertisementData.advName;
           final name = platformName.isNotEmpty ? platformName : advName;
           final nameLower = name.toLowerCase();
 
-          // Log ALL devices for debugging (including those with empty names)
           if (devicesFound < 30) {
             debugPrint('BLE Found: platform="$platformName" adv="$advName" (${r.device.remoteId}) RSSI=${r.rssi}');
             devicesFound++;
           }
 
-          // If MAC is locked, only connect to that exact device
           bool matched = false;
           if (lockedMac.isNotEmpty) {
             matched = r.device.remoteId.str.toLowerCase() == lockedMac.toLowerCase();
           } else {
-            // Match our device by name (case insensitive) — check both name sources
             matched = nameLower.contains('ancientvision') ||
                 nameLower.contains('ancient') ||
                 nameLower.contains('m5stick') ||
@@ -295,18 +307,23 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           }
 
           if (matched) {
-            alreadyMatched = true;
             debugPrint('>>> MATCHED DEVICE: $name (${r.device.remoteId}) - connecting...');
             FlutterBluePlus.stopScan();
             _scanSubscription?.cancel();
+            _reconnectTimer?.cancel();
+            setState(() => _isScanning = false);
             _connectToDevice(r.device);
-            return; // Exit the listener
+            return;
           }
         }
       });
 
-      await Future.delayed(const Duration(seconds: 20));
-      if (_connectedDevice == null && !_isConnecting && !alreadyMatched && mounted) {
+      // Start scan AFTER setting up listener
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 20));
+
+      // startScan completes when timeout expires
+      if (_connectedDevice == null && !_isConnecting && mounted) {
+        _scanSubscription?.cancel();
         setState(() {
           _isScanning = false;
           _connectionStatus = 'Sensor not found - check device is on';
@@ -316,6 +333,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     } catch (e) {
       debugPrint('BLE Scan error: $e');
       if (mounted) {
+        _scanSubscription?.cancel();
         setState(() {
           _isScanning = false;
           _connectionStatus = 'Scan failed: $e';
@@ -325,26 +343,31 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   }
 
   Future<void> _connectToDevice(BluetoothDevice device) async {
-    if (_isConnecting) return;
+    if (_isConnecting || _connectedDevice != null) {
+      debugPrint('>>> _connectToDevice SKIPPED: isConnecting=$_isConnecting connectedDevice=$_connectedDevice');
+      return;
+    }
 
+    debugPrint('>>> _connectToDevice START: ${device.remoteId}');
     setState(() {
       _isConnecting = true;
       _connectionStatus = 'Connecting...';
     });
+    _reconnectTimer?.cancel();
 
     try {
-      // Enable auto-connect for persistent connection
       await device.connect(
         timeout: const Duration(seconds: 15),
-        autoConnect: true,
+        autoConnect: false,
       );
+      debugPrint('>>> device.connect() SUCCEEDED');
 
       setState(() {
         _connectedDevice = device;
         _isConnecting = false;
         _isScanning = false;
         _connectionStatus = 'Connected';
-        _reconnectAttempts = 0; // Reset on successful connection
+        _reconnectAttempts = 0;
       });
 
       _dspService.reset();
@@ -394,9 +417,18 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     if (!mounted) return;
     final deviceName = _connectedDevice?.platformName ?? 'Sensor';
 
+    // Cancel all BLE subscriptions to prevent stale data / duplicates on reconnect
+    for (final sub in _charSubscriptions) {
+      sub.cancel();
+    }
+    _charSubscriptions.clear();
+    _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+
     setState(() {
       _connectedDevice = null;
       _lastRssi = null;
+      _truncatedPackets = 0;
       _connectionStatus = 'Reconnecting...';
     });
 
@@ -573,8 +605,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     if (isFftCharacteristic(charUuid)) {
       _lastDataReceived = DateTime.now();
 
-      // v5.0: raw accel packets have header [seqNum, sampleCount=256]
-      if (value.length > 4 && value[1] == 256) {
+      // v5.0: raw accel packets have header [seqNum, sampleCount/2].
+      // Firmware sends FFT_SAMPLES>>1 (128) since 256 overflows uint8.
+      final sampleCountRaw = value[1];
+      final sampleCount = sampleCountRaw <= 128 ? sampleCountRaw * 2 : sampleCountRaw;
+      if (value.length > 4 && sampleCount >= 128) {
         final rawAccel = _rawAccelReassembler.addPacket(value);
         if (rawAccel != null && rawAccel.sampleCount >= 128) {
           // Run phone-side DSP on the reassembled buffer
@@ -582,17 +617,22 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             rawAccel.accelX, rawAccel.accelY, rawAccel.accelZ,
           );
 
-          // Update UI fields with DSP results (these used to come from firmware)
-          setState(() {
-            _dominantFreq = dspResult.dominantFreq;
-            _centroid = dspResult.spectralCentroid;
-            _kurtosis = dspResult.kurtosis;
-            _arias = dspResult.ariasIntensity;
-            _cav = dspResult.cav;
-            _dwt1 = dspResult.dwtEnergy1;
-            _dwt2 = dspResult.dwtEnergy2;
-            _dwt3 = dspResult.dwtEnergy3;
-          });
+          // Compute vector sum PPV from raw acceleration data
+          _vectorPPV = _dspService.computeVectorSumPPV(
+            rawAccel.accelX, rawAccel.accelY, rawAccel.accelZ,
+          );
+
+          // Update fields directly — throttled timer handles UI refresh
+          _dominantFreq = dspResult.dominantFreq;
+          _centroid = dspResult.spectralCentroid;
+          _kurtosis = dspResult.kurtosis;
+          _arias = dspResult.ariasIntensity;
+          _cav = dspResult.cav;
+          _dwt1 = dspResult.dwtEnergy1;
+          _dwt2 = dspResult.dwtEnergy2;
+          _dwt3 = dspResult.dwtEnergy3;
+          _psdSlope = dspResult.psdSlope;
+          _uiDirty = true;
 
           // Feed spectrogram with real FFT data from phone DSP
           final column = List<double>.filled(128, 0.0);
@@ -638,7 +678,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             ),
           );
         }
-        setState(() {});
+        _uiDirty = true;
         return;
       }
 
@@ -651,8 +691,10 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       // Debug: log received data with full UUID
       debugPrint('>>> PARSED BLE Data UUID=$charUuid data=$data');
 
-      setState(() {
+      // Update fields directly — UI refreshes on throttled timer
+      {
         _lastUpdate = _formatTime(DateTime.now());
+        _uiDirty = true;
 
         // Match by last part of UUID (the unique suffix)
         // IMU: beb5483e-36e1-4688-b7f5-ea07361b26a8
@@ -667,6 +709,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
           // Parse v2.0+ fields (backward compatible - defaults to 0 if missing)
           _ppv = (data['ppv'] as num?)?.toDouble() ?? 0.0;
+          if (_ppv > 0 || _rms > 0) _hasReceivedVibData = true;
           _rms = (data['rms'] as num?)?.toDouble() ?? 0.0;
           _dominantFreq = (data['freq'] as num?)?.toDouble() ?? 0.0;
           _crestFactor = (data['crest'] as num?)?.toDouble() ?? 0.0;
@@ -768,17 +811,17 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           _batteryPercent = (data['percent'] as num?)?.toInt() ?? 100;
           _batteryCharging = data['charging'] as bool? ?? false;
 
-          debugPrint('>>> BATTERY: ${_batteryPercent}% (${_batteryVoltage}V) ${_batteryCharging ? 'CHARGING' : ''}');
+          debugPrint('>>> BATTERY: $_batteryPercent% ($_batteryVoltage V) ${_batteryCharging ? 'CHARGING' : ''}');
 
           // Low battery warning
           if (_batteryPercent < 20 && !_batteryCharging) {
             NotificationService().showSafetyWarning(
-              message: 'M5StickC Plus 2 battery low: ${_batteryPercent}%',
+              message: 'M5StickC Plus 2 battery low: $_batteryPercent%',
               sensorType: 'Device Battery',
             );
           }
         }
-      });
+      }
 
       // Run heavy processing outside setState to avoid blocking BLE
       if (charUuid.endsWith('26a8') || charUuid.contains('b26a8')) {
@@ -850,7 +893,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     } else if (_dominantFreq > 0 || _rms > 0) {
       const fftBins = 128;
       final column = List<double>.filled(fftBins, 0.0);
-      final binResolution = 200.0 / 256;
+      const binResolution = 200.0 / 256;
 
       if (_dominantFreq > 0 && _rms > 0) {
         final dominantBin = (_dominantFreq / binResolution).round().clamp(0, fftBins - 1);
@@ -922,6 +965,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         'arias': _arias,
         'cav': _cav,
         'temp': _temp,
+        'psdSlope': _psdSlope ?? 0.0,
       };
 
       final result = _anomalyService.detect(features);
@@ -931,7 +975,42 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       needsRebuild = true;
     }
 
-    // 5b. Check for precursor patterns
+    // 5b. Feed PSD slope to adaptive service and compute Fukuzono
+    if (_psdSlope != null) {
+      _anomalyService.adaptiveService.updatePsdSlope(_psdSlope!);
+    }
+    if (_anomalyService.adaptiveService.isCalibrated) {
+      final fukuzono = _anomalyService.adaptiveService.computeFukuzono();
+      if (fukuzono != null) {
+        _fukuzonoTTF = fukuzono.ttfSeconds;
+        _fukuzonoR2 = fukuzono.r2;
+        _fukuzonoAlpha = fukuzono.alpha;
+        _psdClassification = fukuzono.psdClassification;
+        needsRebuild = true;
+
+        // Trigger full-screen alert if failure predicted within 10 minutes
+        if (fukuzono.ttfSeconds < 600 && fukuzono.r2 > 0.7) {
+          final mins = (fukuzono.ttfSeconds / 60).floor();
+          final secs = (fukuzono.ttfSeconds % 60).floor();
+          _triggerFullScreenAlert(
+            'FUKUZONO PREDICTION: Soil failure in ~${mins}m ${secs}s. Evacuate immediately!',
+            'critical',
+          );
+          HapticFeedback.heavyImpact();
+        }
+      } else {
+        _fukuzonoTTF = null;
+        _fukuzonoR2 = null;
+        _fukuzonoAlpha = null;
+        // Keep psdClassification from PSD slope directly
+        if (_psdSlope != null) {
+          final s = _psdSlope!;
+          _psdClassification = s > -1.5 ? 'earthquake' : (s > -9.0 ? 'landslide' : 'noise');
+        }
+      }
+    }
+
+    // 5c. Check for precursor patterns
     if (_anomalyService.adaptiveService.isCalibrated) {
       final adaptiveResult = _anomalyService.adaptiveService.detect({
         'ppv': _ppv, 'rms': _rms, 'crest': _crestFactor,
@@ -942,6 +1021,46 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         _lastPrecursorScore = adaptiveResult.precursorScore;
         _isPrecursorDriven = adaptiveResult.isPrecursorDriven;
         needsRebuild = true;
+
+        // Surface precursor patterns to the user
+        if (_lastPrecursorPattern != null && _lastPrecursorPattern != 'none') {
+          final patternLabel = _formatPrecursorPattern(_lastPrecursorPattern!);
+          final confidence = (_lastPrecursorScore * 100).toStringAsFixed(0);
+
+          if (_lastPrecursorPattern == 'imminent_failure') {
+            // Critical level: trigger full-screen alert + heavy haptic + alarm sound
+            _triggerFullScreenAlert(
+              'IMMINENT FAILURE PATTERN DETECTED: $patternLabel ($confidence% confidence). Evacuate area immediately!',
+              'critical',
+            );
+            HapticFeedback.heavyImpact();
+          } else if (_lastPrecursorPattern == 'crack_propagation') {
+            // Warning level: show snackbar + medium haptic
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('WARNING: $patternLabel detected ($confidence% confidence)'),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 8),
+                  action: SnackBarAction(
+                    label: 'DETAILS',
+                    textColor: Colors.white,
+                    onPressed: () {
+                      // User can see details in the precursor card already shown
+                    },
+                  ),
+                ),
+              );
+            }
+            // Medium haptic feedback
+            HapticFeedback.mediumImpact();
+          } else if (_lastPrecursorPattern == 'soil_creep') {
+            // Caution level: log and rely on visual indicator (already shown in UI) + light haptic
+            debugPrint('PRECURSOR: Soil creep pattern detected ($confidence% confidence)');
+            // Light haptic feedback
+            HapticFeedback.lightImpact();
+          }
+        }
       }
     }
 
@@ -959,9 +1078,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       }
     }
 
-    // Single batched setState for all deferred analytics
+    // Mark UI dirty — throttled timer will call setState
     if (needsRebuild && mounted) {
-      setState(() {});
+      _uiDirty = true;
     }
 
     // Clear transient flash after short delay
@@ -1232,38 +1351,41 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             ),
           ),
           child: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // HEADER
-                  Row(
+            child: Column(
+              children: [
+                // HEADER (fixed at top)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                  child: Column(
                     children: [
-                      const Icon(Icons.engineering_rounded, color: Colors.white, size: 26),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Trench Safety',
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
-                      ),
-                      const Spacer(),
-                      LiveChip(isConnected: isConnected, status: _connectionStatus),
-                      if (isConnected) ...[
-                        const SizedBox(width: 8),
-                        _buildBatteryChip(),
-                        if (_lastRssi != null) ...[
+                      Row(
+                        children: [
+                          const Icon(Icons.engineering_rounded, color: Colors.white, size: 26),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Trench Safety',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          LiveChip(isConnected: isConnected, status: _connectionStatus),
+                          if (isConnected) ...[
+                            const SizedBox(width: 4),
+                            _buildBatteryChip(),
+                            if (_lastRssi != null) ...[
+                              const SizedBox(width: 4),
+                              _buildRssiChip(),
+                            ],
+                          ],
                           const SizedBox(width: 4),
-                          _buildRssiChip(),
+                          _buildSimpleModeToggle(),
                         ],
-                      ],
-                      const SizedBox(width: 8),
-                      _buildSimpleModeToggle(),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
+                      ),
+                      const SizedBox(height: 8),
 
-              // Connection status and action buttons
-              Row(
+                      // Connection status and action buttons
+                      Row(
                 children: [
                   Expanded(
                     child: Column(
@@ -1358,278 +1480,466 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // ===== SIMPLE MODE: archaeologist-friendly status =====
-              if (_simpleMode) ...[
-                _buildSimpleStatusDisplay(isConnected),
-
-                // Current Alert Banner (always visible in both modes)
-                if (_alertLevel != 'safe' && _alertMessage.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  CurrentAlertBanner(level: _alertLevel, message: _alertMessage),
-                ],
-
-                // Test Alert button (always available in both modes)
-                if (isConnected && _alertCharacteristic != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: GestureDetector(
-                      onTap: () => _writeAlertCommand('test'),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withAlpha(15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white.withAlpha(40)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.notifications_active, color: Colors.white.withAlpha(150), size: 16),
-                            const SizedBox(width: 6),
-                            Text('Test Alert', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
-                          ],
-                        ),
-                      ),
+                      ],
                     ),
-                  ),
+                  ],
+                ),
+              ),
 
-                const SizedBox(height: 100),
-              ],
-
-              // ===== DETAILED MODE: full technical view (unchanged) =====
-              if (!_simpleMode) ...[
-              // STATS ROW - PPV (primary metric) + Moisture
-              Row(
-                children: [
+                // ===== SIMPLE MODE: archaeologist-friendly status =====
+                if (_simpleMode)
                   Expanded(
-                    child: SafetyStatCard(
-                      title: 'PPV (DIN 4150-3)',
-                      value: _ppv > 0 ? '${_ppv.toStringAsFixed(1)} mm/s' : '${_vibration.toStringAsFixed(3)} g',
-                      status: _getVibrationStatus(),
-                      statusColor: _getPPVColor(),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: SafetyStatCard(
-                      title: 'Soil Moisture',
-                      value: '$_moisturePercent %',
-                      status: _getMoistureStatus(),
-                      statusColor: (_moisturePercent < 30 || _moisturePercent > 60) ? Colors.orange : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Vibration Analysis Card (v4.0)
-              VibrationAnalysisCard(
-                ppv: _ppv,
-                rms: _rms,
-                dominantFreq: _dominantFreq,
-                crestFactor: _crestFactor,
-                ppvSmoothed: _ppvSmoothed,
-                ppvPeakHold: _ppvPeakHold,
-                kurtosis: _kurtosis,
-                staLtaRatio: _staLtaRatio,
-                centroid: _centroid,
-                arias: _arias,
-                cav: _cav,
-                temp: _temp,
-                dwt1: _dwt1,
-                dwt2: _dwt2,
-                dwt3: _dwt3,
-                hazardType: _hazardType,
-                hazardLabel: _getHazardTypeLabel(),
-                ppvColor: _getPPVColor(),
-                isConnected: isConnected,
-                damageAssessment: _generateDamageAssessment(),
-                onHistoryTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const VibrationEventLogScreen()),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-
-              // Multi-Standard Classification Card
-              if (_ppv > 0 || _rms > 0)
-                MultiStandardCard(
-                  classifications: _standardClassifications,
-                  damageIndex: _vibrationMetrics.damageIndex,
-                  housnerSI: _housnerSI,
-                  isConnected: isConnected,
-                ),
-              if (_ppv > 0 || _rms > 0)
-                const SizedBox(height: 12),
-
-              // Wavelet Analysis Card (app-side DWT)
-              if (_waveletBandEnergy.isNotEmpty)
-                WaveletAnalysisCard(
-                  bandEnergy: _waveletBandEnergy,
-                  transients: _waveletTransients,
-                  transientFlash: _transientFlash,
-                  bufferFill: _waveletBuffer.length / _waveletBuffer.capacity,
-                ),
-              if (_waveletBandEnergy.isNotEmpty)
-                const SizedBox(height: 12),
-
-              // PPV Trend Graph with DIN 4150-3 limit lines
-              // PPV Trend Warning Banner
-              if (_ppvPrediction != null && _ppvPrediction!.isTrendingUp && _ppvPrediction!.minutesToLimit != null)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF8F00).withAlpha(30),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFF8F00).withAlpha(100), width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.trending_up, color: Color(0xFFFF8F00), size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'PPV trending toward DIN 4150-3 limit in ~${_ppvPrediction!.minutesToLimit!.toStringAsFixed(1)} min '
-                          '(R²=${_ppvPrediction!.rSquared.toStringAsFixed(2)})',
-                          style: const TextStyle(color: Color(0xFFFF8F00), fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              RepaintBoundary(
-                child: PPVTrendGraphCard(
-                  ppvHistory: _ppvHistory.toList(),
-                  prediction: _ppvPrediction,
-                  kalmanHistory: _ppvKalmanHistory.toList(),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Time-Frequency Spectrogram (RepaintBoundary isolates repaints)
-              if (_spectrogramBuffer.length > 2)
-                RepaintBoundary(child: _buildSpectrogramCard()),
-              if (_spectrogramBuffer.length > 2)
-                const SizedBox(height: 12),
-
-              // ML / Adaptive Anomaly Detection Indicator (Tier 2)
-              if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
-                MLAnomalyIndicator(
-                  result: _lastAnomalyResult,
-                  features: _lastMLFeatures,
-                  anomalyHistory: _anomalyScoreHistory.toList(),
-                  modelVersion: _anomalyService.modeLabel,
-                ),
-              if (_mlModelLoaded && (_ppv > 0 || _rms > 0))
-                const SizedBox(height: 12),
-
-              if (_isPrecursorDriven && _lastPrecursorPattern != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF6F00).withAlpha(30),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFF6F00).withAlpha(100), width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF6F00), size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'PRECURSOR: ${_formatPrecursorPattern(_lastPrecursorPattern!)}',
-                              style: const TextStyle(color: Color(0xFFFF6F00), fontSize: 13, fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Confidence: ${(_lastPrecursorScore * 100).toStringAsFixed(0)}% — Physics-informed pattern match',
-                              style: TextStyle(color: const Color(0xFFFF6F00).withAlpha(180), fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Live Sensors Card (legacy + enhanced)
-              LiveSensorsCard(
-                accX: _accX, accY: _accY, accZ: _accZ,
-                vibration: _vibration,
-                moisturePercent: _moisturePercent,
-                lastUpdate: _lastUpdate,
-                isConnected: isConnected,
-                ppv: _ppv,
-                dominantFreq: _dominantFreq,
-                crestFactor: _crestFactor,
-                rms: _rms,
-                hazardType: _hazardType,
-              ),
-              const SizedBox(height: 12),
-
-              // Sensor History Graph Card (legacy moisture + vibration)
-              RepaintBoundary(
-                child: SensorHistoryGraphCard(sensorHistory: _sensorHistory.toList()),
-              ),
-              const SizedBox(height: 12),
-
-              // Alerts Card
-              SafetyAlertsCard(alerts: _alerts),
-              const SizedBox(height: 12),
-
-              // Current Alert Banner (if any)
-              if (_alertLevel != 'safe' && _alertMessage.isNotEmpty)
-                CurrentAlertBanner(level: _alertLevel, message: _alertMessage),
-
-              // Test Alert button (only when connected)
-              if (isConnected && _alertCharacteristic != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: GestureDetector(
-                    onTap: () => _writeAlertCommand('test'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withAlpha(40)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                      child: Column(
                         children: [
-                          Icon(Icons.notifications_active, color: Colors.white.withAlpha(150), size: 16),
-                          const SizedBox(width: 6),
-                          Text('Test Alert', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
+                          _buildSimpleStatusDisplay(isConnected),
+
+                          // Current Alert Banner (always visible in both modes)
+                          if (_alertLevel != 'safe' && _alertMessage.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            CurrentAlertBanner(level: _alertLevel, message: _alertMessage),
+                          ],
+
+                          // Test Alert button (always available in both modes)
+                          if (isConnected && _alertCharacteristic != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: GestureDetector(
+                                onTap: () => _writeAlertCommand('test'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withAlpha(15),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white.withAlpha(40)),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.notifications_active, color: Colors.white.withAlpha(150), size: 16),
+                                      const SizedBox(width: 6),
+                                      Text('Test Alert', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                          const SizedBox(height: 100),
                         ],
                       ),
                     ),
                   ),
-                ),
 
-              const SizedBox(height: 12),
-              const SafetyInsightCard(),
-              const SizedBox(height: 100),
-              ], // end !_simpleMode
-            ],
+                // ===== DETAILED MODE: tabbed technical view =====
+                if (!_simpleMode)
+                  Expanded(
+                    child: DefaultTabController(
+                      length: 3,
+                      child: Column(
+                        children: [
+                          // Tab Bar
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 24),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withAlpha(10),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: TabBar(
+                              indicatorSize: TabBarIndicatorSize.tab,
+                              indicator: BoxDecoration(
+                                color: const Color(0xFFFFC107),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              labelColor: const Color(0xFF0D3A39),
+                              unselectedLabelColor: Colors.white.withAlpha(180),
+                              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                              unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                              tabs: const [
+                                Tab(text: 'STATUS'),
+                                Tab(text: 'ANALYSIS'),
+                                Tab(text: 'STANDARDS'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Tab Bar View
+                          Expanded(
+                            child: TabBarView(
+                              children: [
+                                _buildStatusTab(isConnected),
+                                _buildAnalysisTab(isConnected),
+                                _buildStandardsTab(isConnected),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
-      ),
-    ),
       ],
+    );
+  }
+
+  /// Build STATUS tab - most important, shown first
+  Widget _buildStatusTab(bool isConnected) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // STATS ROW - PPV (primary metric) + Moisture
+          Row(
+            children: [
+              Expanded(
+                child: SafetyStatCard(
+                  title: 'PPV (DIN 4150-3)',
+                  value: _ppv > 0 ? '${_ppv.toStringAsFixed(1)} mm/s' : '${_vibration.toStringAsFixed(3)} g',
+                  status: _getVibrationStatus(),
+                  statusColor: _getPPVColor(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SafetyStatCard(
+                  title: 'Soil Moisture',
+                  value: '$_moisturePercent %',
+                  status: _getMoistureStatus(),
+                  statusColor: (_moisturePercent < 30 || _moisturePercent > 60) ? Colors.orange : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Vibration Analysis Card (v4.0)
+          VibrationAnalysisCard(
+            ppv: _ppv,
+            rms: _rms,
+            dominantFreq: _dominantFreq,
+            crestFactor: _crestFactor,
+            ppvSmoothed: _ppvSmoothed,
+            ppvPeakHold: _ppvPeakHold,
+            kurtosis: _kurtosis,
+            staLtaRatio: _staLtaRatio,
+            centroid: _centroid,
+            arias: _arias,
+            cav: _cav,
+            temp: _temp,
+            dwt1: _dwt1,
+            dwt2: _dwt2,
+            dwt3: _dwt3,
+            hazardType: _hazardType,
+            hazardLabel: _getHazardTypeLabel(),
+            ppvColor: _getPPVColor(),
+            isConnected: isConnected,
+            damageAssessment: _generateDamageAssessment(),
+            onHistoryTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const VibrationEventLogScreen()),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // Precursor pattern warning card (if active)
+          if (_isPrecursorDriven && _lastPrecursorPattern != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6F00).withAlpha(30),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFFF6F00).withAlpha(100), width: 1),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF6F00), size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'PRECURSOR: ${_formatPrecursorPattern(_lastPrecursorPattern!)}',
+                          style: const TextStyle(color: Color(0xFFFF6F00), fontSize: 13, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Confidence: ${(_lastPrecursorScore * 100).toStringAsFixed(0)}% — Physics-informed pattern match',
+                          style: TextStyle(color: const Color(0xFFFF6F00).withAlpha(180), fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Fukuzono TTF & PSD classification
+          if (_fukuzonoTTF != null || _psdClassification != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: (_fukuzonoTTF != null && _fukuzonoTTF! < 600)
+                    ? Colors.red.withAlpha(30)
+                    : Colors.blueGrey.withAlpha(20),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: (_fukuzonoTTF != null && _fukuzonoTTF! < 600)
+                      ? Colors.red.withAlpha(100)
+                      : Colors.blueGrey.withAlpha(60),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_fukuzonoTTF != null) ...[
+                    Text(
+                      'Failure: ~${(_fukuzonoTTF! / 60).floor()}m ${(_fukuzonoTTF! % 60).floor()}s (R\u00B2=${_fukuzonoR2?.toStringAsFixed(2) ?? "?"})',
+                      style: TextStyle(
+                        color: _fukuzonoTTF! < 600 ? Colors.red : Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (_fukuzonoAlpha != null)
+                      Text(
+                        '\u03B1=${_fukuzonoAlpha!.toStringAsFixed(2)} (soil: 1.9-2.1)',
+                        style: const TextStyle(color: Colors.white54, fontSize: 11),
+                      ),
+                  ],
+                  if (_psdClassification != null)
+                    Text(
+                      'PSD: $_psdClassification (slope=${_psdSlope?.toStringAsFixed(1) ?? "?"})',
+                      style: TextStyle(
+                        color: _psdClassification == 'landslide' ? Colors.orange : Colors.white54,
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // ML / Adaptive Anomaly Detection Indicator (Tier 2)
+          if (_mlModelLoaded && _hasReceivedVibData)
+            MLAnomalyIndicator(
+              result: _lastAnomalyResult,
+              features: _lastMLFeatures,
+              anomalyHistory: _anomalyScoreHistory.toList(),
+              modelVersion: _anomalyService.modeLabel,
+            ),
+          if (_mlModelLoaded && _hasReceivedVibData)
+            const SizedBox(height: 12),
+
+          // Live Sensors Card (legacy + enhanced)
+          LiveSensorsCard(
+            accX: _accX, accY: _accY, accZ: _accZ,
+            vibration: _vibration,
+            moisturePercent: _moisturePercent,
+            lastUpdate: _lastUpdate,
+            isConnected: isConnected,
+            ppv: _ppv,
+            dominantFreq: _dominantFreq,
+            crestFactor: _crestFactor,
+            rms: _rms,
+            hazardType: _hazardType,
+          ),
+          const SizedBox(height: 12),
+
+          // Alerts Card
+          SafetyAlertsCard(alerts: _alerts),
+          const SizedBox(height: 12),
+
+          // Current Alert Banner (if any)
+          if (_alertLevel != 'safe' && _alertMessage.isNotEmpty)
+            CurrentAlertBanner(level: _alertLevel, message: _alertMessage),
+
+          // Test Alert button (only when connected)
+          if (isConnected && _alertCharacteristic != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: GestureDetector(
+                onTap: () => _writeAlertCommand('test'),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withAlpha(40)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.notifications_active, color: Colors.white.withAlpha(150), size: 16),
+                      const SizedBox(width: 6),
+                      Text('Test Alert', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 12),
+          const SafetyInsightCard(),
+          const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  /// Build ANALYSIS tab - visualizations and trends
+  Widget _buildAnalysisTab(bool isConnected) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Wavelet Analysis Card (app-side DWT)
+          if (_waveletBandEnergy.isNotEmpty)
+            WaveletAnalysisCard(
+              bandEnergy: _waveletBandEnergy,
+              transients: _waveletTransients,
+              transientFlash: _transientFlash,
+              bufferFill: _waveletBuffer.length / _waveletBuffer.capacity,
+            ),
+          if (_waveletBandEnergy.isNotEmpty)
+            const SizedBox(height: 12),
+
+          // PPV Trend Warning Banner
+          if (_ppvPrediction != null && _ppvPrediction!.isTrendingUp && _ppvPrediction!.minutesToLimit != null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF8F00).withAlpha(30),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFFF8F00).withAlpha(100), width: 1),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.trending_up, color: Color(0xFFFF8F00), size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'PPV trending toward DIN 4150-3 limit in ~${_ppvPrediction!.minutesToLimit!.toStringAsFixed(1)} min '
+                      '(R²=${_ppvPrediction!.rSquared.toStringAsFixed(2)})',
+                      style: const TextStyle(color: Color(0xFFFF8F00), fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // PPV Trend Graph with DIN 4150-3 limit lines
+          RepaintBoundary(
+            child: PPVTrendGraphCard(
+              ppvHistory: _ppvHistory.toList(),
+              prediction: _ppvPrediction,
+              kalmanHistory: _ppvKalmanHistory.toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Time-Frequency Spectrogram (RepaintBoundary isolates repaints)
+          if (_spectrogramBuffer.length > 2)
+            RepaintBoundary(child: _buildSpectrogramCard()),
+          if (_spectrogramBuffer.length > 2)
+            const SizedBox(height: 12),
+
+          // Sensor History Graph Card (legacy moisture + vibration)
+          RepaintBoundary(
+            child: SensorHistoryGraphCard(sensorHistory: _sensorHistory.toList()),
+          ),
+          const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  /// Build STANDARDS tab - multi-standard classification and detailed metrics
+  Widget _buildStandardsTab(bool isConnected) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Multi-Standard Classification Card
+          if (_hasReceivedVibData)
+            MultiStandardCard(
+              classifications: _standardClassifications,
+              damageIndex: _vibrationMetrics.damageIndex,
+              housnerSI: _housnerSI,
+              isConnected: isConnected,
+            ),
+          if (_hasReceivedVibData)
+            const SizedBox(height: 12),
+
+          // Detailed metrics display
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(10),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withAlpha(40)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Detailed Metrics',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                _buildMetricRow('Kurtosis', _kurtosis.toStringAsFixed(2)),
+                _buildMetricRow('Crest Factor', _crestFactor.toStringAsFixed(2)),
+                _buildMetricRow('STA/LTA Ratio', _staLtaRatio.toStringAsFixed(2)),
+                _buildMetricRow('CAV', '${_cav.toStringAsFixed(3)} g·s'),
+                _buildMetricRow('Arias Intensity', '${_arias.toStringAsFixed(3)} m/s'),
+                _buildMetricRow('Spectral Centroid', '${_centroid.toStringAsFixed(1)} Hz'),
+                _buildMetricRow('DWT Level 1 (50-100Hz)', _dwt1.toStringAsFixed(3)),
+                _buildMetricRow('DWT Level 2 (25-50Hz)', _dwt2.toStringAsFixed(3)),
+                _buildMetricRow('DWT Level 3 (12-25Hz)', _dwt3.toStringAsFixed(3)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  /// Helper to build a metric row
+  Widget _buildMetricRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 13),
+          ),
+          Text(
+            value,
+            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1846,6 +2156,34 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                 ),
               ),
 
+              // Vector PPV (from phone-side DSP)
+              if (_vectorPPV > 0) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.blue.withAlpha(60)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.all_inclusive, color: Colors.blue.withAlpha(200), size: 18),
+                      const SizedBox(width: 10),
+                      Text(
+                        "Vector PPV: ${_vectorPPV.toStringAsFixed(1)} mm/s",
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(200),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // DIN standard compliance badge
               if (dinBadge.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -1888,14 +2226,17 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                         size: 16,
                       ),
                       const SizedBox(width: 8),
-                      Text(
+                      Flexible(
+                        child: Text(
                         'Soil Moisture: $_moisturePercent% - ${_getMoistureStatus()}',
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: (_moisturePercent < 30 || _moisturePercent > 60)
                               ? Colors.orange
                               : Colors.white.withAlpha(180),
                           fontSize: 13,
                         ),
+                      ),
                       ),
                     ],
                   ),
@@ -1985,6 +2326,26 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                         ),
                       ),
                     ],
+                  ),
+                ),
+              ],
+
+              // Fukuzono TTF / PSD (simple mode)
+              if (_fukuzonoTTF != null || _psdClassification != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  [
+                    if (_fukuzonoTTF != null)
+                      'Failure: ~${(_fukuzonoTTF! / 60).floor()}m ${(_fukuzonoTTF! % 60).floor()}s (R\u00B2=${_fukuzonoR2?.toStringAsFixed(2) ?? "?"})',
+                    if (_psdClassification != null)
+                      'PSD: $_psdClassification',
+                  ].join(' | '),
+                  style: TextStyle(
+                    color: (_fukuzonoTTF != null && _fukuzonoTTF! < 600)
+                        ? Colors.red
+                        : Colors.white54,
+                    fontSize: 12,
+                    fontWeight: _fukuzonoTTF != null ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
               ],
@@ -2177,7 +2538,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               ),
               const SizedBox(width: 4),
               Text(
-                '${_batteryPercent}%',
+                '$_batteryPercent%',
                 style: TextStyle(
                   color: batteryColor,
                   fontSize: 11,

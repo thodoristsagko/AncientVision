@@ -260,11 +260,11 @@ class VibrationAnomalyService {
     final freq = features['freq'] ?? 0.0;
 
     // Thresholds tuned for MICRO-VIBRATION precursor detection.
-    // Much higher than DIN 4150-3 structural limits — we want to ignore
-    // normal site activity (footsteps, tools, wind) and only flag patterns
-    // that genuinely hint at soil instability.
-    const ppvConcern = 5.0;     // mm/s — well above normal site noise (~0.1-2.0)
-    const ppvDanger = 15.0;     // mm/s — serious ground movement
+    // Lowered for enhanced sensitivity to early-stage precursors.
+    // Background site activity (footsteps, tools) typically <0.5 mm/s.
+    // These thresholds catch genuine soil micro-movements before they escalate.
+    const ppvConcern = 1.0;     // mm/s — subtle ground movement, early precursor
+    const ppvDanger = 3.0;      // mm/s — significant ground movement, requires attention
 
     // Weighted sub-scores (0.0 = normal, 1.0 = severe)
     double ppvScore = 0.0;
@@ -301,15 +301,24 @@ class VibrationAnomalyService {
       seismicScore = min(1.0, ppv / ppvConcern);
     }
 
+    // PSD slope landslide discrimination (-3 to -9 = landslide signature)
+    final psdSlope = features['psdSlope'] ?? 0.0;
+    double psdScore = 0.0;
+    if (psdSlope < -3.0 && psdSlope > -9.0) {
+      // In landslide band: confidence scales with how centered in band
+      psdScore = min(1.0, (-psdSlope - 3.0) / 3.0);
+    }
+
     // Weighted aggregate — STA/LTA and seismic band get more weight
     // as they're better precursor indicators than raw amplitude
-    final aggregate = ppvScore * 0.15 +
-        rmsScore * 0.05 +
-        crestScore * 0.10 +
-        kurtosisScore * 0.15 +
-        staltaScore * 0.25 +
-        cavScore * 0.10 +
-        seismicScore * 0.20;
+    final aggregate = ppvScore * 0.14 +
+        rmsScore * 0.04 +
+        crestScore * 0.09 +
+        kurtosisScore * 0.14 +
+        staltaScore * 0.23 +
+        cavScore * 0.09 +
+        seismicScore * 0.18 +
+        psdScore * 0.09;
 
     final score = aggregate.clamp(0.0, 1.0);
 

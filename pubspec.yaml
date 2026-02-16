@@ -24,13 +24,9 @@ dependencies:
   flutter_blue_plus: ^1.31.0
   # Ultra-advanced photogrammetry features
   image: ^4.1.7  # Advanced image processing & quality analysis
-  sensors_plus: ^4.0.2  # Device sensors for AR-like guidance
   camera: ^0.10.5+9  # Advanced camera control (photo & video)
   archive: ^3.4.10  # ZIP creation for exports
-  model_viewer_plus: ^1.7.0  # 3D model viewer (WebView-based)
   vector_math: ^2.1.4  # 3D math utilities for custom point cloud rendering
-  video_player: ^2.8.2  # Video playback for frame extraction
-  video_thumbnail: ^0.5.3  # Extract frames from video for photogrammetry
   # ULTRA++ Advanced Features
   mobile_scanner: ^5.1.1  # QR/barcode scanning with MLKit (modern replacement for qr_code_scanner)
   device_info_plus: ^10.1.0  # Device info for RAM detection and hardware capabilities
@@ -50,7 +46,6 @@ dependencies:
   flutter_background_service: ^5.0.5  # Background service to keep app running
   flutter_background_service_android: ^6.2.2  # Android-specific background service
   fl_chart: ^0.66.0  # Charts for analytics visualization
-  fftea: ^1.5.0  # FFT for vibration frequency spectrum visualization
   connectivity_plus: ^5.0.2  # Network connectivity monitoring for offline indicator
   # AI & Machine Learning
   google_mlkit_image_labeling: ^0.12.0  # On-device AI image classification

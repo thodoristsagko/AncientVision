@@ -261,6 +261,11 @@ class ImageService {
       debugPrint('ImageService: Old temp cleanup error: $e');
     }
   }
+
+  /// Clean up resources
+  void dispose() {
+    cleanupTempFiles();
+  }
 }
 
 /// Result of image quality analysis

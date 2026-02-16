@@ -42,8 +42,9 @@ class OfflineQueueService {
     final prefs = await SharedPreferences.getInstance();
     final queue = _loadQueue(prefs);
     if (queue.length >= _maxItems) {
-      debugPrint('OfflineQueue: Queue full (${queue.length} items), dropping oldest');
-      queue.removeAt(0);
+      final overflow = queue.length - _maxItems + 1;
+      debugPrint('OfflineQueue: Queue full (${queue.length} items), dropping $overflow oldest');
+      queue.removeRange(0, overflow);
     }
     queue.add({
       'collection': collection,

@@ -8,15 +8,14 @@ import 'package:http/http.dart' as http;
 import '../models/finding_model.dart';
 import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
-import '../services/export_service.dart';
 import 'finding_details_page.dart';
 import 'findings_map_screen.dart';
 import 'quick_capture_screen.dart';
 import 'ai_recognition_screen.dart';
 import 'manual_entry_form_screen.dart';
-import 'photogrammetry_screen.dart';
+import 'photogrammetry/photogrammetry_screen.dart';
 import '../widgets/finding_detail_card.dart';
-import '../main.dart' show imgbbApiKey;
+import '../config/env_config.dart';
 
 class FindingsView extends StatefulWidget {
   const FindingsView({super.key});
@@ -32,10 +31,6 @@ class _FindingsViewState extends State<FindingsView> {
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   FindingSource? _selectedSource; // null means "All"
-
-  // Batch selection mode
-  bool _isSelectionMode = false;
-  final Set<String> _selectedIds = {};
 
   // Filter chips visibility
   bool _showFilters = false;
@@ -85,103 +80,6 @@ class _FindingsViewState extends State<FindingsView> {
       _selectedSource = source;
     });
     _filterFindings(_searchController.text);
-  }
-
-  // Batch selection methods
-  void _toggleSelectionMode() {
-    setState(() {
-      _isSelectionMode = !_isSelectionMode;
-      if (!_isSelectionMode) {
-        _selectedIds.clear();
-      }
-    });
-  }
-
-  void _selectAll() {
-    setState(() {
-      _selectedIds.addAll(_filteredFindings.map((f) => f.id));
-    });
-  }
-
-  void _clearSelection() {
-    setState(() {
-      _selectedIds.clear();
-    });
-  }
-
-  Future<void> _showBatchExportDialog() async {
-    if (_selectedIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No findings selected')),
-      );
-      return;
-    }
-
-    final selectedFindings = _filteredFindings
-        .where((f) => _selectedIds.contains(f.id))
-        .toList();
-
-    final format = await showModalBottomSheet<ExportFormat>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _BatchExportSheet(
-        selectedCount: selectedFindings.length,
-      ),
-    );
-
-    if (format == null || !mounted) return;
-
-
-    try {
-      // Convert findings to export format
-      final findingsData = selectedFindings.map((f) => {
-        'id': f.id,
-        'type': f.type,
-        'site': f.site,
-        'name': f.name,
-        'date': f.date,
-        'latitude': f.latitude,
-        'longitude': f.longitude,
-        'source': f.source.name,
-      }).toList();
-
-      final exportService = ExportService();
-      final file = await exportService.batchExportFindings(
-        findings: findingsData,
-        format: format,
-        includePhotos: true,
-        onProgress: (progress, status) {
-          debugPrint('Export progress: ${(progress * 100).toStringAsFixed(0)}% - $status');
-        },
-      );
-
-      if (file != null && mounted) {
-        // Share the file
-        await exportService.shareFile(file);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Exported ${selectedFindings.length} findings'),
-            backgroundColor: const Color(0xFF4CAF50),
-          ),
-        );
-
-        // Exit selection mode
-        _toggleSelectionMode();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Export failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-      }
-    }
   }
 
   Widget _buildSourceChip(FindingSource? source, String label, IconData icon) {
@@ -626,72 +524,9 @@ class _FindingsViewState extends State<FindingsView> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    // Selection mode controls
-                    if (_isSelectionMode) ...[
-                      GestureDetector(
-                        onTap: _showBatchExportDialog,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.file_download, color: Colors.white, size: 16),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Export (${_selectedIds.length})',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        onTap: _selectedIds.length == _filteredFindings.length
-                            ? _clearSelection
-                            : _selectAll,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withAlpha(26),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Text(
-                            _selectedIds.length == _filteredFindings.length ? 'None' : 'All',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        onTap: _toggleSelectionMode,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withAlpha(204),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.close, color: Colors.white, size: 16),
-                        ),
-                      ),
-                    ],
                     const Spacer(),
                     // Add button (FAB-style) - opens bottom sheet with options
-                    if (AuthService.currentUser != null && !_isSelectionMode)
+                    if (AuthService.currentUser != null)
                       GestureDetector(
                         onTap: () => _showAddOptions(context),
                         child: Container(
@@ -913,28 +748,7 @@ class _FindingsViewState extends State<FindingsView> {
                             return GestureDetector(
                               key: Key(f.id),
                               onTap: () {
-                                if (_isSelectionMode) {
-                                  setState(() {
-                                    if (_selectedIds.contains(f.id)) {
-                                      _selectedIds.remove(f.id);
-                                      if (_selectedIds.isEmpty) {
-                                        _isSelectionMode = false;
-                                      }
-                                    } else {
-                                      _selectedIds.add(f.id);
-                                    }
-                                  });
-                                } else {
-                                  setState(() => _selectedIndex = index);
-                                }
-                              },
-                              onLongPress: () {
-                                if (!_isSelectionMode) {
-                                  setState(() {
-                                    _isSelectionMode = true;
-                                    _selectedIds.add(f.id);
-                                  });
-                                }
+                                setState(() => _selectedIndex = index);
                               },
                               child: Container(
                                   margin: const EdgeInsets.symmetric(vertical: 4),
@@ -953,19 +767,6 @@ class _FindingsViewState extends State<FindingsView> {
                                   ),
                                   child: Row(
                                     children: [
-                                      // Selection checkbox (shown in selection mode)
-                                      if (_isSelectionMode) ...[
-                                        Icon(
-                                          _selectedIds.contains(f.id)
-                                              ? Icons.check_circle_rounded
-                                              : Icons.circle_outlined,
-                                          color: _selectedIds.contains(f.id)
-                                              ? const Color(0xFF4CAF50)
-                                              : Colors.white.withAlpha(102),
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 10),
-                                      ],
                                       // Type color indicator
                                       Container(
                                         width: 4,
@@ -1199,7 +1000,7 @@ Future<void> _syncQuickCaptureToCloud(Map<String, dynamic> findingData, List<dyn
         final response = await http.post(
           Uri.parse('https://api.imgbb.com/1/upload'),
           body: {
-            'key': imgbbApiKey,
+            'key': EnvConfig.imgbbApiKey,
             'image': base64Image,
           },
         ).timeout(const Duration(seconds: 10));
@@ -1236,183 +1037,5 @@ Future<void> _syncQuickCaptureToCloud(Map<String, dynamic> findingData, List<dyn
   } catch (e) {
     debugPrint('QuickCapture: Cloud sync failed (will retry later): $e');
     // Data is already saved locally, will sync when online
-  }
-}
-
-/// Batch export format selection sheet
-class _BatchExportSheet extends StatelessWidget {
-  final int selectedCount;
-
-  const _BatchExportSheet({required this.selectedCount});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF1C2523),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle bar
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Title
-          Row(
-            children: [
-              const Icon(Icons.file_download, color: Color(0xFFFFC107), size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Batch Export',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      '$selectedCount findings selected',
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(179),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Format options
-          const Text(
-            'Select export format:',
-            style: TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-          const SizedBox(height: 12),
-
-          _buildFormatOption(
-            context,
-            ExportFormat.json,
-            Icons.code,
-            'JSON',
-            'Full data with all fields',
-          ),
-          const SizedBox(height: 8),
-
-          _buildFormatOption(
-            context,
-            ExportFormat.csv,
-            Icons.table_chart,
-            'CSV',
-            'Spreadsheet compatible',
-          ),
-          const SizedBox(height: 8),
-
-          _buildFormatOption(
-            context,
-            ExportFormat.geojson,
-            Icons.map,
-            'GeoJSON',
-            'For mapping applications',
-          ),
-          const SizedBox(height: 8),
-
-          _buildFormatOption(
-            context,
-            ExportFormat.kml,
-            Icons.public,
-            'KML',
-            'For Google Earth',
-          ),
-
-          const SizedBox(height: 16),
-          SafeArea(
-            child: Container(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFormatOption(
-    BuildContext context,
-    ExportFormat format,
-    IconData icon,
-    String title,
-    String subtitle,
-  ) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => Navigator.pop(context, format),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(26),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFC107).withAlpha(51),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: const Color(0xFFFFC107), size: 24),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(153),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.arrow_forward_ios,
-                color: Colors.white.withAlpha(102),
-                size: 16,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

@@ -1,14 +1,15 @@
 // ignore_for_file: non_constant_identifier_names
 import 'dart:math' as math;
 import 'package:vector_math/vector_math_64.dart';
-import 'reconstruction_service.dart';
+import 'reconstruction/index.dart';
 
-/// Production-grade Structure from Motion with RANSAC and Essential Matrix
+/// Production-grade Structure from Motion with PROSAC and Essential Matrix
 class RobustSfM {
-  /// RANSAC parameters
-  static const int ransacIterations = 1000;
+  /// PROSAC parameters (progressive RANSAC with quality ordering)
+  static const int maxRansacIterations = 500; // Reduced from 1000 (adaptive termination compensates)
   static const double ransacThreshold = 0.02; // Reprojection error threshold (relaxed)
   static const double minInlierRatio = 0.15; // 15% inliers required (more tolerant)
+  static const double earlyTerminationThreshold = 0.8; // Stop if inlier ratio > 80%
 
   /// Image center coordinates (updated when image dimensions are known)
   static double imageCenterX = 512;
@@ -26,11 +27,15 @@ class RobustSfM {
     Matrix3? bestE;
     List<FeatureMatch> bestInliers = [];
     int maxInliers = 0;
+    double bestInlierRatio = 0.0;
 
-    // RANSAC loop
-    for (int iter = 0; iter < ransacIterations; iter++) {
-      // Randomly select 8 matches
-      final sampleMatches = _randomSample(matches, 8);
+    // PROSAC loop: adaptive iterations with quality-ordered sampling
+    // Matches are already sorted by descriptor distance (best first)
+    int adaptiveIterations = maxRansacIterations;
+    for (int iter = 0; iter < adaptiveIterations; iter++) {
+      // PROSAC: Sample preferentially from high-quality matches
+      // Use a mix of top matches and random sampling
+      final sampleMatches = _prosacSample(matches, 8, iter, adaptiveIterations);
 
       try {
         // Compute Essential Matrix from 8 points
@@ -50,10 +55,17 @@ class RobustSfM {
           maxInliers = inliers.length;
           bestInliers = inliers;
           bestE = E;
+          bestInlierRatio = maxInliers / matches.length;
+
+          // Adaptive iteration count: if we have a good model, reduce iterations
+          if (bestInlierRatio > 0.5) {
+            final newIterCount = (iter + (maxRansacIterations - iter) * 0.5).toInt();
+            adaptiveIterations = math.min(adaptiveIterations, newIterCount);
+          }
         }
 
-        // Early termination if we have enough inliers
-        if (inliers.length > matches.length * 0.8) {
+        // Early termination if we have excellent inlier ratio
+        if (bestInlierRatio > earlyTerminationThreshold) {
           break;
         }
       } catch (e) {
@@ -622,11 +634,21 @@ class RobustSfM {
     return (p1 + p2).scaled(0.5); // Midpoint
   }
 
-  /// Random sample without replacement
-  static List<FeatureMatch> _randomSample(List<FeatureMatch> matches, int n) {
-    final indices = List.generate(matches.length, (i) => i);
+  /// PROSAC (Progressive Sample Consensus) sampling
+  /// Samples preferentially from high-quality matches (already sorted by distance)
+  /// Early iterations use only top matches, later iterations expand to all matches
+  static List<FeatureMatch> _prosacSample(List<FeatureMatch> matches, int n, int iteration, int maxIterations) {
+    // Progressive pool size: start with top 20% of matches, grow to 100%
+    final minPoolSize = math.max(n * 2, (matches.length * 0.2).toInt());
+    final maxPoolSize = matches.length;
+    final progress = iteration / maxIterations;
+    final poolSize = (minPoolSize + (maxPoolSize - minPoolSize) * progress).toInt().clamp(n, maxPoolSize);
+
+    // Sample from the quality-ordered pool
+    final pool = matches.take(poolSize).toList();
+    final indices = List.generate(pool.length, (i) => i);
     indices.shuffle();
-    return indices.take(n).map((i) => matches[i]).toList();
+    return indices.take(n).map((i) => pool[i]).toList();
   }
 }
 

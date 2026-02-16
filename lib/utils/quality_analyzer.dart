@@ -119,8 +119,9 @@ class QualityAnalyzer {
     verticalEdges /= count;
 
     // Motion blur shows directional edge asymmetry
-    final ratio = horizontalEdges > 0
-        ? math.min(horizontalEdges, verticalEdges) / math.max(horizontalEdges, verticalEdges)
+    final maxEdge = math.max(horizontalEdges, verticalEdges);
+    final ratio = maxEdge > 0
+        ? math.min(horizontalEdges, verticalEdges) / maxEdge
         : 1.0;
 
     // Higher ratio (closer to 1.0) = less motion blur

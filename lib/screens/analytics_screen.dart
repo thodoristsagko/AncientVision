@@ -28,8 +28,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
 
   // Computed from real data
   Map<String, int> _materialCounts = {};
-  Map<String, int> _periodCounts = {};
-  Map<String, double> _qualityMetrics = {};
 
   @override
   void initState() {
@@ -74,43 +72,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     return _weeklyStats;
   }
 
-  /// Analyze real finding data for materials, periods, and quality
+  /// Analyze real finding data for materials
   void _analyzeFindingData() {
     _materialCounts = {};
-    _periodCounts = {};
-    int withGps = 0;
-    int withPhotos = 0;
-    int withDescription = 0;
-    int total = _allFindings.length;
 
     for (final finding in _allFindings) {
       // Count materials
       final material = finding['material'] as String? ?? 'Unknown';
       _materialCounts[material] = (_materialCounts[material] ?? 0) + 1;
-
-      // Count periods
-      final period = finding['period'] as String? ?? 'Unknown';
-      _periodCounts[period] = (_periodCounts[period] ?? 0) + 1;
-
-      // Quality metrics
-      if (finding['latitude'] != null && finding['longitude'] != null) {
-        withGps++;
-      }
-      if (finding['imageUrl'] != null ||
-          (finding['photoGallery'] as List?)?.isNotEmpty == true) {
-        withPhotos++;
-      }
-      if ((finding['description'] as String?)?.isNotEmpty == true) {
-        withDescription++;
-      }
     }
-
-    // Calculate quality percentages
-    _qualityMetrics = {
-      'gps': total > 0 ? withGps / total : 0.0,
-      'photos': total > 0 ? withPhotos / total : 0.0,
-      'description': total > 0 ? withDescription / total : 0.0,
-    };
   }
 
   /// Get filtered stats based on selected period
@@ -322,28 +292,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         'metric': e.key,
         'value': e.value,
       }),
-      // Add period breakdown
-      ..._periodCounts.entries.map((e) => {
-        'category': 'Historical Periods',
-        'metric': e.key,
-        'value': e.value,
-      }),
-      // Add quality metrics
-      {
-        'category': 'Data Quality',
-        'metric': 'GPS Coverage',
-        'value': '${((_qualityMetrics['gps'] ?? 0) * 100).round()}%',
-      },
-      {
-        'category': 'Data Quality',
-        'metric': 'Photo Coverage',
-        'value': '${((_qualityMetrics['photos'] ?? 0) * 100).round()}%',
-      },
-      {
-        'category': 'Data Quality',
-        'metric': 'Description Coverage',
-        'value': '${((_qualityMetrics['description'] ?? 0) * 100).round()}%',
-      },
     ];
 
     try {
@@ -437,30 +385,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                           _buildSectionHeader('Material Analysis', Icons.category),
                           const SizedBox(height: 12),
                           _buildMaterialAnalysis(),
-                          const SizedBox(height: 24),
-
-                          // Period Distribution
-                          _buildSectionHeader('Historical Periods', Icons.history),
-                          const SizedBox(height: 12),
-                          _buildPeriodDistribution(),
-                          const SizedBox(height: 24),
-
-                          // Data Quality Overview
-                          _buildSectionHeader('Data Quality', Icons.verified),
-                          const SizedBox(height: 12),
-                          _buildDataQuality(),
-                          const SizedBox(height: 24),
-
-                          // Detailed Stats Grid
-                          _buildSectionHeader('Detailed Statistics', Icons.analytics),
-                          const SizedBox(height: 12),
-                          _buildDetailedStatsGrid(),
-                          const SizedBox(height: 24),
-
-                          // Session Summary
-                          _buildSectionHeader('Today\'s Session', Icons.today),
-                          const SizedBox(height: 12),
-                          _buildSessionSummary(),
                           const SizedBox(height: 32),
                         ],
                       ),
@@ -1031,100 +955,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     );
   }
 
-  Widget _buildDetailedStatsGrid() {
-    final progress = _progressService.progress;
-    final stats = [
-      _StatItem('Findings', progress.totalFindings, Icons.search,
-          const Color(0xFF2196F3), 'Archaeological discoveries'),
-      _StatItem('3D Models', progress.total3DModels, Icons.view_in_ar,
-          const Color(0xFF9C27B0), 'Reconstructions created'),
-      _StatItem('Contexts', progress.totalContexts, Icons.layers,
-          const Color(0xFFFF9800), 'Stratigraphic records'),
-      _StatItem('Notes', progress.totalNotes, Icons.note,
-          const Color(0xFF4CAF50), 'Field observations'),
-      _StatItem('Reports', progress.totalReports, Icons.description,
-          const Color(0xFFF44336), 'PDF documents'),
-      _StatItem('Photos', progress.totalPhotos, Icons.photo_library,
-          const Color(0xFF00BCD4), 'Images captured'),
-    ];
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 1.5,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: stats.length,
-      itemBuilder: (context, index) {
-        final stat = stats[index];
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(15),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: stat.color.withAlpha(60)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: stat.color.withAlpha(30),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(stat.icon, color: stat.color, size: 18),
-                  ),
-                  const Spacer(),
-                  TweenAnimationBuilder<int>(
-                    tween: IntTween(begin: 0, end: stat.value),
-                    duration: const Duration(milliseconds: 1000),
-                    builder: (context, val, child) {
-                      return Text(
-                        '$val',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    stat.label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    stat.description,
-                    style: TextStyle(
-                      color: Colors.white.withAlpha(120),
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildMaterialAnalysis() {
     // Material colors mapping
     const materialColors = {
@@ -1257,352 +1087,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       ),
     );
   }
-
-  Widget _buildPeriodDistribution() {
-    // Period colors mapping
-    const periodColors = {
-      'Paleolithic': Color(0xFF5D4037),
-      'Neolithic': Color(0xFF8D6E63),
-      'Bronze Age': Color(0xFFFFB74D),
-      'Iron Age': Color(0xFF90A4AE),
-      'Archaic': Color(0xFF7986CB),
-      'Classical': Color(0xFFFFB74D),
-      'Hellenistic': Color(0xFF7986CB),
-      'Roman': Color(0xFFE57373),
-      'Byzantine': Color(0xFF4DB6AC),
-      'Medieval': Color(0xFF9575CD),
-      'Ottoman': Color(0xFFFF8A65),
-      'Modern': Color(0xFF4FC3F7),
-      'Unknown': Color(0xFF90A4AE),
-    };
-
-    // Build periods list from real data
-    final periods = _periodCounts.entries.map((e) {
-      final color = periodColors[e.key] ?? const Color(0xFF90A4AE);
-      return _PeriodData(e.key, e.value, color);
-    }).toList()
-      ..sort((a, b) => b.count.compareTo(a.count)); // Sort by count descending
-
-    // Take top 5 and group rest as "Other"
-    final displayPeriods = <_PeriodData>[];
-    if (periods.length <= 5) {
-      displayPeriods.addAll(periods);
-    } else {
-      displayPeriods.addAll(periods.take(4));
-      final otherCount = periods.skip(4).fold<int>(0, (sum, p) => sum + p.count);
-      if (otherCount > 0) {
-        displayPeriods.add(_PeriodData('Other', otherCount, const Color(0xFF90A4AE)));
-      }
-    }
-
-    final total = displayPeriods.fold(0, (sum, p) => sum + p.count);
-
-    if (displayPeriods.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white.withAlpha(20),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withAlpha(30)),
-        ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                Icon(Icons.history, color: Colors.white.withAlpha(100), size: 40),
-                const SizedBox(height: 12),
-                Text(
-                  'No period data yet',
-                  style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Add findings with historical periods to see distribution',
-                  style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(20),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withAlpha(30)),
-      ),
-      child: Column(
-        children: [
-          // Horizontal bar chart
-          SizedBox(
-            height: 40,
-            child: Row(
-              children: displayPeriods.map((p) {
-                final width = total > 0 ? (p.count / total) : 0.0;
-                return Expanded(
-                  flex: (width * 100).round().clamp(1, 100),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 1),
-                    decoration: BoxDecoration(
-                      color: p.color,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Legend
-          Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            children: displayPeriods.map((p) => Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: p.color,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '${p.name}: ${p.count}',
-                  style: TextStyle(
-                    color: Colors.white.withAlpha(180),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            )).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDataQuality() {
-    // Build quality metrics from real data analysis
-    final gpsScore = _qualityMetrics['gps'] ?? 0.0;
-    final photoScore = _qualityMetrics['photos'] ?? 0.0;
-    final descScore = _qualityMetrics['description'] ?? 0.0;
-    // Calculate overall completeness as average of available metrics
-    final overallScore = _allFindings.isNotEmpty
-        ? (gpsScore + photoScore + descScore) / 3
-        : 0.0;
-
-    final quality = [
-      _QualityMetric(
-        'GPS Coverage',
-        gpsScore,
-        '${(_allFindings.where((f) => f['latitude'] != null).length)}/${_allFindings.length} with coordinates',
-        const Color(0xFF4CAF50),
-      ),
-      _QualityMetric(
-        'Photo Documentation',
-        photoScore,
-        '${(_allFindings.where((f) => f['imageUrl'] != null || (f['photoGallery'] as List?)?.isNotEmpty == true).length)}/${_allFindings.length} with photos',
-        const Color(0xFF2196F3),
-      ),
-      _QualityMetric(
-        'Description Coverage',
-        descScore,
-        '${(_allFindings.where((f) => (f['description'] as String?)?.isNotEmpty == true).length)}/${_allFindings.length} with descriptions',
-        const Color(0xFFFF9800),
-      ),
-      _QualityMetric(
-        'Overall Completeness',
-        overallScore,
-        'Average data quality score',
-        const Color(0xFF9C27B0),
-      ),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(20),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withAlpha(30)),
-      ),
-      child: Column(
-        children: quality.map((q) => Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Row(
-            children: [
-              // Circular progress
-              SizedBox(
-                width: 50,
-                height: 50,
-                child: Stack(
-                  children: [
-                    CircularProgressIndicator(
-                      value: q.score,
-                      strokeWidth: 5,
-                      backgroundColor: Colors.white.withAlpha(30),
-                      valueColor: AlwaysStoppedAnimation<Color>(q.color),
-                    ),
-                    Center(
-                      child: Text(
-                        '${(q.score * 100).round()}%',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      q.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      q.description,
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(150),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Quality indicator
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: q.color.withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  q.score >= 0.8 ? 'Excellent' : q.score >= 0.6 ? 'Good' : 'Needs Work',
-                  style: TextStyle(
-                    color: q.color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        )).toList(),
-      ),
-    );
-  }
-
-  Widget _buildSessionSummary() {
-    final today = _progressService.todayStats;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(20),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withAlpha(30)),
-      ),
-      child: Column(
-        children: [
-          _buildSessionRow('Findings recorded', today.findingsRecorded,
-              Icons.search, const Color(0xFF2196F3)),
-          const SizedBox(height: 12),
-          _buildSessionRow('Photos captured', today.photosCapture,
-              Icons.camera_alt, const Color(0xFF00BCD4)),
-          const SizedBox(height: 12),
-          _buildSessionRow('3D scans created', today.modelsCreated,
-              Icons.view_in_ar, const Color(0xFF9C27B0)),
-          const SizedBox(height: 12),
-          _buildSessionRow('Notes written', today.notesCreated, Icons.note_add,
-              const Color(0xFF4CAF50)),
-          const SizedBox(height: 12),
-          _buildSessionRow('Contexts logged', today.contextsRecorded,
-              Icons.layers, const Color(0xFFFF9800)),
-          const Divider(color: Colors.white24, height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Total Actions',
-                style: TextStyle(
-                  color: Colors.white.withAlpha(200),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFC107).withAlpha(30),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '${today.totalActions}',
-                  style: const TextStyle(
-                    color: Color(0xFFFFC107),
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSessionRow(String label, int value, IconData icon, Color color) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: color.withAlpha(30),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: color, size: 16),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withAlpha(180),
-              fontSize: 13,
-            ),
-          ),
-        ),
-        Text(
-          '$value',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _CategoryData {
@@ -1613,37 +1097,10 @@ class _CategoryData {
   _CategoryData(this.name, this.value, this.color);
 }
 
-class _StatItem {
-  final String label;
-  final int value;
-  final IconData icon;
-  final Color color;
-  final String description;
-
-  _StatItem(this.label, this.value, this.icon, this.color, this.description);
-}
-
 class _MaterialData {
   final String name;
   final int count;
   final Color color;
 
   _MaterialData(this.name, this.count, this.color);
-}
-
-class _PeriodData {
-  final String name;
-  final int count;
-  final Color color;
-
-  _PeriodData(this.name, this.count, this.color);
-}
-
-class _QualityMetric {
-  final String name;
-  final double score;
-  final String description;
-  final Color color;
-
-  _QualityMetric(this.name, this.score, this.description, this.color);
 }

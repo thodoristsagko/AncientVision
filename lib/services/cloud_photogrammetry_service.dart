@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'notification_service.dart';
+import '../config/env_config.dart';
 
 /// Cloud Photogrammetry Service using OpenScan Cloud API
 ///
@@ -15,8 +16,8 @@ import 'notification_service.dart';
 class CloudPhotogrammetryService {
   // OpenScan Cloud API configuration
   static const String _baseUrl = 'https://openscan.eu/api';
-  static const String _username = 'openscan';
-  static const String _password = 'free';
+  static const String _username = EnvConfig.openScanUsername;
+  static const String _password = EnvConfig.openScanPassword;
 
   String? _token;
   String? _currentProjectId;
@@ -40,7 +41,9 @@ class CloudPhotogrammetryService {
     String lastname = 'User',
   }) async {
     try {
+      if (kDebugMode) {
       debugPrint('🔑 Requesting token from OpenScan Cloud...');
+      }
       final response = await http.get(
         Uri.parse('$_baseUrl/requestToken').replace(queryParameters: {
           'email': email,
@@ -50,22 +53,32 @@ class CloudPhotogrammetryService {
         headers: {'Authorization': _authHeader},
       ).timeout(const Duration(seconds: 30));
 
+      if (kDebugMode) {
       debugPrint('Token response: ${response.statusCode}');
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _token = data['token'];
+        if (kDebugMode) {
         debugPrint(' Token received');
+        }
         return _token;
       } else {
         _lastError = 'Token request failed: HTTP ${response.statusCode}';
+        if (kDebugMode) {
         debugPrint(' $_lastError');
+        }
+        if (kDebugMode) {
         debugPrint('Response body: ${response.body}');
+        }
       }
       return null;
     } catch (e) {
       _lastError = 'Token request error: $e';
+      if (kDebugMode) {
       debugPrint(' $_lastError');
+      }
       return null;
     }
   }
@@ -87,7 +100,9 @@ class CloudPhotogrammetryService {
       }
       return null;
     } catch (e) {
+      if (kDebugMode) {
       debugPrint('Error getting token info: $e');
+      }
       return null;
     }
   }
@@ -161,12 +176,16 @@ class CloudPhotogrammetryService {
   }) async {
     if (_token == null) {
       _lastError = 'No token available';
+      if (kDebugMode) {
       debugPrint(' $_lastError');
+      }
       return null;
     }
 
     try {
+      if (kDebugMode) {
       debugPrint('📁 Creating project: $projectName');
+      }
       final response = await http.get(
         Uri.parse('$_baseUrl/createProject').replace(queryParameters: {
           'token': _token!,
@@ -175,22 +194,32 @@ class CloudPhotogrammetryService {
         headers: {'Authorization': _authHeader},
       ).timeout(const Duration(seconds: 30));
 
+      if (kDebugMode) {
       debugPrint('Create project response: ${response.statusCode}');
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         _currentProjectId = data['project_id'] ?? data['projectId'];
+        if (kDebugMode) {
         debugPrint(' Project created: $_currentProjectId');
+        }
         return _currentProjectId;
       } else {
         _lastError = 'Create project failed: HTTP ${response.statusCode}';
+        if (kDebugMode) {
         debugPrint(' $_lastError');
+        }
+        if (kDebugMode) {
         debugPrint('Response: ${response.body}');
+        }
       }
       return null;
     } catch (e) {
       _lastError = 'Create project error: $e';
+      if (kDebugMode) {
       debugPrint(' $_lastError');
+      }
       return null;
     }
   }
@@ -201,7 +230,9 @@ class CloudPhotogrammetryService {
     Function(int uploaded, int total)? onProgress,
   }) async {
     if (_token == null || _currentProjectId == null) {
+      if (kDebugMode) {
       debugPrint('No token or project. Create project first.');
+      }
       return false;
     }
 
@@ -210,7 +241,9 @@ class CloudPhotogrammetryService {
 
     for (final photo in photos) {
       if (_isCancelled) {
+        if (kDebugMode) {
         debugPrint('Upload cancelled');
+        }
         return false;
       }
 
@@ -237,10 +270,14 @@ class CloudPhotogrammetryService {
           uploaded++;
           onProgress?.call(uploaded, photos.length);
         } else {
+          if (kDebugMode) {
           debugPrint('Failed to upload photo ${photo.name}: ${response.statusCode}');
+          }
         }
       } catch (e) {
+        if (kDebugMode) {
         debugPrint('Error uploading photo: $e');
+        }
       }
     }
 
@@ -264,7 +301,9 @@ class CloudPhotogrammetryService {
 
       return response.statusCode == 200;
     } catch (e) {
+      if (kDebugMode) {
       debugPrint('Error starting processing: $e');
+      }
       return false;
     }
   }
@@ -290,7 +329,9 @@ class CloudPhotogrammetryService {
       }
       return null;
     } catch (e) {
+      if (kDebugMode) {
       debugPrint('Error getting project status: $e');
+      }
       return null;
     }
   }
@@ -307,7 +348,9 @@ class CloudPhotogrammetryService {
     while (!_isCancelled) {
       final elapsed = DateTime.now().difference(startTime);
       if (elapsed > timeout) {
+        if (kDebugMode) {
         debugPrint('Processing timeout');
+        }
         return null;
       }
 
@@ -320,7 +363,9 @@ class CloudPhotogrammetryService {
         }
 
         if (status.isFailed) {
+          if (kDebugMode) {
           debugPrint('Processing failed: ${status.errorMessage}');
+          }
           return status;
         }
       }
@@ -350,7 +395,9 @@ class CloudPhotogrammetryService {
       }
       return null;
     } catch (e) {
+      if (kDebugMode) {
       debugPrint('Error downloading model: $e');
+      }
       return null;
     }
   }

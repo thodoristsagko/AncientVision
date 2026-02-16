@@ -13,7 +13,7 @@ import 'package:http/http.dart' as http;
 import '../services/local_storage_service.dart';
 import '../services/image_service.dart';
 import '../models/reconstruction_result.dart';
-import '../main.dart' show imgbbApiKey;
+import '../config/env_config.dart';
 
 class ManualEntryFormScreen extends StatefulWidget {
   final ReconstructionResult? reconstructionResult;
@@ -40,7 +40,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   final _dateController = TextEditingController();
   final _latController = TextEditingController();
   final _lngController = TextEditingController();
-  final _model3dUrlController = TextEditingController();
   bool _hasImage = false;
   XFile? _selectedImage;
   final List<XFile> _photoGallery = []; // For photogrammetry - multiple photos
@@ -49,21 +48,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isGettingLocation = false;
-
-  // ========== COIN-SPECIFIC FIELDS ==========
-  final _denominationController = TextEditingController();
-  final _mintController = TextEditingController();
-  final _rulerController = TextEditingController();
-  final _obverseLegendController = TextEditingController();
-  final _reverseLegendController = TextEditingController();
-  final _dieAxisController = TextEditingController();
-
-  // ========== FRAGMENT-SPECIFIC FIELDS ==========
-  String? _selectedVesselPart;
-  String? _selectedWareType;
-  String? _selectedDecoration;
-  final _rimDiameterController = TextEditingController();
-  final _wallThicknessController = TextEditingController();
 
   // Auto-save functionality
   Timer? _autoSaveTimer;
@@ -101,11 +85,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
       _photoGallery.addAll(widget.photoGallery!);
     }
 
-    // Initialize cloud model URL if provided
-    if (widget.cloudModelUrl != null) {
-      _model3dUrlController.text = widget.cloudModelUrl!;
-    }
-
     // Load draft if exists
     _loadDraft();
 
@@ -117,13 +96,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     // Add listeners to controllers for auto-save
     _nameController.addListener(_scheduleAutoSave);
     _typeController.addListener(_scheduleAutoSave);
-    _typeController.addListener(_onTypeChanged); // Trigger rebuild for conditional fields
     _siteController.addListener(_scheduleAutoSave);
-  }
-
-  void _onTypeChanged() {
-    // Trigger rebuild to show/hide coin/fragment fields
-    if (mounted) setState(() {});
   }
 
   void _scheduleAutoSave() {
@@ -148,19 +121,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         'date': _dateController.text,
         'latitude': _latController.text,
         'longitude': _lngController.text,
-        // Coin fields
-        'denomination': _denominationController.text,
-        'mint': _mintController.text,
-        'ruler': _rulerController.text,
-        'obverseLegend': _obverseLegendController.text,
-        'reverseLegend': _reverseLegendController.text,
-        'dieAxis': _dieAxisController.text,
-        // Fragment fields
-        'vesselPart': _selectedVesselPart,
-        'wareType': _selectedWareType,
-        'decorationStyle': _selectedDecoration,
-        'rimDiameter': _rimDiameterController.text,
-        'wallThickness': _wallThicknessController.text,
       },
     );
   }
@@ -179,19 +139,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         }
         _latController.text = draft['latitude'] ?? '';
         _lngController.text = draft['longitude'] ?? '';
-        // Coin fields
-        _denominationController.text = draft['denomination'] ?? '';
-        _mintController.text = draft['mint'] ?? '';
-        _rulerController.text = draft['ruler'] ?? '';
-        _obverseLegendController.text = draft['obverseLegend'] ?? '';
-        _reverseLegendController.text = draft['reverseLegend'] ?? '';
-        _dieAxisController.text = draft['dieAxis'] ?? '';
-        // Fragment fields
-        _selectedVesselPart = draft['vesselPart'];
-        _selectedWareType = draft['wareType'];
-        _selectedDecoration = draft['decorationStyle'];
-        _rimDiameterController.text = draft['rimDiameter'] ?? '';
-        _wallThicknessController.text = draft['wallThickness'] ?? '';
       });
 
       // Show notification (post-frame to avoid initState context issue)
@@ -522,7 +469,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
           final response = await http.post(
             Uri.parse('https://api.imgbb.com/1/upload'),
             body: {
-              'key': imgbbApiKey,
+              'key': EnvConfig.imgbbApiKey,
               'image': base64Image,
               'name': _nextId,
             },
@@ -562,7 +509,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
             final response = await http.post(
               Uri.parse('https://api.imgbb.com/1/upload'),
               body: {
-                'key': imgbbApiKey,
+                'key': EnvConfig.imgbbApiKey,
                 'image': base64Image,
                 'name': '${_nextId}_photo_$i',
               },
@@ -615,19 +562,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         'reconstructionData': reconstructionData,
         'createdAt': FieldValue.serverTimestamp(),
         'source': source,
-        // Coin-specific fields (saved if populated)
-        if (_denominationController.text.isNotEmpty) 'denomination': _denominationController.text,
-        if (_mintController.text.isNotEmpty) 'mint': _mintController.text,
-        if (_rulerController.text.isNotEmpty) 'ruler': _rulerController.text,
-        if (_obverseLegendController.text.isNotEmpty) 'obverseLegend': _obverseLegendController.text,
-        if (_reverseLegendController.text.isNotEmpty) 'reverseLegend': _reverseLegendController.text,
-        if (_dieAxisController.text.isNotEmpty) 'dieAxis': int.tryParse(_dieAxisController.text),
-        // Fragment-specific fields (saved if populated)
-        if (_selectedVesselPart != null) 'vesselPart': _selectedVesselPart,
-        if (_selectedWareType != null) 'wareType': _selectedWareType,
-        if (_selectedDecoration != null) 'decorationStyle': _selectedDecoration,
-        if (_rimDiameterController.text.isNotEmpty) 'rimDiameter': double.tryParse(_rimDiameterController.text),
-        if (_wallThicknessController.text.isNotEmpty) 'wallThickness': double.tryParse(_wallThicknessController.text),
       };
 
       try {
@@ -683,19 +617,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
           'longitude': lng,
           'createdAt': DateTime.now().toIso8601String(),
           'source': 'manual',
-          // Coin-specific fields (saved if populated)
-          if (_denominationController.text.isNotEmpty) 'denomination': _denominationController.text,
-          if (_mintController.text.isNotEmpty) 'mint': _mintController.text,
-          if (_rulerController.text.isNotEmpty) 'ruler': _rulerController.text,
-          if (_obverseLegendController.text.isNotEmpty) 'obverseLegend': _obverseLegendController.text,
-          if (_reverseLegendController.text.isNotEmpty) 'reverseLegend': _reverseLegendController.text,
-          if (_dieAxisController.text.isNotEmpty) 'dieAxis': int.tryParse(_dieAxisController.text),
-          // Fragment-specific fields (saved if populated)
-          if (_selectedVesselPart != null) 'vesselPart': _selectedVesselPart,
-          if (_selectedWareType != null) 'wareType': _selectedWareType,
-          if (_selectedDecoration != null) 'decorationStyle': _selectedDecoration,
-          if (_rimDiameterController.text.isNotEmpty) 'rimDiameter': double.tryParse(_rimDiameterController.text),
-          if (_wallThicknessController.text.isNotEmpty) 'wallThickness': double.tryParse(_wallThicknessController.text),
         };
         await storage.queueForUpload(findingId: _nextId, data: findingData);
 
@@ -738,15 +659,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     _dateController.dispose();
     _latController.dispose();
     _lngController.dispose();
-    _model3dUrlController.dispose();
-    _denominationController.dispose();
-    _mintController.dispose();
-    _rulerController.dispose();
-    _obverseLegendController.dispose();
-    _reverseLegendController.dispose();
-    _dieAxisController.dispose();
-    _rimDiameterController.dispose();
-    _wallThicknessController.dispose();
     super.dispose();
   }
 
@@ -989,16 +901,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                     hint: _typeHint,
                     icon: Icons.category_outlined,
                   ),
-
-                  // ========== COIN-SPECIFIC FIELDS ==========
-                  if (_typeController.text.toLowerCase().contains('coin'))
-                    _buildCoinFields(),
-
-                  // ========== FRAGMENT-SPECIFIC FIELDS ==========
-                  if (_typeController.text.toLowerCase().contains('fragment') ||
-                      _typeController.text.toLowerCase().contains('sherd'))
-                    _buildFragmentFields(),
-
                   const SizedBox(height: 16),
                   _buildFormField(
                     controller: _siteController,
@@ -1414,6 +1316,8 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                     ),
                   ),
 
+                  // Photo Gallery section removed - users can add multiple photos via photogrammetry screen
+
                   const SizedBox(height: 16),
 
                   // PHOTOGRAMMETRY SECTION - Multiple photos for 3D reconstruction
@@ -1733,246 +1637,6 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                           }
                           return null;
                         } : null,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ========== COIN-SPECIFIC FIELDS SECTION ==========
-  Widget _buildCoinFields() {
-    return Column(
-      children: [
-        const SizedBox(height: 16),
-        // Section header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFB8860B).withAlpha(51),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.paid, color: Color(0xFFB8860B), size: 18),
-              SizedBox(width: 8),
-              Text(
-                'COIN DETAILS',
-                style: TextStyle(
-                  color: Color(0xFFB8860B),
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Denomination
-        _buildFormField(
-          controller: _denominationController,
-          label: 'Denomination',
-          hint: 'e.g., Drachma, Denarius, Obol',
-          icon: Icons.monetization_on_outlined,
-          isRequired: false,
-        ),
-        const SizedBox(height: 12),
-        // Mint
-        _buildFormField(
-          controller: _mintController,
-          label: 'Mint Location',
-          hint: 'e.g., Athens, Rome, Alexandria',
-          icon: Icons.factory_outlined,
-          isRequired: false,
-        ),
-        const SizedBox(height: 12),
-        // Ruler/Authority
-        _buildFormField(
-          controller: _rulerController,
-          label: 'Ruler/Authority',
-          hint: 'e.g., Alexander III, Augustus',
-          icon: Icons.account_balance_outlined,
-          isRequired: false,
-        ),
-        const SizedBox(height: 12),
-        // Obverse Legend
-        _buildFormField(
-          controller: _obverseLegendController,
-          label: 'Obverse (Front) Legend',
-          hint: 'Inscription on front side',
-          icon: Icons.text_fields,
-          isRequired: false,
-        ),
-        const SizedBox(height: 12),
-        // Reverse Legend
-        _buildFormField(
-          controller: _reverseLegendController,
-          label: 'Reverse (Back) Legend',
-          hint: 'Inscription on back side',
-          icon: Icons.text_fields,
-          isRequired: false,
-        ),
-        const SizedBox(height: 12),
-        // Die Axis
-        _buildFormField(
-          controller: _dieAxisController,
-          label: 'Die Axis (Clock Position)',
-          hint: 'e.g., 12, 6, 3 (o\'clock)',
-          icon: Icons.access_time,
-          isRequired: false,
-        ),
-      ],
-    );
-  }
-
-  // ========== FRAGMENT-SPECIFIC FIELDS SECTION ==========
-  Widget _buildFragmentFields() {
-    return Column(
-      children: [
-        const SizedBox(height: 16),
-        // Section header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFCD853F).withAlpha(51),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.broken_image, color: Color(0xFFCD853F), size: 18),
-              SizedBox(width: 8),
-              Text(
-                'FRAGMENT DETAILS',
-                style: TextStyle(
-                  color: Color(0xFFCD853F),
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Vessel Part Selector
-        _buildDropdownField(
-          label: 'Vessel Part',
-          icon: Icons.pie_chart_outline,
-          value: _selectedVesselPart,
-          items: const ['Rim', 'Body', 'Base', 'Handle', 'Spout', 'Lid', 'Foot', 'Neck', 'Shoulder'],
-          onChanged: (val) => setState(() => _selectedVesselPart = val),
-        ),
-        const SizedBox(height: 12),
-        // Ware Type Selector
-        _buildDropdownField(
-          label: 'Ware Type',
-          icon: Icons.layers_outlined,
-          value: _selectedWareType,
-          items: const ['Coarse Ware', 'Fine Ware', 'Cooking Ware', 'Storage Ware', 'Tableware', 'Transport', 'Unknown'],
-          onChanged: (val) => setState(() => _selectedWareType = val),
-        ),
-        const SizedBox(height: 12),
-        // Decoration Style Selector
-        _buildDropdownField(
-          label: 'Decoration',
-          icon: Icons.brush_outlined,
-          value: _selectedDecoration,
-          items: const ['Plain', 'Painted', 'Incised', 'Stamped', 'Glazed', 'Relief', 'Burnished', 'Slipped'],
-          onChanged: (val) => setState(() => _selectedDecoration = val),
-        ),
-        const SizedBox(height: 12),
-        // Rim Diameter
-        _buildFormField(
-          controller: _rimDiameterController,
-          label: 'Rim Diameter (mm)',
-          hint: 'Estimated diameter if rim sherd',
-          icon: Icons.radio_button_unchecked,
-          isRequired: false,
-        ),
-        const SizedBox(height: 12),
-        // Wall Thickness
-        _buildFormField(
-          controller: _wallThicknessController,
-          label: 'Wall Thickness (mm)',
-          hint: 'Sherd thickness',
-          icon: Icons.straighten,
-          isRequired: false,
-        ),
-      ],
-    );
-  }
-
-  // Dropdown field builder for fragment selectors
-  Widget _buildDropdownField({
-    required String label,
-    required IconData icon,
-    required String? value,
-    required List<String> items,
-    required Function(String?) onChanged,
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(26),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withAlpha(89),
-              width: 1,
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(26),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, color: const Color(0xFFFFC107), size: 20),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(179),
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      DropdownButtonFormField<String>(
-                        value: value,
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                        dropdownColor: const Color(0xFF1C2523),
-                        style: const TextStyle(color: Colors.white, fontSize: 16),
-                        hint: Text(
-                          'Select $label',
-                          style: TextStyle(color: Colors.white.withAlpha(102)),
-                        ),
-                        items: items.map((item) => DropdownMenuItem(
-                          value: item,
-                          child: Text(item),
-                        )).toList(),
-                        onChanged: onChanged,
                       ),
                     ],
                   ),

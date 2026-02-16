@@ -6,6 +6,7 @@ import 'camera_pose.dart';
 enum ReconstructionMethod {
   auto, // Automatically select best method
   sparseSfM, // Sparse Structure from Motion (on-device preview)
+  denseMVS, // Dense Multi-View Stereo (on-device)
   cloudProcessing, // Cloud-based full reconstruction
   huaweiKit, // Huawei 3D Modeling Kit
 }
@@ -148,6 +149,8 @@ class ReconstructionResult {
         return 'Automatic';
       case ReconstructionMethod.sparseSfM:
         return 'Sparse Preview (On-Device)';
+      case ReconstructionMethod.denseMVS:
+        return 'Dense MVS (On-Device)';
       case ReconstructionMethod.cloudProcessing:
         return 'Cloud Processing';
       case ReconstructionMethod.huaweiKit:

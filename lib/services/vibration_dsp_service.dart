@@ -47,7 +47,9 @@ class VibrationDspService {
 
     // 3. Kurtosis (excess, on magnitude signal)
     double mean = 0.0;
-    for (int i = 0; i < windowSize; i++) mean += magnitude[i];
+    for (int i = 0; i < windowSize; i++) {
+      mean += magnitude[i];
+    }
     mean /= windowSize;
     double m2 = 0.0, m4 = 0.0;
     for (int i = 0; i < windowSize; i++) {
@@ -62,12 +64,46 @@ class VibrationDspService {
     // 4. FFT (radix-2 DIT) on magnitude signal with Hanning window
     final fftMagnitudes = _computeFFT(magnitude);
 
-    // 5. Dominant frequency and spectral centroid
+    // 4b. PSD slope computation (log-log regression in 0.78-5 Hz band)
+    // Discriminates: earthquake ~-0.5, landslide ~-3 to -9, noise ~-9
     final binResolution = sampleRate.toDouble() / windowSize;
+    double psdSlope = 0.0;
+    {
+      // PSD[i] = |FFT[i]|² / (sampleRate * windowSize) for proper normalization
+      // Fit linear regression on log10(PSD) vs log10(freq) in bins 1-6 (~0.78-5 Hz)
+      const int startBin = 1;
+      const int endBin = 7; // exclusive, so bins 1-6
+      final actualEnd = endBin.clamp(0, fftMagnitudes.length);
+      if (actualEnd > startBin) {
+        double sumX = 0, sumY = 0, sumXX = 0, sumXY = 0;
+        int count = 0;
+        for (int i = startBin; i < actualEnd; i++) {
+          final freq = i * binResolution;
+          final psd = fftMagnitudes[i] * fftMagnitudes[i] / (sampleRate * windowSize);
+          if (freq > 0 && psd > 1e-20) {
+            final logFreq = log(freq) / ln10;
+            final logPsd = log(psd) / ln10;
+            sumX += logFreq;
+            sumY += logPsd;
+            sumXX += logFreq * logFreq;
+            sumXY += logFreq * logPsd;
+            count++;
+          }
+        }
+        if (count >= 2) {
+          final denom = count * sumXX - sumX * sumX;
+          if (denom.abs() > 1e-12) {
+            psdSlope = (count * sumXY - sumX * sumY) / denom;
+          }
+        }
+      }
+    }
+
+    // 5. Dominant frequency and spectral centroid
     double maxMag = 0.0;
     int maxBin = 1;
     double magRmsSum = 0.0;
-    final halfN = windowSize ~/ 2;
+    const halfN = windowSize ~/ 2;
 
     for (int i = 1; i < halfN; i++) {
       magRmsSum += fftMagnitudes[i] * fftMagnitudes[i];
@@ -126,6 +162,7 @@ class VibrationDspService {
       dwtEnergy3: dwtResult.energy3,
       ariasIntensity: ariasIntensity,
       cav: cav,
+      psdSlope: psdSlope,
     );
   }
 
@@ -219,10 +256,50 @@ class VibrationDspService {
     }
 
     return _DwtResult(
-      energy1: energies.length > 0 ? energies[0] : 0.0,
+      energy1: energies.isNotEmpty ? energies[0] : 0.0,
       energy2: energies.length > 1 ? energies[1] : 0.0,
       energy3: energies.length > 2 ? energies[2] : 0.0,
     );
+  }
+
+  /// Compute vector magnitude PPV from 3-axis raw acceleration data.
+  ///
+  /// More conservative than max-of-axes per ISO 4866. Integrates each axis
+  /// to velocity using trapezoidal rule, then computes vector magnitude PPV.
+  ///
+  /// [accelX], [accelY], [accelZ] are filtered acceleration in g units,
+  /// each containing [windowSize] samples.
+  ///
+  /// Returns PPV in mm/s.
+  double computeVectorSumPPV(List<double> accelX, List<double> accelY, List<double> accelZ) {
+    assert(accelX.length == accelY.length);
+    assert(accelY.length == accelZ.length);
+
+    final n = accelX.length;
+    if (n < 2) return 0.0;
+
+    // Convert g to mm/s² (1g = 9810 mm/s²)
+    const double gToMmPerS2 = 9810.0;
+
+    // Integrate acceleration to velocity using trapezoidal rule
+    final velX = List<double>.filled(n, 0.0);
+    final velY = List<double>.filled(n, 0.0);
+    final velZ = List<double>.filled(n, 0.0);
+
+    for (int i = 1; i < n; i++) {
+      velX[i] = velX[i - 1] + 0.5 * (accelX[i - 1] + accelX[i]) * dt * gToMmPerS2;
+      velY[i] = velY[i - 1] + 0.5 * (accelY[i - 1] + accelY[i]) * dt * gToMmPerS2;
+      velZ[i] = velZ[i - 1] + 0.5 * (accelZ[i - 1] + accelZ[i]) * dt * gToMmPerS2;
+    }
+
+    // Compute vector magnitude at each point
+    double vectorPPV = 0.0;
+    for (int i = 0; i < n; i++) {
+      final magnitude = sqrt(velX[i] * velX[i] + velY[i] * velY[i] + velZ[i] * velZ[i]);
+      if (magnitude > vectorPPV) vectorPPV = magnitude;
+    }
+
+    return vectorPPV;
   }
 
   /// Reset running accumulators (e.g. when reconnecting)
@@ -230,6 +307,12 @@ class VibrationDspService {
     ariasIntensity = 0.0;
     cav = 0.0;
     _lastAriasReset = DateTime.now();
+  }
+
+  /// Clean up resources
+  void dispose() {
+    ariasIntensity = 0.0;
+    cav = 0.0;
   }
 }
 
@@ -247,6 +330,7 @@ class DspResult {
   final double dwtEnergy3; // 12.5-25Hz band
   final double ariasIntensity;
   final double cav;
+  final double psdSlope; // Log-log PSD slope (β exponent) in 0.78-5 Hz band
 
   const DspResult({
     required this.rms,
@@ -261,6 +345,7 @@ class DspResult {
     required this.dwtEnergy3,
     required this.ariasIntensity,
     required this.cav,
+    required this.psdSlope,
   });
 
   /// Convert to feature map for anomaly detection pipeline.
@@ -280,6 +365,7 @@ class DspResult {
       'arias': ariasIntensity,
       'cav': cav,
       'temp': temp,
+      'psdSlope': psdSlope,
     };
   }
 }

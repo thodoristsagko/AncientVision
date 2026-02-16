@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../utils/circular_buffer.dart';
 
 /// Adaptive statistical anomaly detector using online learning + trend analysis.
 ///
@@ -61,8 +62,7 @@ class AdaptiveAnomalyService {
 
   // Sliding window feature matrix for precursor pattern detection
   // ~20 min at 0.5Hz BLE rate
-  final List<Map<String, double>> _featureHistory = [];
-  static const int _featureHistoryMax = 600;
+  final _featureHistory = CircularBuffer<Map<String, double>>(600);
 
   // Per-feature running statistics (Welford's algorithm)
   final Map<String, _WelfordStats> _stats = {};
@@ -72,8 +72,22 @@ class AdaptiveAnomalyService {
   final Map<String, double> _emaVariance = {};
 
   // Rolling windows for trend detection
-  final Map<String, List<double>> _shortWindow = {};
-  final Map<String, List<double>> _longWindow = {};
+  final Map<String, CircularBuffer<double>> _shortWindow = {};
+  final Map<String, CircularBuffer<double>> _longWindow = {};
+
+  // CUSUM (Cumulative Sum) change point detection
+  final Map<String, double> _cusumPositive = {};
+  final Map<String, double> _cusumNegative = {};
+  final Map<String, int> _changePointCount = {};
+
+  // Fukuzono inverse velocity history for time-to-failure prediction
+  final _inverseVelocityHistory = CircularBuffer<double>(120); // ~4 min at 0.5 Hz
+  final _inverseVelocityTimes = CircularBuffer<double>(120);
+  final Stopwatch _serviceStopwatch = Stopwatch();
+
+  // Latest PSD slope from DSP (passed through for display)
+  double? _lastPsdSlope;
+  double? get lastPsdSlope => _lastPsdSlope;
 
   int _sampleCount = 0;
   bool _isCalibrated = false;
@@ -85,10 +99,14 @@ class AdaptiveAnomalyService {
   String get modeLabel => _isCalibrated ? 'Adaptive' : 'Calibrating (${(_sampleCount * 100 / _calibrationSamples).round()}%)';
 
   AdaptiveAnomalyService() {
+    _serviceStopwatch.start();
     for (final key in _featureKeys) {
       _stats[key] = _WelfordStats();
-      _shortWindow[key] = [];
-      _longWindow[key] = [];
+      _shortWindow[key] = CircularBuffer<double>(_shortWindowSize);
+      _longWindow[key] = CircularBuffer<double>(_longWindowSize);
+      _cusumPositive[key] = 0.0;
+      _cusumNegative[key] = 0.0;
+      _changePointCount[key] = 0;
     }
   }
 
@@ -103,12 +121,35 @@ class AdaptiveAnomalyService {
 
       // Maintain rolling windows for trend detection
       _shortWindow[key]!.add(value);
-      if (_shortWindow[key]!.length > _shortWindowSize) {
-        _shortWindow[key]!.removeAt(0);
-      }
       _longWindow[key]!.add(value);
-      if (_longWindow[key]!.length > _longWindowSize) {
-        _longWindow[key]!.removeAt(0);
+
+      // CUSUM change point detection (only during calibrated phase)
+      if (_isCalibrated) {
+        final mean = _emaMean[key]!;
+        final stdDev = sqrt(_emaVariance[key]!);
+        final drift = 0.5 * stdDev; // allowable drift (half sigma)
+        final threshold = 5.0 * stdDev; // detection threshold
+
+        // Update CUSUM statistics
+        final cusumPos = max(0.0, _cusumPositive[key]! + (value - mean - drift));
+        final cusumNeg = max(0.0, _cusumNegative[key]! + (mean - drift - value));
+
+        // Detect change point
+        if (cusumPos > threshold || cusumNeg > threshold) {
+          _changePointCount[key] = (_changePointCount[key] ?? 0) + 1;
+          // Reset CUSUM after change point detected
+          _cusumPositive[key] = 0.0;
+          _cusumNegative[key] = 0.0;
+          if (kDebugMode) {
+            debugPrint('CUSUM change point detected in $key: '
+                'cusumPos=${cusumPos.toStringAsFixed(3)} '
+                'cusumNeg=${cusumNeg.toStringAsFixed(3)} '
+                'count=${_changePointCount[key]}');
+          }
+        } else {
+          _cusumPositive[key] = cusumPos;
+          _cusumNegative[key] = cusumNeg;
+        }
       }
     }
 
@@ -120,14 +161,13 @@ class AdaptiveAnomalyService {
         _emaMean[key] = _stats[key]!.mean;
         _emaVariance[key] = _stats[key]!.variance;
       }
-      debugPrint('AdaptiveAnomalyService: Calibration complete after $_sampleCount samples');
-      debugPrint('  Baseline: ${_featureKeys.map((k) => "$k: μ=${_emaMean[k]!.toStringAsFixed(3)} σ=${sqrt(_emaVariance[k]!).toStringAsFixed(3)}").join(", ")}');
+      if (kDebugMode) {
+        debugPrint('AdaptiveAnomalyService: Calibration complete after $_sampleCount samples');
+        debugPrint('  Baseline: ${_featureKeys.map((k) => "$k: μ=${_emaMean[k]!.toStringAsFixed(3)} σ=${sqrt(_emaVariance[k]!).toStringAsFixed(3)}").join(", ")}');
+      }
     }
 
     _featureHistory.add(Map.of(features));
-    if (_featureHistory.length > _featureHistoryMax) {
-      _featureHistory.removeAt(0);
-    }
 
     // Update EMA baseline (very slow drift tracking)
     if (_isCalibrated) {
@@ -243,6 +283,18 @@ class AdaptiveAnomalyService {
       }
     }
 
+    // --- Change point detection contribution ---
+    // Count recent change points across all features (last 10 samples)
+    double changePointScore = 0.0;
+    int totalChangePoints = 0;
+    for (final key in _featureKeys) {
+      totalChangePoints += _changePointCount[key] ?? 0;
+    }
+    // Normalize: 0 change points = 0.0, 5+ change points = 0.5
+    if (totalChangePoints > 0) {
+      changePointScore = min(0.5, totalChangePoints / 10.0);
+    }
+
     // --- Physics-informed precursor pattern detection ---
     double precursorScore = 0.0;
     String? precursorPattern;
@@ -281,6 +333,13 @@ class AdaptiveAnomalyService {
         patternC = min(1.0, ppvAccel.abs() * 500 + 0.5); // Accelerating = very bad
       }
 
+      // Boost Pattern C with Fukuzono prediction
+      final fukuzono = computeFukuzono();
+      if (fukuzono != null && fukuzono.ttfSeconds < 600 && fukuzono.r2 > 0.7) {
+        // Fukuzono predicts failure within 10 minutes with good fit
+        patternC = max(patternC, 0.7 + 0.3 * (1.0 - fukuzono.ttfSeconds / 600.0));
+      }
+
       // Take the max pattern match
       precursorScore = max(patternA, max(patternB, patternC));
       if (patternC >= patternA && patternC >= patternB && patternC > 0.3) {
@@ -297,15 +356,17 @@ class AdaptiveAnomalyService {
       }
 
       if (precursorScore > 0.2) {
-        debugPrint('Precursor: score=${precursorScore.toStringAsFixed(3)} '
-            'pattern=$precursorPattern A=${patternA.toStringAsFixed(2)} '
-            'B=${patternB.toStringAsFixed(2)} C=${patternC.toStringAsFixed(2)}');
+        if (kDebugMode) {
+          debugPrint('Precursor: score=${precursorScore.toStringAsFixed(3)} '
+              'pattern=$precursorPattern A=${patternA.toStringAsFixed(2)} '
+              'B=${patternB.toStringAsFixed(2)} C=${patternC.toStringAsFixed(2)}');
+        }
       }
     }
 
-    // Final score = max of instantaneous, trend, and precursor
-    // This way EITHER a sudden event OR a slow buildup OR a physics pattern triggers
-    final finalScore = max(instantScore, max(trendScore, precursorScore)).clamp(0.0, 1.0);
+    // Final score = max of instantaneous, trend, precursor, and change point
+    // This way EITHER a sudden event OR a slow buildup OR a physics pattern OR change points triggers
+    final finalScore = max(instantScore, max(trendScore, max(precursorScore, changePointScore))).clamp(0.0, 1.0);
     final isTrendDriven = trendScore > instantScore && trendScore >= precursorScore;
     final isPrecursorDriven = precursorScore > instantScore && precursorScore > trendScore;
 
@@ -338,11 +399,14 @@ class AdaptiveAnomalyService {
     }
 
     if (level != AdaptiveAnomalyLevel.normal) {
-      debugPrint('AdaptiveAnomaly: ${level.name} score=${finalScore.toStringAsFixed(3)} '
-          '${isPrecursorDriven ? "PRECURSOR($precursorPattern)" : isTrendDriven ? "TREND" : "INSTANT"} '
-          'dominant=$dominantFeature '
-          'instantZ=${rmsZ.toStringAsFixed(2)} trendScore=${trendScore.toStringAsFixed(3)} '
-          'precursorScore=${precursorScore.toStringAsFixed(3)}');
+      if (kDebugMode) {
+        debugPrint('AdaptiveAnomaly: ${level.name} score=${finalScore.toStringAsFixed(3)} '
+            '${isPrecursorDriven ? "PRECURSOR($precursorPattern)" : isTrendDriven ? "TREND" : "INSTANT"} '
+            'dominant=$dominantFeature '
+            'instantZ=${rmsZ.toStringAsFixed(2)} trendScore=${trendScore.toStringAsFixed(3)} '
+            'precursorScore=${precursorScore.toStringAsFixed(3)} '
+            'changePointScore=${changePointScore.toStringAsFixed(3)} changePoints=$totalChangePoints');
+      }
     }
 
     return AdaptiveAnomalyResult(
@@ -359,6 +423,104 @@ class AdaptiveAnomalyService {
     );
   }
 
+  /// Feed PSD slope from DSP service for passthrough to results.
+  void updatePsdSlope(double slope) {
+    _lastPsdSlope = slope;
+  }
+
+  /// Compute Fukuzono inverse velocity time-to-failure prediction.
+  ///
+  /// Based on Fukuzono (1985) — plots 1/velocity vs time; when the
+  /// linear fit extrapolates to zero, that's the predicted failure time.
+  /// Returns null if insufficient data or no accelerating trend.
+  ///
+  /// Academic basis:
+  /// - Fukuzono (1985) "A new method for predicting the failure time of a slope"
+  /// - Voight (1989) "A relation to describe rate-dependent material failure"
+  FukuzonoResult? computeFukuzono() {
+    if (_featureHistory.length < 3) return null;
+
+    final now = _serviceStopwatch.elapsedMilliseconds / 1000.0;
+
+    // Compute velocity as PPV derivative (change rate)
+    final ppvDeriv = _computeDerivative('ppv', min(150, _featureHistory.length - 1).toInt());
+    if (ppvDeriv.abs() < 1e-8) return null; // No significant velocity
+
+    // Use ppvDeriv as velocity proxy; compute inverse velocity
+    final velocity = ppvDeriv.abs();
+    if (velocity < 1e-6) return null;
+
+    final invV = 1.0 / velocity;
+    _inverseVelocityHistory.add(invV);
+    _inverseVelocityTimes.add(now);
+
+    // Need at least 20 points for meaningful regression
+    if (_inverseVelocityHistory.length < 20) return null;
+
+    // Linear regression: 1/v = a + b*t
+    final times = _inverseVelocityTimes.toList();
+    final invVels = _inverseVelocityHistory.toList();
+    final n = times.length;
+
+    double sumT = 0, sumIV = 0, sumTT = 0, sumTIV = 0;
+    for (int i = 0; i < n; i++) {
+      sumT += times[i];
+      sumIV += invVels[i];
+      sumTT += times[i] * times[i];
+      sumTIV += times[i] * invVels[i];
+    }
+
+    final denom = n * sumTT - sumT * sumT;
+    if (denom.abs() < 1e-12) return null;
+
+    final b = (n * sumTIV - sumT * sumIV) / denom; // slope
+    final a = (sumIV - b * sumT) / n; // intercept
+
+    // Only valid if slope is negative (inverse velocity decreasing toward zero)
+    if (b >= 0) return null;
+
+    // Compute R²
+    final meanIV = sumIV / n;
+    double ssTot = 0, ssRes = 0;
+    for (int i = 0; i < n; i++) {
+      final predicted = a + b * times[i];
+      ssRes += (invVels[i] - predicted) * (invVels[i] - predicted);
+      ssTot += (invVels[i] - meanIV) * (invVels[i] - meanIV);
+    }
+    final r2 = ssTot > 1e-12 ? 1.0 - (ssRes / ssTot) : 0.0;
+
+    if (r2 < 0.7) return null; // Poor fit — don't predict
+
+    // t_failure = -a/b (time when 1/v = 0)
+    final tFailure = -a / b;
+    final ttf = tFailure - now; // seconds until failure
+
+    if (ttf <= 0 || ttf > 7200) return null; // Already past or too far out (>2h)
+
+    // Estimate Voight α from log(dΩ/dt) vs log(Ω)
+    // For soil: expect α ≈ 1.9-2.1
+    double? alpha;
+    if (_featureHistory.length >= 60) {
+      // Simple α estimation from PPV acceleration vs PPV
+      final ppvAccel = _computeAcceleration('ppv', min(150, _featureHistory.length ~/ 2).clamp(10, 150));
+      final recentPpv = _rangeAverage('ppv', _featureHistory.length - 10, _featureHistory.length);
+      if (ppvAccel.abs() > 1e-10 && recentPpv > 1e-6) {
+        final logAccel = log(ppvAccel.abs()) / ln10;
+        final logPpv = log(recentPpv) / ln10;
+        if (logPpv.abs() > 1e-6) {
+          alpha = logAccel / logPpv;
+        }
+      }
+    }
+
+    return FukuzonoResult(
+      ttfSeconds: ttf,
+      r2: r2,
+      alpha: alpha,
+      psdSlope: _lastPsdSlope,
+    );
+  }
+
   /// Reset the baseline (e.g., when moving to a new site)
   void reset() {
     _sampleCount = 0;
@@ -367,11 +529,35 @@ class AdaptiveAnomalyService {
     _emaVariance.clear();
     for (final key in _featureKeys) {
       _stats[key] = _WelfordStats();
-      _shortWindow[key] = [];
-      _longWindow[key] = [];
+      _shortWindow[key]!.clear();
+      _longWindow[key]!.clear();
+      _cusumPositive[key] = 0.0;
+      _cusumNegative[key] = 0.0;
+      _changePointCount[key] = 0;
     }
     _featureHistory.clear();
-    debugPrint('AdaptiveAnomalyService: Baseline reset');
+    _inverseVelocityHistory.clear();
+    _inverseVelocityTimes.clear();
+    _lastPsdSlope = null;
+    if (kDebugMode) {
+      debugPrint('AdaptiveAnomalyService: Baseline reset');
+    }
+  }
+
+  /// Clean up resources
+  void dispose() {
+    _featureHistory.clear();
+    _inverseVelocityHistory.clear();
+    _inverseVelocityTimes.clear();
+    for (final key in _featureKeys) {
+      _shortWindow[key]?.clear();
+      _longWindow[key]?.clear();
+    }
+    _emaMean.clear();
+    _emaVariance.clear();
+    _cusumPositive.clear();
+    _cusumNegative.clear();
+    _changePointCount.clear();
   }
 
   /// Get baseline summary for display
@@ -403,8 +589,9 @@ class AdaptiveAnomalyService {
     if (_featureHistory.length < windowSamples * 2) return 0.0;
     final d1 = _computeDerivative(feature, windowSamples);
     // Compute derivative from the earlier half
-    final halfLen = _featureHistory.length ~/ 2;
-    final oldHistory = _featureHistory.sublist(0, halfLen);
+    final historyList = _featureHistory.toList();
+    final halfLen = historyList.length ~/ 2;
+    final oldHistory = historyList.sublist(0, halfLen);
     double oldD = 0.0;
     if (oldHistory.length >= windowSamples + 1) {
       final start = oldHistory.length - windowSamples;
@@ -427,31 +614,32 @@ class AdaptiveAnomalyService {
 
   double _rangeAverage(String feature, int from, int to) {
     if (from >= to || from < 0) return 0.0;
-    final end = to.clamp(0, _featureHistory.length);
+    final historyList = _featureHistory.toList();
+    final end = to.clamp(0, historyList.length);
     final start = from.clamp(0, end);
     if (start >= end) return 0.0;
     double sum = 0.0;
     for (int i = start; i < end; i++) {
-      sum += _featureHistory[i][feature] ?? 0.0;
+      sum += historyList[i][feature] ?? 0.0;
     }
     return sum / (end - start);
   }
 
   // --- Utility functions ---
 
-  double _windowMean(List<double> window) {
+  double _windowMean(CircularBuffer<double> window) {
     if (window.isEmpty) return 0.0;
     double sum = 0.0;
-    for (final v in window) {
+    for (final v in window.iter) {
       sum += v;
     }
     return sum / window.length;
   }
 
-  double _windowStdDev(List<double> window, double mean) {
+  double _windowStdDev(CircularBuffer<double> window, double mean) {
     if (window.length < 2) return 0.0;
     double sumSq = 0.0;
-    for (final v in window) {
+    for (final v in window.iter) {
       final d = v - mean;
       sumSq += d * d;
     }
@@ -514,5 +702,29 @@ class AdaptiveAnomalyResult {
       case AdaptiveAnomalyLevel.anomaly:
         return 'Anomaly';
     }
+  }
+}
+
+/// Result of Fukuzono inverse velocity time-to-failure prediction.
+class FukuzonoResult {
+  final double ttfSeconds; // Estimated seconds to failure
+  final double r2; // Linear fit quality (0-1)
+  final double? alpha; // Voight α value (soil ≈ 1.9-2.1)
+  final double? psdSlope; // PSD log-log slope from DSP
+
+  const FukuzonoResult({
+    required this.ttfSeconds,
+    required this.r2,
+    this.alpha,
+    this.psdSlope,
+  });
+
+  /// Classify PSD slope: earthquake ~-0.5, landslide ~-3 to -9, noise < -9
+  String get psdClassification {
+    if (psdSlope == null) return 'unknown';
+    final s = psdSlope!;
+    if (s > -1.5) return 'earthquake';
+    if (s > -9.0) return 'landslide';
+    return 'noise';
   }
 }

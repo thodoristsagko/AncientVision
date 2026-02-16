@@ -27,7 +27,6 @@ class Model3DViewer extends StatefulWidget {
 class _Model3DViewerState extends State<Model3DViewer> {
   bool _showInfo = true;
   double _pointSize = 3.0;
-  bool _showColors = true;
   bool _autoRotate = false;
   bool _measureMode = false;
   PointCloudRenderMode _renderMode = PointCloudRenderMode.color;
@@ -140,7 +139,7 @@ class _Model3DViewerState extends State<Model3DViewer> {
               key: _viewerKey,
               pointCloud: pointCloud,
               initialPointSize: _pointSize,
-              initialShowColors: _showColors,
+              initialShowColors: true,
               renderMode: _renderMode,
             ),
 
@@ -514,7 +513,7 @@ class _Model3DViewerState extends State<Model3DViewer> {
     if (_gaussianScene == null) {
       setState(() => _convertingToGaussians = true);
       final service = GaussianSplattingService();
-      final scene = await service.convertFromPointCloud(pc);
+      final scene = service.convertFromPointCloud(pc);
       if (mounted) {
         setState(() {
           _gaussianScene = scene;

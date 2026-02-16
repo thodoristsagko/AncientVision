@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math_64.dart';
@@ -214,10 +213,10 @@ class PoissonMeshService {
                   iz * gridRes * gridRes + (iy - 1) * gridRes + (ix - 1)]
               : null;
 
-          // Create quad faces from neighboring cells
+          // Create quad faces from neighboring cells with consistent CCW winding
           if (prevX != null && prevY != null && prevXY != null) {
-            faces.add(MeshFace(vi, prevX, prevXY));
-            faces.add(MeshFace(vi, prevXY, prevY));
+            faces.add(MeshFace(vi, prevXY, prevX));
+            faces.add(MeshFace(vi, prevY, prevXY));
           }
         }
       }

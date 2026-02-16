@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/point_cloud.dart';
-import 'reconstruction_service.dart';
+import 'reconstruction/index.dart';
 
 /// Callback for incremental reconstruction updates.
 typedef IncrementalUpdateCallback = void Function(
@@ -59,12 +59,17 @@ class IncrementalSfMService {
       final result = await _reconstructionService.generateSparsePreview(
         imageFiles: _registeredImages,
         onProgress: (progress, status) {
+          if (kDebugMode) {
           debugPrint('IncrementalSfM: $status (${(progress * 100).toInt()}%)');
+          }
         },
       );
 
       if (result.pointCloud != null && result.pointCloud!.points.isNotEmpty) {
         _currentCloud = result.pointCloud;
+        if (result.cameraPoses != null && result.cameraPoses!.isNotEmpty) {
+          _currentPoses = List.from(result.cameraPoses!);
+        }
 
         onUpdate?.call(
           _currentCloud!,
@@ -81,7 +86,9 @@ class IncrementalSfMService {
       _isProcessing = false;
       return false;
     } catch (e) {
+      if (kDebugMode) {
       debugPrint('IncrementalSfM: Failed to add image: $e');
+      }
       _registeredImages.removeLast();
       _isProcessing = false;
       return false;

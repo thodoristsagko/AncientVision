@@ -308,7 +308,9 @@ class WeatherService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final logsJson = prefs.getStringList(_logsKey) ?? [];
-      return logsJson
+      // Reverse to get newest first (since we now store oldest-first)
+      // Then sort by timestamp as a safety measure
+      return logsJson.reversed
           .map((json) => WeatherLog.fromJson(jsonDecode(json)))
           .toList()
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -428,11 +430,12 @@ class WeatherService {
     final prefs = await SharedPreferences.getInstance();
     final logsJson = prefs.getStringList(_logsKey) ?? [];
 
-    logsJson.insert(0, jsonEncode(log.toJson()));
+    // Add to end instead of beginning to avoid O(N) insert(0)
+    logsJson.add(jsonEncode(log.toJson()));
 
-    // Keep only last 500 logs
+    // Keep only last 500 logs (remove from beginning if needed)
     if (logsJson.length > 500) {
-      logsJson.removeRange(500, logsJson.length);
+      logsJson.removeRange(0, logsJson.length - 500);
     }
 
     await prefs.setStringList(_logsKey, logsJson);

@@ -142,12 +142,17 @@ class WaveletService {
   // Denoising
   // ---------------------------------------------------------------------------
 
-  /// Denoises [signal] using Haar DWT soft thresholding.
+  /// Denoises [signal] using Haar DWT soft thresholding with BayesShrink.
   ///
-  /// The universal threshold is `sigma * sqrt(2 * ln(N))` where sigma is
-  /// estimated from the finest-level detail coefficients using the Median
-  /// Absolute Deviation (MAD / 0.6745). An explicit [threshold] can be
-  /// supplied to override the automatic estimate.
+  /// BayesShrink provides per-level adaptive thresholding instead of a
+  /// universal threshold. For each detail level, the threshold is computed as:
+  ///   threshold = sigma² / sigma_signal
+  /// where sigma is the noise standard deviation (estimated from finest detail
+  /// using MAD) and sigma_signal = sqrt(max(0, var(detail) - sigma²)).
+  ///
+  /// This is more conservative than universal thresholding and better preserves
+  /// signal features while removing noise. An explicit [threshold] can still be
+  /// supplied to override the automatic estimate and use universal thresholding.
   static List<double> denoise(
     List<double> signal, {
     int levels = 3,
@@ -159,13 +164,53 @@ class WaveletService {
 
     // Estimate noise standard deviation from finest detail coefficients.
     final double sigma = _estimateSigma(result.details[0]);
-    final int n = signal.length;
-    final double thr = threshold ?? sigma * sqrt(2.0 * log(n));
 
-    // Apply soft thresholding to all detail levels.
-    final List<List<double>> thresholdedDetails = result.details
-        .map((d) => d.map((v) => _softThreshold(v, thr)).toList())
-        .toList();
+    // If explicit threshold provided, use universal thresholding
+    if (threshold != null) {
+      final List<List<double>> thresholdedDetails = result.details
+          .map((d) => d.map((v) => _softThreshold(v, threshold)).toList())
+          .toList();
+
+      final WaveletResult denoised = WaveletResult(
+        approximation: result.approximation,
+        details: thresholdedDetails,
+        levels: result.levels,
+      );
+
+      final List<double> reconstructed = reconstruct(denoised);
+      return reconstructed.sublist(0, signal.length);
+    }
+
+    // BayesShrink: compute per-level adaptive thresholds
+    final List<List<double>> thresholdedDetails = [];
+    for (final detail in result.details) {
+      // Compute variance of this detail level
+      double mean = 0.0;
+      for (final v in detail) {
+        mean += v;
+      }
+      mean /= detail.length;
+
+      double variance = 0.0;
+      for (final v in detail) {
+        final d = v - mean;
+        variance += d * d;
+      }
+      variance /= detail.length;
+
+      // Estimate signal variance: var_signal = max(0, var(detail) - sigma²)
+      final sigmaSignalSq = max(0.0, variance - sigma * sigma);
+      final sigmaSignal = sqrt(sigmaSignalSq);
+
+      // BayesShrink threshold: sigma² / sigma_signal
+      // If sigma_signal ≈ 0 (pure noise), threshold → infinity (suppress all)
+      // Add small epsilon to prevent division by zero
+      final thr = sigmaSignal > 1e-10 ? (sigma * sigma) / sigmaSignal : sigma * 100.0;
+
+      // Apply soft thresholding with this level's threshold
+      final thresholdedDetail = detail.map((v) => _softThreshold(v, thr)).toList();
+      thresholdedDetails.add(thresholdedDetail);
+    }
 
     final WaveletResult denoised = WaveletResult(
       approximation: result.approximation,

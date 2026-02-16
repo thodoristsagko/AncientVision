@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
-import '../main.dart' show imgbbApiKey;
+import '../config/env_config.dart';
 import '../services/auth_service.dart';
 import '../services/export_service.dart';
 import '../services/local_storage_service.dart';
@@ -17,7 +17,7 @@ import 'help_screen.dart';
 import 'admin_panel_screen.dart';
 import 'login_screen.dart';
 import 'ai_recognition_screen.dart';
-import 'photogrammetry_screen.dart';
+import 'photogrammetry/photogrammetry_screen.dart';
 
 class ToolsView extends StatelessWidget {
   const ToolsView({super.key});
@@ -615,7 +615,7 @@ class ToolsView extends StatelessWidget {
           final response = await http.post(
             Uri.parse('https://api.imgbb.com/1/upload'),
             body: {
-              'key': imgbbApiKey,
+              'key': EnvConfig.imgbbApiKey,
               'image': base64Image,
             },
           ).timeout(const Duration(seconds: 10));

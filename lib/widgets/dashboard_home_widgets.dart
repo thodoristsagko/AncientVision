@@ -207,8 +207,8 @@ class ActiveDevicesCardState extends State<ActiveDevicesCard> {
         filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           width: double.infinity,
-          height: 120,
           padding: const EdgeInsets.all(18),
+          height: 120,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -230,11 +230,14 @@ class ActiveDevicesCardState extends State<ActiveDevicesCard> {
                   children: [
                     Row(
                       children: [
-                        Text('Active Devices',
-                            style: TextStyle(
-                              color: Colors.white.withAlpha(217),
-                              fontSize: 14,
-                            )),
+                        Flexible(
+                          child: Text('Active Devices',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withAlpha(217),
+                                fontSize: 14,
+                              )),
+                        ),
                         const SizedBox(width: 8),
                         if (isConnected)
                           Container(
@@ -259,6 +262,7 @@ class ActiveDevicesCardState extends State<ActiveDevicesCard> {
                     if (_deviceName.isNotEmpty)
                       Text(
                         _deviceName,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12),
                       ),
                   ],

@@ -3,7 +3,7 @@ import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
-import 'coin_identification_service.dart';
+import 'coin/index.dart';
 
 /// Advanced AI-powered artifact classification using Google ML Kit
 /// Provides professional-grade on-device image labeling and object detection

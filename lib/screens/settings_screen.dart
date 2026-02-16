@@ -4,7 +4,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/settings_service.dart';
 import '../services/backup_service.dart';
 import '../services/biometric_service.dart';
-import '../services/coin_identification_service.dart';
+import '../services/coin/index.dart';
 import '../services/gemini_coin_service.dart';
 import '../utils/app_styles.dart';
 

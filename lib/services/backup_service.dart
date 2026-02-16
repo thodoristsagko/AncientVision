@@ -152,7 +152,9 @@ class BackupService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_lastBackupKey, DateTime.now().toIso8601String());
 
-      debugPrint('Backup created: ${file.path}');
+      if (kDebugMode) {
+        debugPrint('Backup created: ${file.path}');
+      }
 
       return BackupInfo(
         filename: filename,
@@ -175,7 +177,9 @@ class BackupService {
     try {
       final file = File(path);
       if (!await file.exists()) {
-        debugPrint('Backup file not found: $path');
+        if (kDebugMode) {
+          debugPrint('Backup file not found: $path');
+        }
         return null;
       }
 
@@ -192,7 +196,9 @@ class BackupService {
         }
       }
 
-      debugPrint('Backup restored: ${restoredData.keys.join(', ')}');
+      if (kDebugMode) {
+        debugPrint('Backup restored: ${restoredData.keys.join(', ')}');
+      }
       return restoredData;
     } catch (e) {
       debugPrint('Error restoring backup: $e');
@@ -254,7 +260,9 @@ class BackupService {
       final file = File(path);
       if (await file.exists()) {
         await file.delete();
-        debugPrint('Backup deleted: $path');
+        if (kDebugMode) {
+          debugPrint('Backup deleted: $path');
+        }
         return true;
       }
       return false;
@@ -277,7 +285,9 @@ class BackupService {
         }
       }
 
-      debugPrint('Cleaned up $deleted old backups');
+      if (kDebugMode) {
+        debugPrint('Cleaned up $deleted old backups');
+      }
       return deleted;
     } catch (e) {
       debugPrint('Error cleaning up backups: $e');
@@ -354,7 +364,9 @@ class BackupService {
         }
       }
 
-      debugPrint('Preferences restored from: $path');
+      if (kDebugMode) {
+        debugPrint('Preferences restored from: $path');
+      }
       return true;
     } catch (e) {
       debugPrint('Error restoring preferences: $e');

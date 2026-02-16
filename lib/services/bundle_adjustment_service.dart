@@ -780,6 +780,14 @@ class BundleAdjustmentService {
         break;
       }
 
+      // Early termination: if cost change is very small, stop
+      final costChange = (prevError - currentError).abs();
+      if (costChange < 1e-8) {
+        converged = true;
+        iter++;
+        break;
+      }
+
       prevError = currentError;
     }
 

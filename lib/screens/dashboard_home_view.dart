@@ -11,7 +11,7 @@ import 'login_screen.dart';
 import 'notifications_screen.dart';
 import 'qr_scanner_screen.dart';
 import 'ai_recognition_screen.dart';
-import 'photogrammetry_screen.dart';
+import 'photogrammetry/photogrammetry_screen.dart';
 
 class DashboardHomeView extends StatefulWidget {
   const DashboardHomeView({super.key});
@@ -457,12 +457,15 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
           children: [
             Icon(icon, size: 20, color: Colors.white),
             const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],

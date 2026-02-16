@@ -129,18 +129,25 @@ class PointCloudPainter extends CustomPainter {
     // Sort by depth (back to front - painter's algorithm)
     projectedPoints.sort((a, b) => a.z.compareTo(b.z));
 
-    // Draw all points with proper depth ordering
+    // Draw all points with proper depth ordering using batch API for better performance
     final paint = Paint()
       ..style = PaintingStyle.fill
       ..strokeWidth = 1;
+
+    // Collect all point positions and colors for batch rendering
+    final glowPoints = <Offset>[];
+    final glowColors = <Color>[];
+    final mainPoints = <Offset>[];
+    final mainColors = <Color>[];
 
     for (final proj in projectedPoints) {
       // Calculate depth-based brightness (simple lighting simulation)
       final depthFactor = 1.0 - (proj.z / (focalLength * 2)).clamp(0.0, 0.5);
 
       // Set color with depth-based shading
+      final Color pointColor;
       if (showColors) {
-        paint.color = Color.fromRGBO(
+        pointColor = Color.fromRGBO(
           ((proj.color.r * 255) * depthFactor).toInt().clamp(0, 255),
           ((proj.color.g * 255) * depthFactor).toInt().clamp(0, 255),
           ((proj.color.b * 255) * depthFactor).toInt().clamp(0, 255),
@@ -149,29 +156,43 @@ class PointCloudPainter extends CustomPainter {
       } else {
         // White with depth shading
         final intensity = (255 * depthFactor).toInt().clamp(0, 255);
-        paint.color = Color.fromRGBO(intensity, intensity, intensity, 1.0);
+        pointColor = Color.fromRGBO(intensity, intensity, intensity, 1.0);
       }
 
-      // Adaptive point size based on scale and density
-      final adaptiveSize = pointSize * proj.scale.clamp(0.3, 2.5);
+      final position = Offset(proj.x, proj.y);
 
-      // Draw point with slight glow effect for better visibility
-      final baseColor = paint.color;
-      canvas.drawCircle(
-        Offset(proj.x, proj.y),
-        adaptiveSize * 1.2,
-        paint..color = Color.fromRGBO(
-          (baseColor.r * 255).toInt(),
-          (baseColor.g * 255).toInt(),
-          (baseColor.b * 255).toInt(),
-          0.3,
-        ),
-      );
-      canvas.drawCircle(
-        Offset(proj.x, proj.y),
-        adaptiveSize,
-        paint..color = baseColor,
-      );
+      // Glow effect (outer circle)
+      glowPoints.add(position);
+      glowColors.add(Color.fromRGBO(
+        (pointColor.r * 255).toInt(),
+        (pointColor.g * 255).toInt(),
+        (pointColor.b * 255).toInt(),
+        0.3,
+      ));
+
+      // Main point (inner circle)
+      mainPoints.add(position);
+      mainColors.add(pointColor);
+    }
+
+    // Draw glow layer using batch API
+    if (glowPoints.isNotEmpty) {
+      // Note: Canvas.drawPoints doesn't support per-point colors in Flutter,
+      // so we still need individual drawCircle calls for colored points
+      // This optimization would work best for monochrome point clouds
+      const glowSize = 1.2;
+      for (int i = 0; i < glowPoints.length; i++) {
+        paint.color = glowColors[i];
+        canvas.drawCircle(glowPoints[i], pointSize * glowSize, paint);
+      }
+    }
+
+    // Draw main points layer
+    if (mainPoints.isNotEmpty) {
+      for (int i = 0; i < mainPoints.length; i++) {
+        paint.color = mainColors[i];
+        canvas.drawCircle(mainPoints[i], pointSize, paint);
+      }
     }
 
     // Draw measurement markers and line

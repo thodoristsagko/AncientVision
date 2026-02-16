@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 /// Depth map from stereo matching.
@@ -34,14 +33,14 @@ class PatchMatchStereo {
   /// Maximum disparity to search.
   final int maxDisparity;
 
-  /// Resolution for depth estimation.
+  /// Resolution for depth estimation (longest dimension).
   final int resolution;
 
   PatchMatchStereo({
     this.patchRadius = 3,
     this.iterations = 3,
     this.maxDisparity = 64,
-    this.resolution = 256,
+    this.resolution = 512,
   });
 
   /// Estimate depth map from a stereo image pair.

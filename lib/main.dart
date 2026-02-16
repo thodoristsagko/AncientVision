@@ -19,12 +19,8 @@ import 'screens/biometric_gate_screen.dart';
 import 'screens/dashboard_home_view.dart';
 import 'screens/findings_view.dart';
 import 'screens/tools_view.dart';
-import 'screens/safety_view.dart';
+import 'screens/safety/index.dart';
 
-// ============================================================
-// IMGBB API KEY - Get your free key at https://api.imgbb.com/
-// ============================================================
-const String imgbbApiKey = '63efd0891caba4842791a2f892301d07';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

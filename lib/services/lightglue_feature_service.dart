@@ -1,13 +1,12 @@
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
-import 'reconstruction_service.dart';
+import 'reconstruction/index.dart';
 
 /// Keypoint detected in an image with position, score, and learned descriptor.
 class Keypoint {

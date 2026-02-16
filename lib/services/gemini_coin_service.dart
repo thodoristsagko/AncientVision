@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_classification_service.dart';
+import '../config/env_config.dart';
 
 /// Gemini AI-powered coin identification service
 /// Uses Google Gemini 2.5 Flash vision model for expert numismatic analysis
@@ -13,7 +14,7 @@ class GeminiCoinService {
   GeminiCoinService._internal();
 
   static const String _apiKeyPref = 'gemini_api_key';
-  static const String _defaultApiKey = 'AIzaSyCHz6ruZy1mziMJe_MDH5jlUhKTDqxo4e4';
+  static const String _defaultApiKey = EnvConfig.geminiApiKey;
 
   GenerativeModel? _model;
   String? _apiKey;
