@@ -14,7 +14,7 @@ A quick guide for using the AncientVision safety monitoring system at your archa
 
 ## 1. Charging the Sensor
 
-Plug the USB-C cable into the sensor. A full charge takes about 2 hours and lasts approximately 6-8 hours of continuous monitoring. You can check the battery level in the app once connected (shown as a small chip in the top bar).
+Plug the USB-C cable into the sensor. A full charge takes about 2 hours and lasts approximately **1 hour** of continuous monitoring. **Keep the USB-C cable and a power bank handy** for longer sessions. You can check the battery level in the app once connected (shown as a small chip in the top bar).
 
 ---
 
@@ -112,10 +112,10 @@ If the screen goes entirely red with large text, this is the **highest priority*
 
 ## 8. Daily Routine
 
-1. **Morning**: Turn on sensor, place it, open app, verify connection (green dot = connected)
+1. **Morning**: Charge sensor fully. Turn it on, place it, open app, verify connection (green dot = connected).
 2. **During work**: Keep the app open on your phone. Glance at it regularly. Listen for alert sounds.
-3. **Breaks**: The sensor keeps running. No need to turn it off.
-4. **End of day**: You can leave the sensor on (it sleeps automatically) or turn it off by holding the side button for 6 seconds.
+3. **Battery**: The sensor lasts about **1 hour**. Keep a **power bank** connected for all-day monitoring, or swap in a freshly charged sensor when the battery chip in the app turns red.
+4. **End of day**: Turn off by holding the side button for 6 seconds.
 
 ---
 
@@ -125,7 +125,7 @@ If the screen goes entirely red with large text, this is the **highest priority*
 |---------|----------|
 | App can't find sensor | Make sure Bluetooth is on. Turn sensor off and on again. Tap **Scan**. |
 | Connection keeps dropping | Move phone closer to sensor (within 10 meters). Check sensor battery. |
-| Sensor screen is blank | Charge it. Press side button to wake it. |
+| Sensor screen is blank | Battery is dead (lasts ~1 hour). Charge it or plug in a power bank. Press side button to wake. |
 | Constant yellow alerts | The site might be near a road or construction. Re-do the "Learn Your Site" step during a quiet moment. |
 | App crashed | Just reopen it. It reconnects automatically. |
 | "Not enough data" when stopping calibration | You stopped too early. Start again and wait the full 5 minutes. |
