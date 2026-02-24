@@ -3,19 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+// import 'package:firebase_auth/firebase_auth.dart'; // TEST BUILD
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'services/auth_service.dart';
+// import 'services/auth_service.dart'; // TEST BUILD
 import 'services/notification_service.dart';
 import 'services/background_service.dart';
 import 'services/settings_service.dart';
-import 'services/offline_queue_service.dart';
+
 import 'widgets/offline_indicator.dart';
 import 'widgets/glass_bottom_nav_bar.dart';
 import 'widgets/full_screen_alert_overlay.dart';
-import 'screens/login_screen.dart';
-import 'screens/biometric_gate_screen.dart';
+// import 'screens/login_screen.dart'; // TEST BUILD
+// import 'screens/biometric_gate_screen.dart'; // TEST BUILD
 import 'screens/dashboard_home_view.dart';
 import 'screens/findings_view.dart';
 import 'screens/tools_view.dart';
@@ -31,7 +31,7 @@ void main() async {
   await NotificationService().requestPermissions();
   // Initialize background service to keep app running
   await BackgroundServiceManager().initialize();
-  OfflineQueueService().startListening();
+
   runApp(const MyApp());
 }
 
@@ -99,25 +99,24 @@ class _MyAppState extends State<MyApp> {
         }
         return child ?? const SizedBox.shrink();
       },
-      home: StreamBuilder<User?>(
-        stream: AuthService.authStateChanges,
-        builder: (context, snapshot) {
-          // Show loading while checking auth state
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(color: Color(0xFFFFC107)),
-              ),
-            );
-          }
-          // If user is logged in, check for biometric
-          if (snapshot.hasData) {
-            return const BiometricGate();
-          }
-          // Otherwise, show login screen
-          return const LoginScreen();
-        },
-      ),
+      // TEST BUILD: Skip auth — go straight to dashboard
+      home: const DashboardScreen(),
+      // home: StreamBuilder<User?>(
+      //   stream: AuthService.authStateChanges,
+      //   builder: (context, snapshot) {
+      //     if (snapshot.connectionState == ConnectionState.waiting) {
+      //       return const Scaffold(
+      //         body: Center(
+      //           child: CircularProgressIndicator(color: Color(0xFFFFC107)),
+      //         ),
+      //       );
+      //     }
+      //     if (snapshot.hasData) {
+      //       return const BiometricGate();
+      //     }
+      //     return const LoginScreen();
+      //   },
+      // ),
     );
   }
 }
@@ -130,7 +129,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int _currentIndex = 0;
+  int _currentIndex = 3; // TEST BUILD: default to Monitor tab
 
   // Global mute state (shared across all tabs)
   bool _isMuted = false;

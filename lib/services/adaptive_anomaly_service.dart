@@ -178,7 +178,7 @@ class AdaptiveAnomalyService {
         final diff = value - _emaMean[key]!;
         _emaVariance[key] = _emaVariance[key]! + _emaAlpha * (diff * diff - _emaVariance[key]!);
         // Floor variance to prevent division by near-zero
-        if (_emaVariance[key]! < 1e-10) _emaVariance[key] = 1e-10;
+        if (_emaVariance[key]! < 1e-20) _emaVariance[key] = 1e-20;
       }
     }
   }
@@ -442,12 +442,16 @@ class AdaptiveAnomalyService {
 
     final now = _serviceStopwatch.elapsedMilliseconds / 1000.0;
 
-    // Compute velocity as PPV derivative (change rate)
-    final ppvDeriv = _computeDerivative('ppv', min(150, _featureHistory.length - 1).toInt());
-    if (ppvDeriv.abs() < 1e-8) return null; // No significant velocity
+    // Compute pseudo-velocity as PPV derivative (change rate).
+    // NOTE: This is a heuristic proxy for displacement rate, not true
+    // Fukuzono inverse velocity. True Fukuzono requires direct displacement
+    // measurements (extensometer/inclinometer). We use PPV trend rate as a
+    // surrogate — valid for relative comparison, not absolute TTF values.
+    final pseudoVelocity = _computeDerivative('ppv', min(150, _featureHistory.length - 1).toInt());
+    if (pseudoVelocity.abs() < 1e-8) return null; // No significant velocity
 
-    // Use ppvDeriv as velocity proxy; compute inverse velocity
-    final velocity = ppvDeriv.abs();
+    // Use pseudoVelocity as velocity proxy; compute inverse velocity
+    final velocity = pseudoVelocity.abs();
     if (velocity < 1e-6) return null;
 
     final invV = 1.0 / velocity;
@@ -546,6 +550,7 @@ class AdaptiveAnomalyService {
 
   /// Clean up resources
   void dispose() {
+    _serviceStopwatch.stop();
     _featureHistory.clear();
     _inverseVelocityHistory.clear();
     _inverseVelocityTimes.clear();

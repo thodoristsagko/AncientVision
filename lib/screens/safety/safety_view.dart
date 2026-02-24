@@ -156,8 +156,6 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   StreamSubscription? _connectionSubscription;
   final List<StreamSubscription> _charSubscriptions = [];
 
-  final bool _isSimulating = false;
-  Timer? _simulationTimer;
   Timer? _firebaseLogTimer;
   final CircularBuffer<Map<String, dynamic>> _sensorHistory = CircularBuffer(30);
 
@@ -215,11 +213,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     for (var sub in _charSubscriptions) {
       sub.cancel();
     }
-    _simulationTimer?.cancel();
     _firebaseLogTimer?.cancel();
     _reconnectTimer?.cancel();
     _keepAliveTimer?.cancel();
     _uiRefreshTimer?.cancel();
+    _dspService.dispose();
     _anomalyService.dispose();
     super.dispose();
   }
@@ -230,6 +228,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       return;
     }
     final state = await FlutterBluePlus.adapterState.first;
+    if (!mounted) return;
     if (state != BluetoothAdapterState.on) {
       setState(() => _connectionStatus = 'Bluetooth OFF');
       return;
@@ -620,6 +619,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
       // v5.0: raw accel packets have header [seqNum, sampleCount/2].
       // Firmware sends FFT_SAMPLES>>1 (128) since 256 overflows uint8.
+      if (value.length < 2) return;
       final sampleCountRaw = value[1];
       final sampleCount = sampleCountRaw <= 128 ? sampleCountRaw * 2 : sampleCountRaw;
       if (value.length > 4 && sampleCount >= 128) {
@@ -1152,7 +1152,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   /// Trigger full-screen alert via parent Dashboard (works on all tabs)
   void _triggerFullScreenAlert(String message, String level) {
-    widget.onAlert(message, level);
+    try {
+      widget.onAlert(message, level);
+    } catch (e) {
+      debugPrint('Alert callback failed: $e');
+    }
   }
 
   /// Write a command to the device via the alert characteristic (App → Device)
@@ -1244,11 +1248,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         'staLta': _staLtaRatio,
         'hazardType': _hazardType,
         'assessment': assessment,
-        'deviceName': _isSimulating ? 'Simulator' : (_connectedDevice?.platformName ?? 'Unknown'),
+        'deviceName': _connectedDevice?.platformName ?? 'Unknown',
         'timestamp': FieldValue.serverTimestamp(),
         if (lat != null) 'latitude': lat,
         if (lng != null) 'longitude': lng,
-      });
+      }).timeout(const Duration(seconds: 10));
     } catch (e) {
       debugPrint('Error saving alert: $e');
     }
@@ -1256,7 +1260,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   void _startFirebaseLogging() {
     _firebaseLogTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (mounted && (_connectedDevice != null || _isSimulating)) {
+      if (mounted && _connectedDevice != null) {
         _saveSensorDataToFirebase();
       }
     });
@@ -1275,9 +1279,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         'freq': _dominantFreq,
         'crest': _crestFactor,
         'hazardType': _hazardType,
-        'deviceName': _isSimulating ? 'Simulator' : (_connectedDevice?.platformName ?? 'Unknown'),
+        'deviceName': _connectedDevice?.platformName ?? 'Unknown',
         'timestamp': FieldValue.serverTimestamp(),
-      });
+      }).timeout(const Duration(seconds: 10));
     } catch (e) {
       debugPrint('Error saving sensor data: $e');
     }
@@ -1296,7 +1300,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           .collection('sensor_data')
           .orderBy('timestamp', descending: true)
           .limit(30)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 10));
 
       if (mounted && _connectedDevice == null) {
         setState(() {

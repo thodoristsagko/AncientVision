@@ -57,10 +57,18 @@ class MlAnomalyService {
       _thresholdLow = (thresholds['threshold_low'] as num?)?.toDouble() ?? 1.0;
       _thresholdHigh = (thresholds['threshold_high'] as num?)?.toDouble() ?? 2.5;
 
+      // Validate scaler dimensions match model input
+      if (_scalerMean.length != inputDim || _scalerStd.length != inputDim) {
+        if (kDebugMode) debugPrint('MlAnomalyService: scaler dimension mismatch (mean=${_scalerMean.length}, std=${_scalerStd.length}, expected=$inputDim)');
+        _isLoaded = false;
+        return false;
+      }
+
       _isLoaded = true;
       if (kDebugMode) debugPrint('MlAnomalyService: loaded v$_modelVersion');
       return true;
     } catch (e) {
+      _isLoaded = false;
       if (kDebugMode) debugPrint('MlAnomalyService: load failed: $e');
       return false;
     }
@@ -115,6 +123,11 @@ class MlAnomalyService {
   SiteProfile? finishCalibration(String siteName) {
     _isCalibrating = false;
     if (_calibrationSamples.length < minCalibrationSamples) return null;
+    // Validate sample dimensions
+    if (_calibrationSamples.any((s) => s.length != inputDim)) {
+      if (kDebugMode) debugPrint('MlAnomalyService: calibration samples have inconsistent dimensions');
+      return null;
+    }
     final n = _calibrationSamples.length;
     final mean = List<double>.filled(inputDim, 0.0);
     final std = List<double>.filled(inputDim, 0.0);

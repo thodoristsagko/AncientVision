@@ -23,7 +23,7 @@ class AppConstants {
   /// BLE characteristic UUID for raw acceleration FFT data (v5.0+).
   /// Used for multi-packet 256-sample raw accel transfer.
   /// Matches firmware `BLE_FFT_CHARACTERISTIC_UUID` in main.cpp.
-  static const String bleFftCharacteristicUuid = 'beb5483e-36e1-4688-b7f5-ea07361b26a9';
+  static const String bleFftCharacteristicUuid = 'beb5483e-36e1-4688-b7f5-ea07361b26ac';
 
   /// BLE MTU (Maximum Transmission Unit) request size in bytes.
   /// Android/iOS default is 23 bytes (20 payload), we request 512 to avoid
