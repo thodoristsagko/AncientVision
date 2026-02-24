@@ -11,7 +11,6 @@ import '../../models/alert_data.dart';
 import '../../widgets/safety/index.dart';
 import '../../widgets/full_screen_alert_overlay.dart';
 import '../../services/vibration_anomaly_service.dart';
-import '../../models/site_profile.dart';
 import '../../services/vibration_metrics_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/settings_service.dart';

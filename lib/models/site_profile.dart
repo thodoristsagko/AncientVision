@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 
 /// Persisted calibration profile for a specific archaeological site.
 class SiteProfile {
