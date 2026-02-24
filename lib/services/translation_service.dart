@@ -113,6 +113,10 @@ class TranslationService {
 
     // Failure prediction
     'failure_prediction': 'Failure: ~{0}m {1}s',
+
+    // Battery
+    'battery_low': 'Sensor battery low ({0}%) — plug in a power bank!',
+    'battery_critical': 'Sensor battery almost dead! Plug in now or monitoring will stop.',
   };
 
   static const Map<String, String> _el = {
@@ -198,5 +202,9 @@ class TranslationService {
 
     // Failure prediction
     'failure_prediction': 'Κατάρρευση: ~{0}λ {1}δ',
+
+    // Battery
+    'battery_low': 'Χαμηλή μπαταρία αισθητήρα ({0}%) — συνδέστε power bank!',
+    'battery_critical': 'Η μπαταρία του αισθητήρα τελειώνει! Συνδέστε τώρα ή η παρακολούθηση θα σταματήσει.',
   };
 }

@@ -23,6 +23,7 @@ import '../../services/vibration_dsp_service.dart';
 import '../../utils/ble_parser.dart' show RawAccelReassembler;
 import '../vibration_event_log_screen.dart';
 import '../../services/translation_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 
@@ -208,6 +209,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _scanSubscription?.cancel();
     _connectionSubscription?.cancel();
     for (var sub in _charSubscriptions) {
@@ -257,6 +259,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           _isConnecting = false;
           _isScanning = false;
         });
+        WakelockPlus.enable();
         _startKeepAliveMonitor();
         // Request larger MTU for already-connected devices too
         try {
@@ -377,6 +380,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         _connectionStatus = 'Connected';
         _reconnectAttempts = 0;
       });
+      WakelockPlus.enable();
 
       _dspService.reset();
       _rawAccelReassembler.reset();
@@ -439,6 +443,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       _truncatedPackets = 0;
       _connectionStatus = 'Reconnecting...';
     });
+    WakelockPlus.disable();
 
     // Send notification about disconnection
     NotificationService().showDeviceDisconnected(deviceName: deviceName);
@@ -747,6 +752,15 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             _ppvPeakTime = DateTime.now();
           }
 
+          // PPV alarm: DIN 4150-3 heritage limit exceeded
+          if (_ppv > 3.0) {
+            _triggerFullScreenAlert(
+              _t.tr('stop_work'),
+              _ppv > 10.0 ? 'critical' : 'warning',
+            );
+            HapticFeedback.heavyImpact();
+          }
+
           // Add to legacy graph history (O(1) via CircularBuffer)
           _sensorHistory.add({
             'vibration': _vibration,
@@ -980,6 +994,17 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       _lastAnomalyResult = result;
       _lastMLFeatures = features;
       needsRebuild = true;
+
+      // Alarm + haptic for red-level ML anomaly
+      if (result.level == AnomalyLevel.anomaly && result.score >= 0.8) {
+        _triggerFullScreenAlert(
+          _t.tr('unusual_vibration'),
+          'warning',
+        );
+        HapticFeedback.heavyImpact();
+      } else if (result.level == AnomalyLevel.unusual) {
+        HapticFeedback.lightImpact();
+      }
 
       // Feed calibration if active
       if (_isCalibrating) {
@@ -2476,6 +2501,45 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                         : Colors.white54,
                     fontSize: 12,
                     fontWeight: _fukuzonoTTF != null ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
+
+              // Low battery warning
+              if (isConnected && _batteryPercent <= 20 && !_batteryCharging) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: (_batteryPercent <= 10 ? Colors.red : Colors.orange).withAlpha(25),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: (_batteryPercent <= 10 ? Colors.red : Colors.orange).withAlpha(80),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.battery_alert_rounded,
+                        color: _batteryPercent <= 10 ? Colors.red : Colors.orange,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _batteryPercent <= 10
+                              ? _t.tr('battery_critical')
+                              : _t.trArgs('battery_low', ['$_batteryPercent']),
+                          style: TextStyle(
+                            color: _batteryPercent <= 10 ? Colors.red : Colors.orange,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
