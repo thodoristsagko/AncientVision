@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'adaptive_anomaly_service.dart';
+import 'ml_anomaly_service.dart';
+import 'precursor_classifier_service.dart';
 
 /// Vibration anomaly detection service using TFLite autoencoder / VAE.
 ///
@@ -47,9 +49,15 @@ class VibrationAnomalyService {
   // Adaptive statistical anomaly detection (Tier 1.5 — between rule-based and ML)
   final AdaptiveAnomalyService _adaptiveService = AdaptiveAnomalyService();
 
+  // Standalone ML services (new hybrid pipeline)
+  final MlAnomalyService _mlService = MlAnomalyService();
+  final PrecursorClassifierService _precursorService = PrecursorClassifierService();
+
   bool get isInitialized => _isInitialized;
   bool get isRuleBased => _useRuleBased;
   AdaptiveAnomalyService get adaptiveService => _adaptiveService;
+  MlAnomalyService get mlService => _mlService;
+  PrecursorClassifierService get precursorService => _precursorService;
 
   String get modeLabel {
     if (!_useRuleBased && _isInitialized && _interpreter != null) {
@@ -112,12 +120,19 @@ class VibrationAnomalyService {
       debugPrint(
           '  Thresholds: low=$_thresholdLow high=$_thresholdHigh');
 
+      // Also initialize standalone ML services
+      await _mlService.initialize();
+      await _precursorService.initialize();
+
       _isInitialized = true;
       return true;
     } catch (e) {
       debugPrint('VibrationAnomalyService: ML model not available — using rule-based detection');
       _useRuleBased = true;
       _isInitialized = true;
+      // Still try standalone ML services even if main model failed
+      await _mlService.initialize();
+      await _precursorService.initialize();
       return true;
     }
   }
@@ -213,10 +228,32 @@ class VibrationAnomalyService {
         score = min(1.0, anomalyScore / (_thresholdHigh * 2));
       }
 
+      // Run precursor classifier
+      final trendFeatures = _adaptiveService.getTrendFeatures();
+      trendFeatures['autoencoder_score'] = score.clamp(0.0, 1.0);
+      final precursorResult = _precursorService.classify(
+        dspFeatures: features,
+        trendFeatures: trendFeatures,
+        autoencoderScore: score.clamp(0.0, 1.0),
+      );
+
+      // Merge: highest severity wins
+      if (precursorResult != null && !precursorResult.isNormal) {
+        final precursorScore = precursorResult.anomalyScore;
+        if (precursorScore > score) {
+          score = precursorScore;
+          level = precursorScore >= 0.7 ? AnomalyLevel.anomaly
+              : precursorScore >= 0.35 ? AnomalyLevel.unusual
+              : AnomalyLevel.normal;
+        }
+      }
+
       return AnomalyResult(
         score: score.clamp(0.0, 1.0),
         level: level,
         rawError: anomalyScore,
+        precursorPattern: precursorResult?.isNormal == false ? precursorResult?.pattern : null,
+        precursorConfidence: precursorResult?.confidence ?? 0.0,
       );
     } catch (e) {
       debugPrint('VibrationAnomalyService: Inference error: $e — using rule-based fallback');
@@ -347,6 +384,8 @@ class VibrationAnomalyService {
   void dispose() {
     _interpreter?.close();
     _interpreter = null;
+    _mlService.dispose();
+    _precursorService.dispose();
     _isInitialized = false;
   }
 }
@@ -357,11 +396,15 @@ class AnomalyResult {
   final double score; // 0.0 (normal) to 1.0 (severe anomaly)
   final AnomalyLevel level;
   final double rawError; // Raw anomaly score (reconstruction MSE)
+  final String? precursorPattern; // e.g. 'soil_creep', 'imminent_failure'
+  final double precursorConfidence;
 
   const AnomalyResult({
     required this.score,
     required this.level,
     required this.rawError,
+    this.precursorPattern,
+    this.precursorConfidence = 0.0,
   });
 
   String get levelLabel {

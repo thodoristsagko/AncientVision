@@ -572,6 +572,44 @@ class AdaptiveAnomalyService {
     };
   }
 
+  /// Get current trend features for precursor classifier input.
+  Map<String, double> getTrendFeatures() {
+    if (!_isCalibrated) {
+      return {
+        'ppv_trend': 1.0, 'freq_trend': 1.0, 'kurtosis_trend': 1.0,
+        'stalta_trend': 1.0, 'cusum_max': 0.0, 'autoencoder_score': 0.0,
+      };
+    }
+    double shortLongRatio(String key) {
+      final short = _shortWindow[key];
+      final long = _longWindow[key];
+      if (short == null || long == null || short.isEmpty || long.isEmpty) return 1.0;
+      final shortList = short.toList();
+      final longList = long.toList();
+      final shortMean = shortList.reduce((a, b) => a + b) / shortList.length;
+      final longMean = longList.reduce((a, b) => a + b) / longList.length;
+      return longMean != 0 ? shortMean / longMean : 1.0;
+    }
+    double maxCusum() {
+      double m = 0;
+      for (final key in _featureKeys) {
+        final pos = _cusumPositive[key] ?? 0;
+        final neg = _cusumNegative[key] ?? 0;
+        if (pos > m) m = pos;
+        if (neg > m) m = neg;
+      }
+      return m;
+    }
+    return {
+      'ppv_trend': shortLongRatio('ppv'),
+      'freq_trend': shortLongRatio('freq'),
+      'kurtosis_trend': shortLongRatio('kurtosis'),
+      'stalta_trend': shortLongRatio('stalta'),
+      'cusum_max': maxCusum(),
+      'autoencoder_score': 0.0, // filled by caller
+    };
+  }
+
   // --- Temporal derivative helpers for precursor detection ---
 
   /// Compute rate of change (derivative) of a feature over a window.
