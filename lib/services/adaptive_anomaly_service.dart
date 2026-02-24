@@ -203,12 +203,15 @@ class AdaptiveAnomalyService {
       final mean = _emaMean[key]!;
       final stdDev = sqrt(_emaVariance[key]!);
 
-      if (stdDev > 1e-8) {
+      if (stdDev > 1e-12) {
         final z = (value - mean).abs() / stdDev;
         zScores[key] = z;
         sumZSq += z * z;
-        featureCount++;
+      } else {
+        // Near-zero variance: no deviation possible, treat as z=0
+        zScores[key] = 0.0;
       }
+      featureCount++;
     }
 
     if (featureCount == 0) return null;
