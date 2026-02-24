@@ -11,6 +11,7 @@ import '../../models/alert_data.dart';
 import '../../widgets/safety/index.dart';
 import '../../widgets/full_screen_alert_overlay.dart';
 import '../../services/vibration_anomaly_service.dart';
+import '../../models/site_profile.dart';
 import '../../services/vibration_metrics_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/settings_service.dart';
@@ -128,6 +129,10 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   String? _lastPrecursorPattern;
   double _lastPrecursorScore = 0.0;
   bool _isPrecursorDriven = false;
+
+  // Site calibration
+  bool _isCalibrating = false;
+  String? _calibrationSiteName;
 
   // Fukuzono time-to-failure prediction
   double? _fukuzonoTTF;       // seconds until predicted failure
@@ -711,21 +716,20 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           _ppv = (data['ppv'] as num?)?.toDouble() ?? 0.0;
           if (_ppv > 0 || _rms > 0) _hasReceivedVibData = true;
           _rms = (data['rms'] as num?)?.toDouble() ?? 0.0;
-          _dominantFreq = (data['freq'] as num?)?.toDouble() ?? 0.0;
           _crestFactor = (data['crest'] as num?)?.toDouble() ?? 0.0;
-
-          // Parse v3.0 fields
-          _centroid = (data['cent'] as num?)?.toDouble() ?? 0.0;
-          _kurtosis = (data['kurt'] as num?)?.toDouble() ?? 0.0;
           _staLtaRatio = (data['stalta'] as num?)?.toDouble() ?? 0.0;
-
-          // Parse v4.0 fields (backward compatible - defaults to 0 if missing)
-          _arias = (data['arias'] as num?)?.toDouble() ?? 0.0;
-          _cav = (data['cav'] as num?)?.toDouble() ?? 0.0;
           _temp = (data['temp'] as num?)?.toDouble() ?? 0.0;
-          _dwt1 = (data['dwt1'] as num?)?.toDouble() ?? 0.0;
-          _dwt2 = (data['dwt2'] as num?)?.toDouble() ?? 0.0;
-          _dwt3 = (data['dwt3'] as num?)?.toDouble() ?? 0.0;
+
+          // Only overwrite phone-DSP fields if firmware actually sends them
+          // (v5.0 firmware omits freq/kurt/cent/arias/cav/dwt — phone DSP computes them)
+          if (data.containsKey('freq')) _dominantFreq = (data['freq'] as num).toDouble();
+          if (data.containsKey('cent')) _centroid = (data['cent'] as num).toDouble();
+          if (data.containsKey('kurt')) _kurtosis = (data['kurt'] as num).toDouble();
+          if (data.containsKey('arias')) _arias = (data['arias'] as num).toDouble();
+          if (data.containsKey('cav')) _cav = (data['cav'] as num).toDouble();
+          if (data.containsKey('dwt1')) _dwt1 = (data['dwt1'] as num).toDouble();
+          if (data.containsKey('dwt2')) _dwt2 = (data['dwt2'] as num).toDouble();
+          if (data.containsKey('dwt3')) _dwt3 = (data['dwt3'] as num).toDouble();
 
           // PPV EMA smoothing (alpha = 0.3)
           _ppvSmoothed = _kalmanFilter.update(_ppv);
@@ -973,6 +977,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       _lastAnomalyResult = result;
       _lastMLFeatures = features;
       needsRebuild = true;
+
+      // Feed calibration if active
+      if (_isCalibrating) {
+        _anomalyService.mlService.feedCalibrationSample(features);
+      }
     }
 
     // 5b. Feed PSD slope to adaptive service and compute Fukuzono
@@ -1334,6 +1343,99 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     return 'Safe range';
   }
 
+  // === Site Calibration ===
+
+  void _showCalibrationDialog() {
+    final controller = TextEditingController(
+      text: 'Site ${DateTime.now().toString().substring(0, 10)}',
+    );
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C2523),
+        title: const Text('Learn This Site', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Place the sensor on stable ground and keep the area quiet for at least 5 minutes. '
+              'This teaches the system what "normal" feels like here.',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Site Name',
+                labelStyle: TextStyle(color: Colors.white54),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.tealAccent),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _startCalibration(controller.text.trim());
+            },
+            child: const Text('Start', style: TextStyle(color: Colors.tealAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _startCalibration(String siteName) {
+    if (siteName.isEmpty) return;
+    _anomalyService.mlService.startCalibration();
+    setState(() {
+      _isCalibrating = true;
+      _calibrationSiteName = siteName;
+    });
+  }
+
+  void _stopCalibration() {
+    final profile = _anomalyService.mlService.finishCalibration(
+      _calibrationSiteName ?? 'Unknown',
+    );
+    setState(() => _isCalibrating = false);
+
+    if (profile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Not enough data yet. Keep recording for at least 5 minutes.'),
+        ),
+      );
+      return;
+    }
+
+    _anomalyService.mlService.saveSiteProfile(profile);
+
+    final warning = profile.highVarianceWarning
+        ? ' Ground was shaking during learning — consider re-doing when quieter.'
+        : '';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Site "${profile.name}" learned successfully!$warning',
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
@@ -1380,6 +1482,18 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                           ],
                           const SizedBox(width: 4),
                           _buildSimpleModeToggle(),
+                          if (isConnected && _mlModelLoaded)
+                            IconButton(
+                              icon: Icon(
+                                _isCalibrating ? Icons.stop_circle_rounded : Icons.tune_rounded,
+                                color: _isCalibrating ? Colors.orangeAccent : Colors.white70,
+                                size: 20,
+                              ),
+                              tooltip: _isCalibrating ? 'Stop Learning' : 'Learn This Site',
+                              onPressed: _isCalibrating ? _stopCalibration : _showCalibrationDialog,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -2346,6 +2460,42 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                         : Colors.white54,
                     fontSize: 12,
                     fontWeight: _fukuzonoTTF != null ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
+
+              // Calibration progress
+              if (_isCalibrating) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.tealAccent.withAlpha(20),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.tealAccent.withAlpha(80), width: 1),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Learning: $_calibrationSiteName',
+                        style: const TextStyle(color: Colors.tealAccent, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: _anomalyService.mlService.calibrationProgress,
+                        backgroundColor: Colors.white12,
+                        color: Colors.tealAccent,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _anomalyService.mlService.calibrationProgress >= 1.0
+                            ? 'Ready! Tap the stop button to finish.'
+                            : '${_anomalyService.mlService.calibrationSampleCount} / 600 readings — keep area quiet',
+                        style: const TextStyle(color: Colors.white54, fontSize: 11),
+                      ),
+                    ],
                   ),
                 ),
               ],
