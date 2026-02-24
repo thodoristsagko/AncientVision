@@ -1,149 +1,155 @@
-# AncientVision - Field Guide
+# AncientVision - Οδηγός Χρήσης
 
-A quick guide for using the AncientVision safety monitoring system at your archaeological site.
-
----
-
-## What's in the Box
-
-- **M5StickC Plus 2** - the small sensor device (orange button on front, side button)
-- **USB-C cable** - for charging the sensor
-- **Your Android phone** - with the AncientVision app installed
+Ένας γρήγορος οδηγός για τη χρήση του συστήματος παρακολούθησης ασφάλειας AncientVision στον αρχαιολογικό σας χώρο.
 
 ---
 
-## 1. Charging the Sensor
+## Τι Περιέχει η Συσκευασία
 
-Plug the USB-C cable into the sensor. A full charge takes about 2 hours and lasts approximately **1 hour** of continuous monitoring. **Keep the USB-C cable and a power bank handy** for longer sessions. You can check the battery level in the app once connected (shown as a small chip in the top bar).
-
----
-
-## 2. Turning On the Sensor
-
-Press and hold the **side button** (small button on the left edge) for 2 seconds. The screen will light up and show "AncientVision" with a status display. The sensor starts broadcasting automatically - no setup needed.
+- **M5StickC Plus 2** — η μικρή συσκευή αισθητήρα (πορτοκαλί κουμπί μπροστά, πλαϊνό κουμπί)
+- **Καλώδιο USB-C** — για φόρτιση του αισθητήρα
+- **Το Android κινητό σας** — με εγκατεστημένη την εφαρμογή AncientVision
 
 ---
 
-## 3. Connecting the App
+## 1. Φόρτιση του Αισθητήρα
 
-1. Open the **AncientVision** app on your phone
-2. Make sure **Bluetooth** is turned on
-3. Tap the **Monitor** tab (shield icon, bottom right)
-4. The app will automatically scan for the sensor
-5. Wait a few seconds - you'll see "Connected to M5StickC Plus 2" when ready
-6. If it doesn't connect, tap the yellow **Scan** button
-
-**If connection drops:** The app will try to reconnect automatically. If it doesn't, tap the yellow **Reconnect** button.
+Συνδέστε το καλώδιο USB-C στον αισθητήρα. Η πλήρης φόρτιση διαρκεί περίπου 2 ώρες και η μπαταρία κρατάει περίπου **1 ώρα** συνεχούς λειτουργίας. **Έχετε πάντα μαζί σας ένα power bank** για παρατεταμένες εργασίες.
 
 ---
 
-## 4. Placing the Sensor
+## 2. Ενεργοποίηση του Αισθητήρα
 
-Place the sensor **on stable, flat ground** near your excavation area:
-
-- Keep it **out of direct sunlight** if possible (heat affects readings)
-- Place it on **firm soil**, not on loose fill or backfill
-- Keep it **away from foot traffic** and heavy equipment
-- The closer to the trench wall, the better the detection
+Πατήστε παρατεταμένα το **πλαϊνό κουμπί** (μικρό κουμπί στην αριστερή πλευρά) για 2 δευτερόλεπτα. Η οθόνη θα ανάψει και θα εμφανίσει "AncientVision". Ο αισθητήρας αρχίζει αυτόματα να εκπέμπει — δεν χρειάζεται ρύθμιση.
 
 ---
 
-## 5. Learning Your Site (First Time Setup)
+## 3. Σύνδεση της Εφαρμογής
 
-The system needs to learn what "normal" ground vibration feels like at your specific site. This only takes a few minutes and makes the alerts much more accurate.
+1. Ανοίξτε την εφαρμογή **AncientVision** στο κινητό σας
+2. Βεβαιωθείτε ότι το **Bluetooth** είναι ενεργοποιημένο
+3. Πατήστε την καρτέλα **Ασφάλεια** (εικονίδιο ασπίδας, κάτω δεξιά)
+4. Η εφαρμογή θα αναζητήσει αυτόματα τον αισθητήρα
+5. Περιμένετε λίγα δευτερόλεπτα — θα δείτε "Συνδεδεμένο" όταν είναι έτοιμο
+6. Αν δεν συνδεθεί, πατήστε το κίτρινο κουμπί **Σάρωση**
 
-1. Make sure the sensor is placed and connected
-2. In the Monitor tab, look for the **tune icon** (small slider icon) in the top right
-3. Tap it
-4. Give your site a name (e.g., "Paros North Trench")
-5. Tap **Start**
-6. **Keep the area quiet** - no walking nearby, no machinery, no loud work
-7. Wait at least **5 minutes** (a progress bar shows how much data has been collected)
-8. When the bar is full and it says "Ready!", tap the **orange stop button** in the top right
-9. Done! The system now knows what normal feels like here
-
-**Tips:**
-- Do this during a quiet moment - early morning works well
-- If the app warns about "high variance", the ground was shaking during learning. Try again when it's quieter
-- You only need to do this once per site location. If you move the sensor to a different area, learn that site too
+**Αν πέσει η σύνδεση:** Η εφαρμογή θα προσπαθήσει να επανασυνδεθεί αυτόματα. Αν δεν γίνει, πατήστε το κίτρινο κουμπί **Επανασύνδεση**.
 
 ---
 
-## 6. Reading the Monitor Screen
+## 4. Τοποθέτηση του Αισθητήρα
 
-Once connected, the Monitor screen shows you everything you need:
+Τοποθετήστε τον αισθητήρα **σε σταθερό, επίπεδο έδαφος** κοντά στο σκάμμα:
 
-### Status Colors (the big number at the top)
-- **Green** = Everything is fine. Ground is stable.
-- **Yellow** = Something unusual detected. Stay alert, check surroundings.
-- **Red** = Danger detected. **Stop work and move away from the trench.**
-
-### Alert Banners
-- **Red banner** ("Unusual vibration pattern detected") = The sensor is picking up ground movement that isn't normal for this site
-- **Orange banner** with a pattern name = The system recognizes a specific warning pattern (like soil slowly shifting)
-- **Teal/green banner** ("Learning...") = Site calibration is in progress
-
-### What the Numbers Mean (Simple Mode)
-- The **large number** is the ground vibration intensity
-- **"Safe"** / **"Perceptible"** / **"Heritage limit"** / **"CRITICAL"** tells you the risk level in plain words
-- You don't need to understand the numbers - just watch the colors and words
+- Κρατήστε τον **μακριά από τον ήλιο** αν είναι δυνατόν (η ζέστη επηρεάζει τις μετρήσεις)
+- Τοποθετήστε τον σε **στερεό έδαφος**, όχι σε χαλαρό χώμα
+- Κρατήστε τον **μακριά από βήματα** και βαριά μηχανήματα
+- Όσο πιο κοντά στο τοίχωμα του σκάμματος, τόσο καλύτερη η ανίχνευση
 
 ---
 
-## 7. What to Do When You Get an Alert
+## 5. Εκμάθηση του Χώρου (Πρώτη Φορά)
 
-### Yellow Alert (Unusual)
-1. **Pause work** near the trench
-2. Look for obvious causes (nearby construction, heavy truck passing)
-3. If no obvious cause, **monitor for a few minutes**
-4. If it goes back to green, resume work carefully
+Το σύστημα πρέπει να μάθει πώς «νιώθεται» η κανονική δόνηση εδάφους στον συγκεκριμένο χώρο σας. Χρειάζεται μόνο λίγα λεπτά και κάνει τις ειδοποιήσεις πολύ πιο ακριβείς.
 
-### Red Alert (Danger)
-1. **Stop all work immediately**
-2. **Move away from trench walls**
-3. **Alert everyone** at the site
-4. Wait until the reading returns to green for at least 5 minutes before approaching
-5. Inspect the trench walls for cracks or bulging before resuming
+1. Βεβαιωθείτε ότι ο αισθητήρας είναι τοποθετημένος και συνδεδεμένος
+2. Στην καρτέλα Ασφάλεια, βρείτε το **εικονίδιο ρυθμίσεων** (μικρό εικονίδιο ρυθμιστικού) πάνω δεξιά
+3. Πατήστε το
+4. Δώστε ένα όνομα στον χώρο σας (π.χ. "Πάρος Βόρειο Σκάμμα")
+5. Πατήστε **Έναρξη**
+6. **Κρατήστε την περιοχή ήσυχη** — χωρίς περπάτημα κοντά, χωρίς μηχανήματα, χωρίς δυνατούς θορύβους
+7. Περιμένετε τουλάχιστον **5 λεπτά** (μια μπάρα προόδου δείχνει πόσα δεδομένα έχουν συλλεχθεί)
+8. Όταν γεμίσει η μπάρα και γράψει "Έτοιμο!", πατήστε το **πορτοκαλί κουμπί στοπ** πάνω δεξιά
+9. Τέλος! Το σύστημα τώρα ξέρει τι είναι φυσιολογικό εδώ
 
-### Full-Screen Alert
-If the screen goes entirely red with large text, this is the **highest priority**. Follow the on-screen instructions immediately.
-
----
-
-## 8. Daily Routine
-
-1. **Morning**: Charge sensor fully. Turn it on, place it, open app, verify connection (green dot = connected).
-2. **During work**: Keep the app open on your phone. Glance at it regularly. Listen for alert sounds.
-3. **Battery**: The sensor lasts about **1 hour**. Keep a **power bank** connected for all-day monitoring, or swap in a freshly charged sensor when the battery chip in the app turns red.
-4. **End of day**: Turn off by holding the side button for 6 seconds.
+**Συμβουλές:**
+- Κάντε το σε μια ήσυχη στιγμή — το πρωί νωρίς λειτουργεί καλά
+- Αν η εφαρμογή προειδοποιήσει για "μεγάλη διακύμανση", το έδαφος δονούνταν κατά τη μάθηση. Δοκιμάστε ξανά σε πιο ήσυχη στιγμή
+- Χρειάζεται να το κάνετε μόνο μία φορά ανά θέση. Αν μετακινήσετε τον αισθητήρα σε άλλη περιοχή, κάντε εκμάθηση ξανά
 
 ---
 
-## 9. Troubleshooting
+## 6. Ανάγνωση της Οθόνης
 
-| Problem | Solution |
-|---------|----------|
-| App can't find sensor | Make sure Bluetooth is on. Turn sensor off and on again. Tap **Scan**. |
-| Connection keeps dropping | Move phone closer to sensor (within 10 meters). Check sensor battery. |
-| Sensor screen is blank | Battery is dead (lasts ~1 hour). Charge it or plug in a power bank. Press side button to wake. |
-| Constant yellow alerts | The site might be near a road or construction. Re-do the "Learn Your Site" step during a quiet moment. |
-| App crashed | Just reopen it. It reconnects automatically. |
-| "Not enough data" when stopping calibration | You stopped too early. Start again and wait the full 5 minutes. |
+Μόλις συνδεθεί, η οθόνη σας δείχνει όλα όσα χρειάζεστε:
 
----
+### Χρώματα Κατάστασης (ο μεγάλος αριθμός στην κορυφή)
+- **Πράσινο** = Όλα καλά. Το έδαφος είναι σταθερό.
+- **Κίτρινο** = Κάτι ασυνήθιστο. Μείνετε σε εγρήγορση, ελέγξτε τον χώρο.
+- **Κόκκινο** = Ανιχνεύθηκε κίνδυνος. **Σταματήστε τις εργασίες και απομακρυνθείτε από το σκάμμα.**
 
-## 10. Important Safety Notes
+### Μηνύματα Ειδοποίησης
+- **Κόκκινο μήνυμα** ("Ανιχνεύθηκε ασυνήθιστη δόνηση") = Ο αισθητήρας ανιχνεύει κίνηση εδάφους που δεν είναι φυσιολογική
+- **Πορτοκαλί μήνυμα** με πρότυπο = Το σύστημα αναγνωρίζει συγκεκριμένο προειδοποιητικό σήμα (π.χ. αργή μετακίνηση εδάφους)
+- **Γαλαζοπράσινο μήνυμα** ("Μαθαίνω...") = Η εκμάθηση χώρου είναι σε εξέλιξη
 
-- This system is an **aid**, not a replacement for your own judgment and site safety protocols
-- Always follow your site's established safety procedures
-- The system monitors **ground vibration only** - it cannot detect all hazards (overhead collapse, flooding, etc.)
-- If something looks or feels wrong at the site, **trust your instincts** and move to safety regardless of what the app shows
-- Keep your phone charged - if the app dies, you lose monitoring
+### Τι Σημαίνουν οι Αριθμοί (Απλή Λειτουργία)
+- Ο **μεγάλος αριθμός** είναι η ένταση δόνησης του εδάφους
+- **"Ασφαλές"** / **"Αισθητό"** / **"Όριο μνημείων"** / **"ΚΡΙΣΙΜΟ"** σας λέει το επίπεδο κινδύνου
+- Δεν χρειάζεται να καταλαβαίνετε τους αριθμούς — απλά παρακολουθήστε τα χρώματα και τις λέξεις
 
 ---
 
-## Need Help?
+## 7. Τι Κάνετε Όταν Λάβετε Ειδοποίηση
 
-Contact the development team:
-- The app is built and maintained by the AncientVision team
-- For technical issues, describe what you see on screen and we'll help remotely
+### Κίτρινη Ειδοποίηση (Ασυνήθιστο)
+1. **Σταματήστε προσωρινά** τις εργασίες κοντά στο σκάμμα
+2. Ψάξτε για προφανείς αιτίες (γειτονική κατασκευή, βαρύ φορτηγό)
+3. Αν δεν υπάρχει προφανής αιτία, **παρακολουθήστε για λίγα λεπτά**
+4. Αν γυρίσει στο πράσινο, συνεχίστε προσεκτικά
+
+### Κόκκινη Ειδοποίηση (Κίνδυνος)
+1. **Σταματήστε αμέσως όλες τις εργασίες**
+2. **Απομακρυνθείτε από τα τοιχώματα του σκάμματος**
+3. **Ειδοποιήστε όλους** στον χώρο
+4. Περιμένετε μέχρι η ένδειξη να γυρίσει στο πράσινο για τουλάχιστον 5 λεπτά πριν πλησιάσετε
+5. Ελέγξτε τα τοιχώματα για ρωγμές ή φούσκωμα πριν συνεχίσετε
+
+### Ειδοποίηση Πλήρους Οθόνης
+Αν η οθόνη γίνει εξ ολοκλήρου κόκκινη με μεγάλα γράμματα, αυτή είναι η **υψηλότερη προτεραιότητα**. Ακολουθήστε αμέσως τις οδηγίες στην οθόνη.
+
+---
+
+## 8. Καθημερινή Ρουτίνα
+
+1. **Πρωί**: Φορτίστε πλήρως τον αισθητήρα. Ενεργοποιήστε τον, τοποθετήστε τον, ανοίξτε την εφαρμογή, επιβεβαιώστε τη σύνδεση (πράσινη κουκκίδα = συνδεδεμένο).
+2. **Κατά τις εργασίες**: Κρατήστε την εφαρμογή ανοιχτή. Ρίξτε μια ματιά τακτικά. Ακούστε για ηχητικές ειδοποιήσεις.
+3. **Μπαταρία**: Ο αισθητήρας κρατάει περίπου **1 ώρα**. Κρατήστε ένα **power bank** συνδεδεμένο για ολοήμερη παρακολούθηση, ή αντικαταστήστε με πλήρως φορτισμένο αισθητήρα όταν η μπαταρία γίνει κόκκινη.
+4. **Τέλος ημέρας**: Απενεργοποιήστε κρατώντας το πλαϊνό κουμπί για 6 δευτερόλεπτα.
+
+---
+
+## 9. Αντιμετώπιση Προβλημάτων
+
+| Πρόβλημα | Λύση |
+|----------|------|
+| Η εφαρμογή δεν βρίσκει τον αισθητήρα | Βεβαιωθείτε ότι το Bluetooth είναι ενεργό. Κλείστε/ανοίξτε τον αισθητήρα. Πατήστε **Σάρωση**. |
+| Η σύνδεση πέφτει συνέχεια | Πλησιάστε το κινητό στον αισθητήρα (εντός 10 μέτρων). Ελέγξτε μπαταρία. |
+| Η οθόνη του αισθητήρα είναι σβηστή | Η μπαταρία τελείωσε (κρατάει ~1 ώρα). Φορτίστε ή συνδέστε power bank. Πατήστε πλαϊνό κουμπί. |
+| Συνεχείς κίτρινες ειδοποιήσεις | Ο χώρος μπορεί να είναι κοντά σε δρόμο ή εργοτάξιο. Ξανακάντε "Μάθε τον Χώρο" σε ήσυχη στιγμή. |
+| Η εφαρμογή έκλεισε | Απλά ξανανοίξτε την. Επανασυνδέεται αυτόματα. |
+| "Δεν υπάρχουν αρκετά δεδομένα" κατά τη διακοπή εκμάθησης | Σταματήσατε πολύ νωρίς. Ξεκινήστε ξανά και περιμένετε 5 λεπτά. |
+
+---
+
+## 10. Σημαντικές Σημειώσεις Ασφαλείας
+
+- Αυτό το σύστημα είναι **βοηθητικό εργαλείο**, δεν αντικαθιστά την κρίση σας και τα πρωτόκολλα ασφαλείας του χώρου
+- Ακολουθείτε πάντα τις καθιερωμένες διαδικασίες ασφαλείας
+- Το σύστημα παρακολουθεί **μόνο δονήσεις εδάφους** — δεν μπορεί να ανιχνεύσει όλους τους κινδύνους (κατάρρευση, πλημμύρα κτλ.)
+- Αν κάτι φαίνεται ή αισθάνεται λάθος, **εμπιστευτείτε το ένστικτό σας** και απομακρυνθείτε ανεξάρτητα από τα δεδομένα της εφαρμογής
+- Κρατήστε το κινητό σας φορτισμένο — αν κλείσει η εφαρμογή, χάνετε την παρακολούθηση
+
+---
+
+## 11. Αλλαγή Γλώσσας / Language Toggle
+
+Η εφαρμογή υποστηρίζει Ελληνικά και Αγγλικά. Στην οθόνη Ασφάλεια, πατήστε το εικονίδιο **🌐** (γλώσσα) δίπλα στο εικονίδιο ρυθμίσεων για εναλλαγή.
+
+The app supports Greek and English. On the Monitor screen, tap the **🌐** (language) icon next to the settings icon to switch.
+
+---
+
+## Χρειάζεστε Βοήθεια;
+
+Επικοινωνήστε με την ομάδα ανάπτυξης — περιγράψτε τι βλέπετε στην οθόνη και θα σας βοηθήσουμε εξ αποστάσεως.

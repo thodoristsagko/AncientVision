@@ -22,6 +22,7 @@ import '../../utils/circular_buffer.dart';
 import '../../services/vibration_dsp_service.dart';
 import '../../utils/ble_parser.dart' show RawAccelReassembler;
 import '../vibration_event_log_screen.dart';
+import '../../services/translation_service.dart';
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 
@@ -132,6 +133,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   // Site calibration
   bool _isCalibrating = false;
   String? _calibrationSiteName;
+
+  // Translation
+  final _t = TranslationService();
 
   // Fukuzono time-to-failure prediction
   double? _fukuzonoTTF;       // seconds until predicted failure
@@ -675,10 +679,10 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         // Show amber snackbar on first truncation (Nielsen Heuristic #9)
         if (_truncatedPackets == 1 && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Partial data received — move closer to sensor'),
+            SnackBar(
+              content: Text(_t.tr('partial_data')),
               backgroundColor: Colors.orange,
-              duration: Duration(seconds: 4),
+              duration: const Duration(seconds: 4),
             ),
           );
         }
@@ -1302,14 +1306,14 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   String _getVibrationStatus() {
     // DIN 4150-3 compliant status using PPV
-    if (_ppv > 10.0) return 'CRITICAL - EVACUATE';
-    if (_ppv > 3.0) return 'DIN 4150-3 EXCEEDED';
-    if (_ppv > 2.5) return 'Heritage limit';
-    if (_ppv > 0.3) return 'Perceptible';
+    if (_ppv > 10.0) return _t.tr('critical_evacuate');
+    if (_ppv > 3.0) return _t.tr('din_exceeded');
+    if (_ppv > 2.5) return _t.tr('heritage_limit');
+    if (_ppv > 0.3) return _t.tr('perceptible');
     // Fallback to legacy threshold if no PPV data
-    if (_ppv == 0.0 && _vibration > 0.8) return 'CRITICAL!';
-    if (_ppv == 0.0 && _vibration > 0.3) return 'Warning';
-    return 'Safe';
+    if (_ppv == 0.0 && _vibration > 0.8) return _t.tr('critical_evacuate');
+    if (_ppv == 0.0 && _vibration > 0.3) return _t.tr('use_caution');
+    return _t.tr('safe');
   }
 
   String _getHazardTypeLabel() {
@@ -1337,9 +1341,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   }
 
   String _getMoistureStatus() {
-    if (_moisturePercent < 30) return 'Too Dry';
-    if (_moisturePercent > 60) return 'Too Wet!';
-    return 'Safe range';
+    if (_moisturePercent < 30) return _t.tr('too_dry');
+    if (_moisturePercent > 60) return _t.tr('too_wet');
+    return _t.tr('safe_range');
   }
 
   // === Site Calibration ===
@@ -1352,26 +1356,25 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1C2523),
-        title: const Text('Learn This Site', style: TextStyle(color: Colors.white)),
+        title: Text(_t.tr('calibration_title'), style: const TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Place the sensor on stable ground and keep the area quiet for at least 5 minutes. '
-              'This teaches the system what "normal" feels like here.',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
+            Text(
+              _t.tr('calibration_description'),
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
               style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Site Name',
-                labelStyle: TextStyle(color: Colors.white54),
-                enabledBorder: UnderlineInputBorder(
+              decoration: InputDecoration(
+                labelText: _t.tr('site_name'),
+                labelStyle: const TextStyle(color: Colors.white54),
+                enabledBorder: const UnderlineInputBorder(
                   borderSide: BorderSide(color: Colors.white24),
                 ),
-                focusedBorder: UnderlineInputBorder(
+                focusedBorder: const UnderlineInputBorder(
                   borderSide: BorderSide(color: Colors.tealAccent),
                 ),
               ),
@@ -1381,14 +1384,14 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: Text(_t.tr('cancel'), style: const TextStyle(color: Colors.white54)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               _startCalibration(controller.text.trim());
             },
-            child: const Text('Start', style: TextStyle(color: Colors.tealAccent)),
+            child: Text(_t.tr('start'), style: const TextStyle(color: Colors.tealAccent)),
           ),
         ],
       ),
@@ -1412,8 +1415,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
     if (profile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Not enough data yet. Keep recording for at least 5 minutes.'),
+        SnackBar(
+          content: Text(_t.tr('not_enough_data')),
         ),
       );
       return;
@@ -1422,13 +1425,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     _anomalyService.mlService.saveSiteProfile(profile);
 
     final warning = profile.highVarianceWarning
-        ? ' Ground was shaking during learning — consider re-doing when quieter.'
+        ? _t.tr('high_variance_warning')
         : '';
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Site "${profile.name}" learned successfully!$warning',
+          '${_t.trArgs('site_learned', [profile.name])}$warning',
         ),
         duration: const Duration(seconds: 4),
       ),
@@ -1463,11 +1466,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                         children: [
                           const Icon(Icons.engineering_rounded, color: Colors.white, size: 26),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'Trench Safety',
+                              _t.tr('trench_safety'),
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
                             ),
                           ),
                           LiveChip(isConnected: isConnected, status: _connectionStatus),
@@ -1488,11 +1491,25 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                                 color: _isCalibrating ? Colors.orangeAccent : Colors.white70,
                                 size: 20,
                               ),
-                              tooltip: _isCalibrating ? 'Stop Learning' : 'Learn This Site',
+                              tooltip: _isCalibrating ? _t.tr('stop_learning') : _t.tr('learn_site'),
                               onPressed: _isCalibrating ? _stopCalibration : _showCalibrationDialog,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                             ),
+                          IconButton(
+                            icon: Text(
+                              _t.isGreek ? 'EN' : 'EL',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            tooltip: _t.isGreek ? 'Switch to English' : 'Αλλαγή σε Ελληνικά',
+                            onPressed: () => setState(() => _t.toggleLanguage()),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -1506,9 +1523,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                       children: [
                         Text(
                           isConnected
-                            ? 'Connected to M5StickC Plus 2'
+                            ? _t.tr('connected_to')
                             : _isConnecting
-                              ? 'Scanning for devices...'
+                              ? _t.tr('scanning')
                               : _connectionStatus,
                           style: TextStyle(color: Colors.white.withAlpha(190), fontSize: 13),
                         ),
@@ -1539,8 +1556,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                         ),
                         child: Text(
                           _connectionStatus.contains('Reconnecting') || _connectionStatus.contains('Connection lost')
-                              ? 'Reconnect'
-                              : 'Scan',
+                              ? _t.tr('reconnect')
+                              : _t.tr('scan'),
                           style: const TextStyle(color: Color(0xFF0D3A39), fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -1559,9 +1576,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                           color: Colors.red.withAlpha(200),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Text(
-                          'Disconnect',
-                          style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                        child: Text(
+                          _t.tr('disconnect'),
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
@@ -1586,7 +1603,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            widget.isMuted ? 'Muted' : 'Sound',
+                            widget.isMuted ? _t.tr('muted') : _t.tr('sound'),
                             style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                         ],
@@ -2133,20 +2150,20 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     switch (safetyLevel) {
       case 'danger':
         statusColor = const Color(0xFFE53935);
-        statusLabel = 'Stop Work - High Vibration';
-        statusDescription = 'Vibration exceeds safe limits for heritage structures. Stop all nearby machinery and assess the site.';
+        statusLabel = _t.tr('stop_work');
+        statusDescription = _t.tr('stop_description');
         statusIcon = Icons.dangerous_rounded;
         break;
       case 'caution':
         statusColor = const Color(0xFFFFC107);
-        statusLabel = 'Use Caution';
-        statusDescription = 'Elevated vibration detected. Monitor conditions and reduce heavy equipment use if possible.';
+        statusLabel = _t.tr('use_caution');
+        statusDescription = _t.tr('caution_description');
         statusIcon = Icons.warning_amber_rounded;
         break;
       default:
         statusColor = const Color(0xFF4CAF50);
-        statusLabel = 'Safe to Work';
-        statusDescription = 'Vibration levels are within safe limits for archaeological structures.';
+        statusLabel = _t.tr('safe_to_work');
+        statusDescription = _t.tr('safe_description');
         statusIcon = Icons.check_circle_rounded;
     }
 
@@ -2156,16 +2173,16 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       final freqLimit = _dominantFreq <= 10 ? 3.0 : (_dominantFreq <= 50 ? 5.0 : 8.0);
       final percentage = (_ppv / freqLimit * 100).clamp(0, 999).toStringAsFixed(0);
       if (_ppv >= freqLimit) {
-        ppvContext = '${_ppv.toStringAsFixed(1)} mm/s - EXCEEDS safe limit';
+        ppvContext = _t.trArgs('exceeds_limit', [_ppv.toStringAsFixed(1)]);
       } else if (_ppv >= freqLimit * 0.5) {
-        ppvContext = '${_ppv.toStringAsFixed(1)} mm/s - $percentage% of limit';
+        ppvContext = _t.trArgs('percent_of_limit', [_ppv.toStringAsFixed(1), percentage]);
       } else {
-        ppvContext = '${_ppv.toStringAsFixed(1)} mm/s - within safe limits';
+        ppvContext = _t.trArgs('within_limits', [_ppv.toStringAsFixed(1)]);
       }
     } else if (_vibration > 0) {
       ppvContext = '${_vibration.toStringAsFixed(3)} g';
     } else {
-      ppvContext = 'No data yet';
+      ppvContext = _t.tr('no_data');
     }
 
     // Find DIN 4150-3 classification for badge
@@ -2403,7 +2420,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Unusual vibration pattern detected',
+                          _t.tr('unusual_vibration'),
                           style: TextStyle(
                             color: Colors.redAccent.withAlpha(230),
                             fontSize: 13,
@@ -2478,7 +2495,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Learning: $_calibrationSiteName',
+                        _t.trArgs('learning_label', [_calibrationSiteName ?? '']),
                         style: const TextStyle(color: Colors.tealAccent, fontSize: 13, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
@@ -2490,8 +2507,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                       const SizedBox(height: 4),
                       Text(
                         _anomalyService.mlService.calibrationProgress >= 1.0
-                            ? 'Ready! Tap the stop button to finish.'
-                            : '${_anomalyService.mlService.calibrationSampleCount} / 600 readings — keep area quiet',
+                            ? _t.tr('calibration_ready')
+                            : _t.trArgs('calibration_progress', ['${_anomalyService.mlService.calibrationSampleCount}']),
                         style: const TextStyle(color: Colors.white54, fontSize: 11),
                       ),
                     ],
@@ -2503,8 +2520,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               const SizedBox(height: 16),
               Text(
                 isConnected
-                    ? 'Sensor active - last update: $_lastUpdate'
-                    : 'Sensor not connected',
+                    ? _t.trArgs('sensor_active', [_lastUpdate])
+                    : _t.tr('sensor_not_connected'),
                 style: TextStyle(
                   color: Colors.white.withAlpha(100),
                   fontSize: 12,
@@ -2519,9 +2536,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   String _formatPrecursorPattern(String pattern) {
     switch (pattern) {
-      case 'soil_creep': return 'Soil movement detected';
-      case 'crack_propagation': return 'Crack propagation detected';
-      case 'imminent_failure': return 'IMMINENT FAILURE WARNING';
+      case 'soil_creep': return _t.tr('soil_creep');
+      case 'crack_propagation': return _t.tr('crack_propagation');
+      case 'imminent_failure': return _t.tr('imminent_failure');
       default: return pattern;
     }
   }
