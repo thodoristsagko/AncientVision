@@ -11,7 +11,7 @@ import 'login_screen.dart';
 import 'notifications_screen.dart';
 import 'qr_scanner_screen.dart';
 import 'ai_recognition_screen.dart';
-import 'photogrammetry/photogrammetry_screen.dart';
+// import 'photogrammetry/photogrammetry_screen.dart'; // TEST BUILD
 
 class DashboardHomeView extends StatefulWidget {
   const DashboardHomeView({super.key});
@@ -419,21 +419,22 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
             },
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildCompactAction(
-            icon: Icons.camera_alt_outlined,
-            label: 'Photogrammetry',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const PhotogrammetryScreen(),
-                ),
-              );
-            },
-          ),
-        ),
+        // TEST BUILD: Photogrammetry hidden
+        // const SizedBox(width: 12),
+        // Expanded(
+        //   child: _buildCompactAction(
+        //     icon: Icons.camera_alt_outlined,
+        //     label: 'Photogrammetry',
+        //     onTap: () {
+        //       Navigator.push(
+        //         context,
+        //         MaterialPageRoute(
+        //           builder: (_) => const PhotogrammetryScreen(),
+        //         ),
+        //       );
+        //     },
+        //   ),
+        // ),
       ],
     );
   }

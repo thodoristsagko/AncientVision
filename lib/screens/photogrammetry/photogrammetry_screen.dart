@@ -11,10 +11,9 @@ import 'package:archive/archive_io.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/reconstruction_result.dart';
 import '../../services/reconstruction/index.dart';
-import '../../services/cloud_photogrammetry_service.dart';
+import '../../services/reali3_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/metadata_export_service.dart';
 import '../../utils/quality_analyzer.dart';
@@ -80,6 +79,9 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
   bool _isDenseReconstructing = false;
   double _denseProgress = 0.0;
   String _denseStatus = '';
+
+  // Reali3 cloud result
+  String? _gltfPath;
 
 
   // Define the optimal capture angles for photogrammetry
@@ -682,6 +684,7 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
       MaterialPageRoute(
         builder: (context) => Model3DViewer(
           result: result,
+          gltfPath: _gltfPath,
           onCompleteForm: () {
             Navigator.pushReplacement(
               context,
@@ -724,8 +727,8 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
             const SizedBox(height: 20),
             ListTile(
               leading: const Icon(Icons.cloud_upload_rounded, color: Color(0xFF7C4DFF)),
-              title: const Text('Cloud (Best Quality)', style: TextStyle(color: Colors.white)),
-              subtitle: Text('5-15 min, requires internet', style: TextStyle(color: Colors.white.withAlpha(120), fontSize: 12)),
+              title: const Text('Cloud — Reali3 (Best Quality)', style: TextStyle(color: Colors.white)),
+              subtitle: Text('1-5 min, requires internet, textured 3D model', style: TextStyle(color: Colors.white.withAlpha(120), fontSize: 12)),
               onTap: () => Navigator.pop(ctx, 'cloud'),
             ),
             ListTile(
@@ -748,27 +751,24 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
     }
   }
 
-  /// Cloud reconstruction via OpenScan Cloud API.
+  /// Cloud reconstruction via Reali3 API.
   Future<void> _generateCloudModel() async {
-    final user = FirebaseAuth.instance.currentUser;
-    final email = user?.email ?? 'ancientvision@fll.app';
     _incrementalSfm.reset();
 
     setState(() {
       _isReconstructing = true;
       _reconstructionProgress = 0.0;
-      _reconstructionStatus = 'Preparing cloud upload...';
+      _reconstructionStatus = 'Preparing upload...';
       _incrementalPreviewCloud = null;
+      _gltfPath = null;
     });
 
     try {
-      final cloudService = CloudPhotogrammetryService();
+      final reali3 = Reali3Service();
       final images = _captures.map((c) => c.file).toList();
 
-      final result = await cloudService.reconstruct(
+      final result = await reali3.reconstruct(
         images: images,
-        email: email,
-        projectName: 'AncientVision_${DateTime.now().millisecondsSinceEpoch}',
         onProgress: (progress, status) {
           if (mounted) {
             setState(() {
@@ -779,26 +779,13 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
         },
       );
 
-      setState(() => _isReconstructing = false);
+      if (!mounted) return;
 
-      if (result.success && mounted) {
-        await NotificationService().showProcessingComplete(projectName: 'Cloud Model');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cloud processing complete'), backgroundColor: Color(0xFF4CAF50)),
-        );
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ManualEntryFormScreen(
-              photoGallery: _captures.map((c) => c.file).toList(),
-              cloudModelUrl: result.downloadUrl,
-            ),
-          ),
-        );
-      } else if (!result.success && mounted) {
+      if (result.plyPath == null && result.gltfPath == null) {
+        setState(() => _isReconstructing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result.errorMessage ?? 'Cloud unavailable'),
+            content: Text(reali3.lastError ?? 'Reconstruction failed'),
             backgroundColor: Colors.orange,
             action: SnackBarAction(
               label: 'Try On-Device',
@@ -807,10 +794,37 @@ class _PhotogrammetryScreenState extends State<PhotogrammetryScreen>
             ),
           ),
         );
+        return;
       }
+
+      // Parse PLY if available
+      PointCloud? pointCloud;
+      if (result.plyPath != null) {
+        final plyData = await File(result.plyPath!).readAsString();
+        pointCloud = PointCloud.fromPLY(plyData);
+      }
+
+      final reconstructionResult = ReconstructionResult(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        method: ReconstructionMethod.cloudProcessing,
+        status: ReconstructionStatus.completed,
+        startedAt: DateTime.now(),
+        completedAt: DateTime.now(),
+        pointCloud: pointCloud,
+        inputImageCount: images.length,
+      );
+
+      setState(() {
+        _isReconstructing = false;
+        _gltfPath = result.gltfPath;
+        _lastReconstructionResult = reconstructionResult;
+      });
+
+      await NotificationService().showProcessingComplete(projectName: 'Reali3 Model');
+      _showResultViewer(reconstructionResult);
     } catch (e) {
-      setState(() => _isReconstructing = false);
       if (mounted) {
+        setState(() => _isReconstructing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Cloud error: $e'), backgroundColor: Colors.red),
         );

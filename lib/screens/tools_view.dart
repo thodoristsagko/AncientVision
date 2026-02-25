@@ -17,7 +17,7 @@ import 'help_screen.dart';
 import 'admin_panel_screen.dart';
 import 'login_screen.dart';
 import 'ai_recognition_screen.dart';
-import 'photogrammetry/photogrammetry_screen.dart';
+// import 'photogrammetry/photogrammetry_screen.dart'; // TEST BUILD
 
 class ToolsView extends StatelessWidget {
   const ToolsView({super.key});
@@ -134,16 +134,17 @@ class ToolsView extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
                           ),
                         ),
-                        ToolCard(
-                          icon: Icons.view_in_ar_rounded,
-                          title: 'Photogrammetry',
-                          description: '3D reconstruction',
-                          color: const Color(0xFF00BFA5),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
-                          ),
-                        ),
+                        // TEST BUILD: Photogrammetry hidden
+                        // ToolCard(
+                        //   icon: Icons.view_in_ar_rounded,
+                        //   title: 'Photogrammetry',
+                        //   description: '3D reconstruction',
+                        //   color: const Color(0xFF00BFA5),
+                        //   onTap: () => Navigator.push(
+                        //     context,
+                        //     MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
+                        //   ),
+                        // ),
                       ]),
                       const SizedBox(height: 18),
 

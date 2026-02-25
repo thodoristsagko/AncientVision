@@ -13,7 +13,7 @@ import 'findings_map_screen.dart';
 import 'quick_capture_screen.dart';
 import 'ai_recognition_screen.dart';
 import 'manual_entry_form_screen.dart';
-import 'photogrammetry/photogrammetry_screen.dart';
+// import 'photogrammetry/photogrammetry_screen.dart'; // TEST BUILD
 import '../widgets/finding_detail_card.dart';
 import '../config/env_config.dart';
 
@@ -203,21 +203,21 @@ class _FindingsViewState extends State<FindingsView> {
                 );
               },
             ),
-            const SizedBox(height: 10),
-            // Photogrammetry option
-            _buildAddOption(
-              icon: Icons.view_in_ar_rounded,
-              title: 'Photogrammetry',
-              subtitle: '3D reconstruction from photos',
-              color: const Color(0xFF00BFA5),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
-                );
-              },
-            ),
+            // TEST BUILD: Photogrammetry hidden
+            // const SizedBox(height: 10),
+            // _buildAddOption(
+            //   icon: Icons.view_in_ar_rounded,
+            //   title: 'Photogrammetry',
+            //   subtitle: '3D reconstruction from photos',
+            //   color: const Color(0xFF00BFA5),
+            //   onTap: () {
+            //     Navigator.pop(context);
+            //     Navigator.push(
+            //       context,
+            //       MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
+            //     );
+            //   },
+            // ),
             const SizedBox(height: 16),
             SafeArea(child: Container()),
           ],

@@ -102,7 +102,7 @@ class RawAccelReassembler {
 
     // Check if we have all packets
     final totalBytes = _expectedSamples * 3 * 2; // samples * axes * int16
-    const packetSize = 512;
+    const packetSize = 200;
     final expectedPackets = (totalBytes + packetSize - 1) ~/ packetSize;
 
     if (_packets.length < expectedPackets) return null;

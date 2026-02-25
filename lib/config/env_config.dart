@@ -34,4 +34,9 @@ class EnvConfig {
     'OPENSCAN_PASSWORD',
     defaultValue: 'free',
   );
+
+  static const String reali3ApiKey = String.fromEnvironment(
+    'REALI3_API_KEY',
+    defaultValue: 'PLACEHOLDER_PENDING_APPROVAL',
+  );
 }

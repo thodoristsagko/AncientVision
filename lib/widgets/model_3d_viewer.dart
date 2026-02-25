@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/point_cloud.dart';
@@ -13,11 +14,13 @@ import 'quality_visualization_widget.dart';
 class Model3DViewer extends StatefulWidget {
   final ReconstructionResult result;
   final VoidCallback? onCompleteForm;
+  final String? gltfPath;
 
   const Model3DViewer({
     super.key,
     required this.result,
     this.onCompleteForm,
+    this.gltfPath,
   });
 
   @override
@@ -33,6 +36,7 @@ class _Model3DViewerState extends State<Model3DViewer> {
   bool _showGaussians = false;
   GaussianScene? _gaussianScene;
   bool _convertingToGaussians = false;
+  bool _showTexturedModel = false;
   final GlobalKey<PointCloudViewerState> _viewerKey = GlobalKey();
 
   PointCloud? get _pointCloud {
@@ -85,8 +89,17 @@ class _Model3DViewerState extends State<Model3DViewer> {
   @override
   Widget build(BuildContext context) {
     final pointCloud = _pointCloud;
+    final hasGltf = widget.gltfPath != null;
+    final hasPointCloud = pointCloud != null && pointCloud.points.isNotEmpty;
 
-    if (pointCloud == null || pointCloud.points.isEmpty) {
+    // Auto-show GLTF if available and no point cloud
+    if (hasGltf && !hasPointCloud && !_showTexturedModel) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _showTexturedModel = true);
+      });
+    }
+
+    if (!hasPointCloud && !hasGltf) {
       return Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(
@@ -102,7 +115,7 @@ class _Model3DViewerState extends State<Model3DViewer> {
       );
     }
 
-    final showSparseWarning = pointCloud.points.length < 10;
+    final showSparseWarning = hasPointCloud && pointCloud.points.length < 10;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -110,6 +123,12 @@ class _Model3DViewerState extends State<Model3DViewer> {
         title: const Text('3D Model Viewer'),
         backgroundColor: Colors.black,
         actions: [
+          if (hasGltf && hasPointCloud)
+            IconButton(
+              icon: Icon(_showTexturedModel ? Icons.grain : Icons.view_in_ar),
+              onPressed: () => setState(() => _showTexturedModel = !_showTexturedModel),
+              tooltip: _showTexturedModel ? 'Point Cloud' : 'Textured Model',
+            ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: () => setState(() => _showInfo = !_showInfo),
@@ -131,10 +150,19 @@ class _Model3DViewerState extends State<Model3DViewer> {
       ),
       body: Stack(
         children: [
-          // 3D Viewer — Gaussian Splatting or Point Cloud
-          if (_showGaussians && _gaussianScene != null)
+          // 3D Viewer — GLTF textured, Gaussian Splatting, or Point Cloud
+          if (_showTexturedModel && hasGltf)
+            ModelViewer(
+              src: 'file://${widget.gltfPath}',
+              alt: '3D Model',
+              ar: false,
+              autoRotate: true,
+              cameraControls: true,
+              backgroundColor: Colors.black,
+            )
+          else if (_showGaussians && _gaussianScene != null)
             GaussianSplatRenderer(scene: _gaussianScene!)
-          else
+          else if (hasPointCloud)
             PointCloudViewer(
               key: _viewerKey,
               pointCloud: pointCloud,

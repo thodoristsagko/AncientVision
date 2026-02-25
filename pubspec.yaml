@@ -55,6 +55,7 @@ dependencies:
   tflite_flutter: ^0.11.0
   google_generative_ai: ^0.4.6  # Gemini AI for coin recognition  # TensorFlow Lite for custom coin classifier
   exif: ^3.3.0
+  model_viewer_plus: ^1.7.0  # GLTF/GLB 3D model viewer with textures
 
 dev_dependencies:
   flutter_test:
