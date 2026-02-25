@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/finding_model.dart';
@@ -46,22 +45,14 @@ class FindingDetailCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final typeColor = Finding.getTypeColor(finding.type);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(26),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withAlpha(89),
-              width: 1,
-            ),
-          ),
-          child: Column(
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(18),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -214,8 +205,6 @@ class FindingDetailCard extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-      ),
     );
   }
 }

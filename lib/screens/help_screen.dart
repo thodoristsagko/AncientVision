@@ -124,12 +124,6 @@ class _HelpScreenState extends State<HelpScreen> with SingleTickerProviderStateM
           Color color;
 
           switch (entry.key) {
-            case 'photogrammetry':
-              title = '3D Scanning Guide';
-              description = 'Create professional 3D models';
-              icon = Icons.view_in_ar;
-              color = Colors.purple;
-              break;
             case 'findings':
               title = 'Recording Findings';
               description = 'Document artifacts properly';

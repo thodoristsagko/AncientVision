@@ -625,38 +625,39 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       if (value.length > 4 && sampleCount >= 128) {
         final rawAccel = _rawAccelReassembler.addPacket(value);
         if (rawAccel != null && rawAccel.sampleCount >= 128) {
-          // Run phone-side DSP on the reassembled buffer
-          final dspResult = _dspService.process(
+          // Run phone-side DSP on a background isolate (off main thread)
+          _dspService.processAsync(
             rawAccel.accelX, rawAccel.accelY, rawAccel.accelZ,
-          );
+          ).then((result) {
+            if (!mounted) return;
+            final dspResult = result.dsp;
+            _vectorPPV = result.ppv;
 
-          // Compute vector sum PPV from raw acceleration data
-          _vectorPPV = _dspService.computeVectorSumPPV(
-            rawAccel.accelX, rawAccel.accelY, rawAccel.accelZ,
-          );
+            // Update fields directly — throttled timer handles UI refresh
+            _dominantFreq = dspResult.dominantFreq;
+            _centroid = dspResult.spectralCentroid;
+            _kurtosis = dspResult.kurtosis;
+            _arias = dspResult.ariasIntensity;
+            _cav = dspResult.cav;
+            _dwt1 = dspResult.dwtEnergy1;
+            _dwt2 = dspResult.dwtEnergy2;
+            _dwt3 = dspResult.dwtEnergy3;
+            _psdSlope = dspResult.psdSlope;
+            _uiDirty = true;
 
-          // Update fields directly — throttled timer handles UI refresh
-          _dominantFreq = dspResult.dominantFreq;
-          _centroid = dspResult.spectralCentroid;
-          _kurtosis = dspResult.kurtosis;
-          _arias = dspResult.ariasIntensity;
-          _cav = dspResult.cav;
-          _dwt1 = dspResult.dwtEnergy1;
-          _dwt2 = dspResult.dwtEnergy2;
-          _dwt3 = dspResult.dwtEnergy3;
-          _psdSlope = dspResult.psdSlope;
-          _uiDirty = true;
+            // Feed spectrogram with real FFT data from phone DSP
+            final column = List<double>.filled(128, 0.0);
+            for (int i = 0; i < dspResult.fftMagnitudes.length && i < 128; i++) {
+              column[i] = dspResult.fftMagnitudes[i] * 100;
+            }
+            _spectrogramBuffer.addColumn(column);
 
-          // Feed spectrogram with real FFT data from phone DSP
-          final column = List<double>.filled(128, 0.0);
-          for (int i = 0; i < dspResult.fftMagnitudes.length && i < 128; i++) {
-            column[i] = dspResult.fftMagnitudes[i] * 100;
-          }
-          _spectrogramBuffer.addColumn(column);
-
-          debugPrint('>>> Phone DSP: freq=${dspResult.dominantFreq.toStringAsFixed(1)}Hz '
-              'kurt=${dspResult.kurtosis.toStringAsFixed(2)} '
-              'dwt=[${dspResult.dwtEnergy1.toStringAsFixed(4)},${dspResult.dwtEnergy2.toStringAsFixed(4)},${dspResult.dwtEnergy3.toStringAsFixed(4)}]');
+            debugPrint('>>> Phone DSP: freq=${dspResult.dominantFreq.toStringAsFixed(1)}Hz '
+                'kurt=${dspResult.kurtosis.toStringAsFixed(2)} '
+                'dwt=[${dspResult.dwtEnergy1.toStringAsFixed(4)},${dspResult.dwtEnergy2.toStringAsFixed(4)},${dspResult.dwtEnergy3.toStringAsFixed(4)}]');
+          }).catchError((e) {
+            debugPrint('DSP isolate error: $e');
+          });
         }
         return;
       }
@@ -975,40 +976,44 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
     // 5. ML anomaly detection
     if (_mlModelLoaded && (_ppv > 0 || _rms > 0)) {
-      final features = {
-        'rms': _rms,
-        'ppv': _ppv,
-        'freq': _dominantFreq,
-        'crest': _crestFactor,
-        'centroid': _centroid,
-        'kurtosis': _kurtosis,
-        'stalta': _staLtaRatio,
-        'arias': _arias,
-        'cav': _cav,
-        'temp': _temp,
-        'psdSlope': _psdSlope ?? 0.0,
-      };
+      try {
+        final features = {
+          'rms': _rms,
+          'ppv': _ppv,
+          'freq': _dominantFreq,
+          'crest': _crestFactor,
+          'centroid': _centroid,
+          'kurtosis': _kurtosis,
+          'stalta': _staLtaRatio,
+          'arias': _arias,
+          'cav': _cav,
+          'temp': _temp,
+          'psdSlope': _psdSlope ?? 0.0,
+        };
 
-      final result = _anomalyService.detect(features);
-      _anomalyScoreHistory.add(result.score);
-      _lastAnomalyResult = result;
-      _lastMLFeatures = features;
-      needsRebuild = true;
+        final result = _anomalyService.detect(features);
+        _anomalyScoreHistory.add(result.score);
+        _lastAnomalyResult = result;
+        _lastMLFeatures = features;
+        needsRebuild = true;
 
-      // Alarm + haptic for red-level ML anomaly
-      if (result.level == AnomalyLevel.anomaly && result.score >= 0.8) {
-        _triggerFullScreenAlert(
-          _t.tr('unusual_vibration'),
-          'warning',
-        );
-        HapticFeedback.heavyImpact();
-      } else if (result.level == AnomalyLevel.unusual) {
-        HapticFeedback.lightImpact();
-      }
+        // Alarm + haptic for red-level ML anomaly
+        if (result.level == AnomalyLevel.anomaly && result.score >= 0.8) {
+          _triggerFullScreenAlert(
+            _t.tr('unusual_vibration'),
+            'warning',
+          );
+          HapticFeedback.heavyImpact();
+        } else if (result.level == AnomalyLevel.unusual) {
+          HapticFeedback.lightImpact();
+        }
 
-      // Feed calibration if active
-      if (_isCalibrating) {
-        _anomalyService.mlService.feedCalibrationSample(features);
+        // Feed calibration if active
+        if (_isCalibrating) {
+          _anomalyService.mlService.feedCalibrationSample(features);
+        }
+      } catch (e) {
+        debugPrint('ML anomaly detection error: $e');
       }
     }
 

@@ -24,7 +24,6 @@ class TutorialStep {
 enum HelpCategory {
   gettingStarted('Getting Started', Icons.play_arrow),
   findings('Findings', Icons.search),
-  photogrammetry('3D Scanning', Icons.view_in_ar),
   fieldwork('Fieldwork', Icons.landscape),
   dataManagement('Data & Export', Icons.folder),
   settings('Settings', Icons.settings),
@@ -94,13 +93,6 @@ class TutorialService {
       targetKey: 'findings_tab',
     ),
     TutorialStep(
-      id: 'photogrammetry',
-      title: '3D Reconstruction',
-      description: 'Create 3D models of artifacts using photogrammetry. Take 16+ photos around an object and let the app build a 3D model.',
-      icon: Icons.view_in_ar,
-      targetKey: 'tools_tab',
-    ),
-    TutorialStep(
       id: 'classification',
       title: 'Artifact Classification',
       description: 'Use our built-in archaeological database to classify artifacts by type, material, period, and condition.',
@@ -122,38 +114,6 @@ class TutorialService {
 
   // ========== FEATURE TUTORIALS ==========
   static const Map<String, List<TutorialStep>> featureTutorials = {
-    'photogrammetry': [
-      TutorialStep(
-        id: 'photo_prep',
-        title: 'Prepare Your Object',
-        description: 'Place the artifact on a plain, matte surface. Ensure good, even lighting without harsh shadows.',
-        icon: Icons.lightbulb_outline,
-      ),
-      TutorialStep(
-        id: 'photo_capture',
-        title: 'Capture Photos',
-        description: 'Take at least 16 photos, walking around the object in a circle. Keep the object centered in each shot.',
-        icon: Icons.camera_alt,
-      ),
-      TutorialStep(
-        id: 'photo_angles',
-        title: 'Multiple Heights',
-        description: 'Capture photos from different heights - eye level, above, and below. This ensures complete coverage.',
-        icon: Icons.height,
-      ),
-      TutorialStep(
-        id: 'photo_overlap',
-        title: 'Overlap Images',
-        description: 'Each photo should overlap with neighbors by 60-80%. This helps the algorithm match features.',
-        icon: Icons.filter,
-      ),
-      TutorialStep(
-        id: 'processing',
-        title: 'Processing',
-        description: 'Choose on-device or cloud processing. Cloud gives better results but requires internet.',
-        icon: Icons.cloud_sync,
-      ),
-    ],
     'findings': [
       TutorialStep(
         id: 'add_finding',
@@ -360,7 +320,6 @@ AncientVision is a comprehensive archaeological field app designed to help you d
 
 **Key Features:**
 - Record findings with photos and GPS location
-- Create 3D models using photogrammetry
 - Classify artifacts using our archaeological database
 - Connect environmental sensors for site monitoring
 - Generate professional PDF reports
@@ -473,39 +432,6 @@ Quick Capture lets you rapidly photograph and document finds without filling out
       keywords: ['quick', 'capture', 'photo', 'fast', 'camera', 'rapid'],
     ),
     HelpArticle(
-      id: 'photogrammetry_tips',
-      title: 'Tips for Better 3D Scans',
-      content: '''
-Getting good 3D reconstructions requires following some best practices:
-
-**Lighting:**
-- Use soft, diffused lighting
-- Avoid harsh shadows
-- Outdoor shade works well
-- No direct sunlight on the object
-
-**Object Selection:**
-- Textured surfaces work best
-- Avoid shiny, reflective objects
-- Solid colors are challenging
-- Detailed surfaces give best results
-
-**Photography:**
-- Minimum 16 photos recommended
-- Walk in a complete circle
-- Include multiple heights
-- Keep object centered
-- 60-80% overlap between photos
-
-**Processing:**
-- Cloud processing gives best results
-- On-device works for simple objects
-- Allow 5-15 minutes for cloud
-      ''',
-      category: HelpCategory.photogrammetry,
-      keywords: ['3d', 'scan', 'photo', 'model', 'reconstruction'],
-    ),
-    HelpArticle(
       id: 'context_sheets',
       title: 'Recording Stratigraphic Contexts',
       content: '''
@@ -593,16 +519,6 @@ Use the share button to send exports via email, cloud storage, or other apps.
   // ========== FAQs ==========
   static const List<FAQItem> faqs = [
     FAQItem(
-      question: 'How many photos do I need for 3D scanning?',
-      answer: 'We recommend at least 16 photos for a basic 3D model. For better quality, take 30-50 photos from multiple heights. The more coverage you have, the better the result.',
-      category: HelpCategory.photogrammetry,
-    ),
-    FAQItem(
-      question: 'Why does my 3D model look incomplete?',
-      answer: 'This usually happens when there are gaps in photo coverage. Make sure to photograph the object from all angles and heights. Shiny or textureless objects also cause problems.',
-      category: HelpCategory.photogrammetry,
-    ),
-    FAQItem(
       question: 'Does the app work without internet?',
       answer: 'Yes! All core features work offline. Data syncs automatically when you reconnect. Cloud 3D processing is the only feature that requires internet.',
       category: HelpCategory.dataManagement,
@@ -611,11 +527,6 @@ Use the share button to send exports via email, cloud storage, or other apps.
       question: 'How do I backup my data?',
       answer: 'Go to Settings > Backup to create a full backup. You can also enable automatic backups. Backups are saved as ZIP files that can be restored later.',
       category: HelpCategory.dataManagement,
-    ),
-    FAQItem(
-      question: 'What is the difference between cloud and on-device processing?',
-      answer: 'Cloud processing uses professional servers and gives better results, but requires internet. On-device processing works offline but may produce simpler models.',
-      category: HelpCategory.photogrammetry,
     ),
     FAQItem(
       question: 'How do I classify an unknown artifact?',

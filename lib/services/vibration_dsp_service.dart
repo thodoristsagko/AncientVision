@@ -1,5 +1,32 @@
+import 'dart:async';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
+
+/// Message sent to the DSP isolate for processing.
+class _DspIsolateRequest {
+  final List<double> accelX;
+  final List<double> accelY;
+  final List<double> accelZ;
+  final int sampleRate;
+  final int windowSize;
+  const _DspIsolateRequest(this.accelX, this.accelY, this.accelZ, this.sampleRate, this.windowSize);
+}
+
+/// Combined response from the DSP isolate.
+class _DspIsolateResponse {
+  final DspResult dspResult;
+  final double ppv;
+  const _DspIsolateResponse(this.dspResult, this.ppv);
+}
+
+/// Top-level function for Isolate.run — performs all heavy DSP math off main thread.
+_DspIsolateResponse _dspIsolateEntry(_DspIsolateRequest req) {
+  final svc = VibrationDspService._forIsolate();
+  final dspResult = svc.process(req.accelX, req.accelY, req.accelZ);
+  final ppv = svc._computeRawPPV(req.accelX, req.accelY, req.accelZ);
+  return _DspIsolateResponse(dspResult, ppv);
+}
 
 /// Phone-side DSP engine that processes raw acceleration buffers from BLE.
 ///
@@ -26,6 +53,67 @@ class VibrationDspService {
   int _calibrationCount = 0;
   double _calibrationSum = 0.0;
   static const int _calibrationWindows = 5;
+
+  /// Internal constructor for isolate (no state carried over).
+  VibrationDspService._forIsolate();
+
+  VibrationDspService();
+
+  /// Process acceleration data on a background isolate.
+  /// Returns DSP result with Arias/CAV accumulated on main thread,
+  /// and PPV with noise floor calibration applied on main thread.
+  Future<({DspResult dsp, double ppv})> processAsync(
+    List<double> accelX, List<double> accelY, List<double> accelZ,
+  ) async {
+    final response = await Isolate.run(
+      () => _dspIsolateEntry(_DspIsolateRequest(accelX, accelY, accelZ, sampleRate, windowSize)),
+    );
+
+    // Apply stateful accumulation on main thread
+    ariasIntensity += response.dspResult.ariasIntensity;
+    cav += response.dspResult.cav;
+    final now = DateTime.now();
+    if (now.difference(_lastAriasReset) >= ariasResetInterval) {
+      ariasIntensity = 0.0;
+      cav = 0.0;
+      _lastAriasReset = now;
+    }
+
+    // PPV noise floor calibration on main thread
+    final rawPPV = response.ppv;
+    double calibratedPPV;
+    if (!_ppvCalibrated) {
+      _calibrationSum += rawPPV;
+      _calibrationCount++;
+      if (_calibrationCount >= _calibrationWindows) {
+        _ppvNoiseFloor = (_calibrationSum / _calibrationCount) * 1.2;
+        _ppvCalibrated = true;
+      }
+      calibratedPPV = 0.0;
+    } else {
+      final c = rawPPV - _ppvNoiseFloor;
+      calibratedPPV = c > 0 ? c : 0.0;
+    }
+
+    // Return result with accumulated Arias/CAV from main thread
+    final dsp = DspResult(
+      rms: response.dspResult.rms,
+      peak: response.dspResult.peak,
+      crestFactor: response.dspResult.crestFactor,
+      kurtosis: response.dspResult.kurtosis,
+      dominantFreq: response.dspResult.dominantFreq,
+      spectralCentroid: response.dspResult.spectralCentroid,
+      fftMagnitudes: response.dspResult.fftMagnitudes,
+      dwtEnergy1: response.dspResult.dwtEnergy1,
+      dwtEnergy2: response.dspResult.dwtEnergy2,
+      dwtEnergy3: response.dspResult.dwtEnergy3,
+      ariasIntensity: ariasIntensity,
+      cav: cav,
+      psdSlope: response.dspResult.psdSlope,
+    );
+
+    return (dsp: dsp, ppv: calibratedPPV);
+  }
 
   /// Process a raw acceleration buffer and return all computed features.
   ///
@@ -345,6 +433,16 @@ class VibrationDspService {
     // For broadband, use crest factor of ~3 as conservative estimate
     // But simpler: peak = sqrt(2 * sum of squared velocity amplitudes) for Parseval
     return sqrt(velSumSq) * 3.0; // RMS to peak (conservative broadband crest factor)
+  }
+
+  /// Compute raw (uncalibrated) PPV for use in isolate.
+  double _computeRawPPV(List<double> accelX, List<double> accelY, List<double> accelZ) {
+    final n = accelX.length;
+    if (n < 2) return 0.0;
+    final peakVelX = _freqDomainPeakVelocity(accelX);
+    final peakVelY = _freqDomainPeakVelocity(accelY);
+    final peakVelZ = _freqDomainPeakVelocity(accelZ);
+    return [peakVelX, peakVelY, peakVelZ].reduce((a, b) => a > b ? a : b);
   }
 
   /// Reset running accumulators (e.g. when reconnecting)

@@ -1,19 +1,16 @@
 // ignore_for_file: use_build_context_synchronously
-import 'dart:ui' as ui;
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import '../models/finding_model.dart';
-import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
 import 'finding_details_page.dart';
 import 'findings_map_screen.dart';
 import 'quick_capture_screen.dart';
 import 'ai_recognition_screen.dart';
 import 'manual_entry_form_screen.dart';
-// import 'photogrammetry/photogrammetry_screen.dart'; // TEST BUILD
 import '../widgets/finding_detail_card.dart';
 import '../config/env_config.dart';
 
@@ -203,21 +200,6 @@ class _FindingsViewState extends State<FindingsView> {
                 );
               },
             ),
-            // TEST BUILD: Photogrammetry hidden
-            // const SizedBox(height: 10),
-            // _buildAddOption(
-            //   icon: Icons.view_in_ar_rounded,
-            //   title: 'Photogrammetry',
-            //   subtitle: '3D reconstruction from photos',
-            //   color: const Color(0xFF00BFA5),
-            //   onTap: () {
-            //     Navigator.pop(context);
-            //     Navigator.push(
-            //       context,
-            //       MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
-            //     );
-            //   },
-            // ),
             const SizedBox(height: 16),
             SafeArea(child: Container()),
           ],
@@ -526,8 +508,7 @@ class _FindingsViewState extends State<FindingsView> {
                     ),
                     const Spacer(),
                     // Add button (FAB-style) - opens bottom sheet with options
-                    if (AuthService.currentUser != null)
-                      GestureDetector(
+                    GestureDetector(
                         onTap: () => _showAddOptions(context),
                         child: Container(
                           padding: const EdgeInsets.all(10),
@@ -540,33 +521,6 @@ class _FindingsViewState extends State<FindingsView> {
                             color: Color(0xFF3E2723),
                             size: 22,
                           ),
-                        ),
-                      )
-                    else if (AuthService.currentUser == null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withAlpha(38),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.lock_outline_rounded,
-                              color: Colors.white.withAlpha(102),
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Sign in',
-                              style: TextStyle(
-                                color: Colors.white.withAlpha(102),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
                         ),
                       ),
                   ],
@@ -593,153 +547,44 @@ class _FindingsViewState extends State<FindingsView> {
 
               // Show loading or empty state
               if (_isLoading)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                    child: Container(
-                      padding: const EdgeInsets.all(40),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(26),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withAlpha(89),
-                          width: 1,
-                        ),
-                      ),
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFFFFC107),
-                        ),
-                      ),
-                    ),
+                Container(
+                  padding: const EdgeInsets.all(40),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(18),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Color(0xFFFFC107)),
                   ),
                 )
               else if (_findings.isEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                    child: Container(
-                      padding: const EdgeInsets.all(32),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(26),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withAlpha(89),
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          // Animated icon container
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFC107).withAlpha(38),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFFFFC107).withAlpha(77),
-                                width: 2,
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.explore_outlined,
-                              color: Color(0xFFFFC107),
-                              size: 40,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          const Text(
-                            'Start Your Discovery',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'No archaeological findings recorded yet.\nDocument your first discovery!',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withAlpha(153),
-                              fontSize: 13,
-                              height: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          if (AuthService.currentUser != null)
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
-                                ).then((_) => _loadFindings());
-                              },
-                              icon: const Icon(Icons.add_rounded),
-                              label: const Text('Add First Finding'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFFFC107),
-                                foregroundColor: const Color(0xFF3E2723),
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            )
-                          else
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withAlpha(26),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.lock_outline,
-                                    color: Colors.white.withAlpha(128),
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Sign in to add findings',
-                                    style: TextStyle(
-                                      color: Colors.white.withAlpha(128),
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+                Container(
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(18),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(Icons.explore_outlined, color: const Color(0xFFFFC107).withAlpha(150), size: 48),
+                      const SizedBox(height: 16),
+                      const Text('No findings yet', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Text('Tap + to add your first discovery', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 13)),
+                    ],
                   ),
                 )
               else ...[
                 // RECENT FINDINGS TABLE WITH SWIPE TO DELETE
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(26),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withAlpha(89),
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          // Findings list
-                          ..._filteredFindings.asMap().entries.map((entry) {
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(18),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      ..._filteredFindings.asMap().entries.map((entry) {
                             final index = entry.key;
                             final f = entry.value;
                             final isSelected = index == _selectedIndex;
@@ -865,30 +710,19 @@ class _FindingsViewState extends State<FindingsView> {
                           }).toList(),
                         ],
                       ),
-                    ),
-                  ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
 
-                // MAP (Smaller size with OpenStreetMap)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                    child: Container(
-                      height: (MediaQuery.of(context).size.height * 0.25).clamp(200.0, 350.0),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(26),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withAlpha(89),
-                          width: 1,
-                        ),
-                      ),
-                      child: FindingsMap(findings: _filteredFindings, selectedIndex: _selectedIndex),
-                    ),
+                // MAP
+                Container(
+                  height: (MediaQuery.of(context).size.height * 0.25).clamp(200.0, 350.0),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(18),
+                    borderRadius: BorderRadius.circular(16),
                   ),
+                  clipBehavior: Clip.antiAlias,
+                  child: FindingsMap(findings: _filteredFindings, selectedIndex: _selectedIndex),
                 ),
 
                 const SizedBox(height: 16),

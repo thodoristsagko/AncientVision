@@ -15,14 +15,10 @@ import 'analytics_screen.dart';
 import 'settings_screen.dart';
 import 'help_screen.dart';
 import 'admin_panel_screen.dart';
-import 'login_screen.dart';
 import 'ai_recognition_screen.dart';
-// import 'photogrammetry/photogrammetry_screen.dart'; // TEST BUILD
 
 class ToolsView extends StatelessWidget {
   const ToolsView({super.key});
-
-  bool get _isGuest => AuthService.currentUser == null;
 
   @override
   Widget build(BuildContext context) {
@@ -49,34 +45,16 @@ class ToolsView extends StatelessWidget {
                   children: [
                     // Header
                     const Text(
-                      'Professional Tools',
+                      'Tools',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 26,
+                        fontSize: 24,
                         fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _isGuest
-                          ? 'Sign in to unlock all features'
-                          : 'Industry-leading archaeological field tools',
-                      style: TextStyle(
-                        color: Colors.white.withAlpha(179),
-                        fontSize: 13,
                       ),
                     ),
                     const SizedBox(height: 24),
 
-                    if (_isGuest) ...[
-                      // GUEST VIEW with locked features
-                      _buildLockedFeaturePreview(context),
-                    ] else ...[
-                      // === HERO FEATURE: 3D RECONSTRUCTION === (HIDDEN)
-                      // _buildHeroFeature(context),
-                      // const SizedBox(height: 20),
-
-                      // === DOCUMENTATION (merged Field Work + Capture) ===
+                    // === DOCUMENTATION (merged Field Work + Capture) ===
                       _buildCategoryHeader('Documentation'),
                       const SizedBox(height: 10),
                       _buildBigToolButton(
@@ -134,17 +112,6 @@ class ToolsView extends StatelessWidget {
                             MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
                           ),
                         ),
-                        // TEST BUILD: Photogrammetry hidden
-                        // ToolCard(
-                        //   icon: Icons.view_in_ar_rounded,
-                        //   title: 'Photogrammetry',
-                        //   description: '3D reconstruction',
-                        //   color: const Color(0xFF00BFA5),
-                        //   onTap: () => Navigator.push(
-                        //     context,
-                        //     MaterialPageRoute(builder: (_) => const PhotogrammetryScreen()),
-                        //   ),
-                        // ),
                       ]),
                       const SizedBox(height: 18),
 
@@ -229,7 +196,6 @@ class ToolsView extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 120),
-                    ],
                   ],
                 ),
               ),
@@ -320,72 +286,6 @@ class ToolsView extends StatelessWidget {
     );
   }
 
-  Widget _buildLockedFeaturePreview(BuildContext context) {
-    return Column(
-      children: [
-        _buildLockedCard('3D Reconstruction', Icons.view_in_ar_rounded),
-        const SizedBox(height: 12),
-        _buildLockedCard('Manual Entry', Icons.edit_note_rounded),
-        const SizedBox(height: 12),
-        _buildLockedCard('Coin Recognition', Icons.auto_awesome_rounded),
-        const SizedBox(height: 24),
-        Center(
-          child: GestureDetector(
-            onTap: () {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                (route) => false,
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFC107),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'Sign In to Unlock Tools',
-                style: TextStyle(
-                  color: Color(0xFF0D3A39),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLockedCard(String title, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(13),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withAlpha(26)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white38, size: 28),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                color: Colors.white.withAlpha(102),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const Icon(Icons.lock_outline_rounded, color: Colors.white38, size: 20),
-        ],
-      ),
-    );
-  }
 
   void _showExportDialog(BuildContext context) {
     showModalBottomSheet(
