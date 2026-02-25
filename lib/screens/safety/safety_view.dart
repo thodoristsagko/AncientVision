@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -1492,164 +1491,77 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           child: SafeArea(
             child: Column(
               children: [
-                // HEADER (fixed at top)
+                // HEADER
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
                   child: Column(
                     children: [
+                      // Title row
                       Row(
                         children: [
-                          const Icon(Icons.engineering_rounded, color: Colors.white, size: 26),
-                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _t.tr('trench_safety'),
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                              style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
                             ),
                           ),
                           LiveChip(isConnected: isConnected, status: _connectionStatus),
+                          if (isConnected && _lastRssi != null) ...[
+                            const SizedBox(width: 4),
+                            _buildRssiChip(),
+                          ],
                           if (isConnected) ...[
                             const SizedBox(width: 4),
                             _buildBatteryChip(),
-                            if (_lastRssi != null) ...[
-                              const SizedBox(width: 4),
-                              _buildRssiChip(),
-                            ],
                           ],
-                          const SizedBox(width: 4),
-                          _buildSimpleModeToggle(),
-                          if (isConnected && _mlModelLoaded)
-                            IconButton(
-                              icon: Icon(
-                                _isCalibrating ? Icons.stop_circle_rounded : Icons.tune_rounded,
-                                color: _isCalibrating ? Colors.orangeAccent : Colors.white70,
-                                size: 20,
-                              ),
-                              tooltip: _isCalibrating ? _t.tr('stop_learning') : _t.tr('learn_site'),
-                              onPressed: _isCalibrating ? _stopCalibration : _showCalibrationDialog,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                            ),
-                          IconButton(
-                            icon: Text(
-                              _t.isGreek ? 'EN' : 'EL',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            tooltip: _t.isGreek ? 'Switch to English' : 'Αλλαγή σε Ελληνικά',
-                            onPressed: () => setState(() => _t.toggleLanguage()),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                          ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-
-                      // Connection status and action buttons
+                      const SizedBox(height: 6),
+                      // Action row
                       Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isConnected
-                            ? _t.tr('connected_to')
-                            : _isConnecting
-                              ? _t.tr('scanning')
-                              : _connectionStatus,
-                          style: TextStyle(color: Colors.white.withAlpha(190), fontSize: 13),
-                        ),
-                        if (_truncatedPackets > 0)
-                          Text(
-                            '$_truncatedPackets partial packet(s) — reconnecting clears',
-                            style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Scan/Reconnect button
-                  GestureDetector(
-                    onTap: isConnected ? null : () {
-                      _reconnectTimer?.cancel();
-                      _reconnectAttempts = 0;
-                      _startScan();
-                    },
-                    child: AnimatedOpacity(
-                      opacity: isConnected ? 0.3 : 1.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFC107),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _connectionStatus.contains('Reconnecting') || _connectionStatus.contains('Connection lost')
-                              ? _t.tr('reconnect')
-                              : _t.tr('scan'),
-                          style: const TextStyle(color: Color(0xFF0D3A39), fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Disconnect button - enabled when connected
-                  GestureDetector(
-                    onTap: isConnected ? _disconnectDevice : null,
-                    child: AnimatedOpacity(
-                      opacity: isConnected ? 1.0 : 0.3,
-                      duration: const Duration(milliseconds: 200),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withAlpha(200),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _t.tr('disconnect'),
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Mute button - uses global mute from Dashboard
-                  GestureDetector(
-                    onTap: widget.onToggleMute,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: widget.isMuted ? Colors.grey : Colors.green.withAlpha(200),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            widget.isMuted ? Icons.volume_off : Icons.volume_up,
-                            color: Colors.white,
-                            size: 14,
+                          _buildSimpleModeToggle(),
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            onTap: () => setState(() => _t.toggleLanguage()),
+                            child: Text(_t.isGreek ? 'EN' : 'EL', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            widget.isMuted ? _t.tr('muted') : _t.tr('sound'),
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                          ),
+                          if (isConnected && _mlModelLoaded) ...[
+                            const SizedBox(width: 6),
+                            GestureDetector(
+                              onTap: _isCalibrating ? _stopCalibration : _showCalibrationDialog,
+                              child: Icon(
+                                _isCalibrating ? Icons.stop_circle_rounded : Icons.tune_rounded,
+                                color: _isCalibrating ? Colors.orangeAccent : Colors.white70, size: 18,
+                              ),
+                            ),
+                          ],
+                          const Spacer(),
+                          // Scan/Reconnect
+                          if (!isConnected)
+                            GestureDetector(
+                              onTap: () { _reconnectTimer?.cancel(); _reconnectAttempts = 0; _startScan(); },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(color: const Color(0xFFFFC107), borderRadius: BorderRadius.circular(10)),
+                                child: Text(_t.tr('scan'), style: const TextStyle(color: Color(0xFF0D3A39), fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                          if (isConnected)
+                            GestureDetector(
+                              onTap: _disconnectDevice,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(color: Colors.red.withAlpha(180), borderRadius: BorderRadius.circular(10)),
+                                child: Text(_t.tr('disconnect'), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                            ),
                         ],
                       ),
-                    ),
+                    ],
                   ),
-                      ],
-                    ),
-                  ],
                 ),
-              ),
 
                 // ===== SIMPLE MODE: archaeologist-friendly status =====
                 if (_simpleMode)
@@ -2110,46 +2022,22 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   /// Build the Simple/Detailed mode toggle chip for the header
   Widget _buildSimpleModeToggle() {
+    final color = _simpleMode ? const Color(0xFF4CAF50) : const Color(0xFF2196F3);
     return GestureDetector(
       onTap: () => setState(() => _simpleMode = !_simpleMode),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: _simpleMode
-                  ? const Color(0xFF4CAF50).withAlpha(50)
-                  : const Color(0xFF2196F3).withAlpha(50),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: _simpleMode
-                    ? const Color(0xFF4CAF50).withAlpha(120)
-                    : const Color(0xFF2196F3).withAlpha(120),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _simpleMode ? Icons.shield_rounded : Icons.analytics_rounded,
-                  color: Colors.white,
-                  size: 14,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _simpleMode ? 'Simple' : 'Detail',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withAlpha(40),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_simpleMode ? Icons.shield_rounded : Icons.analytics_rounded, color: Colors.white, size: 14),
+            const SizedBox(width: 4),
+            Text(_simpleMode ? 'Simple' : 'Detail', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+          ],
         ),
       ),
     );
@@ -2229,381 +2117,145 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       }
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withAlpha(25),
-                Colors.white.withAlpha(13),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: statusColor.withAlpha(120), width: 1.5),
-          ),
-          child: Column(
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      decoration: BoxDecoration(
+        color: statusColor.withAlpha(20),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: statusColor.withAlpha(100), width: 1.5),
+      ),
+      child: Column(
+        children: [
+          // Status icon + label
+          Icon(statusIcon, color: statusColor, size: 48),
+          const SizedBox(height: 12),
+          Text(statusLabel, style: TextStyle(color: statusColor, fontSize: 22, fontWeight: FontWeight.w700), textAlign: TextAlign.center),
+          const SizedBox(height: 6),
+          Text(statusDescription, style: TextStyle(color: Colors.white.withAlpha(170), fontSize: 13, height: 1.4), textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+
+          // PPV reading
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Large status circle
-              Container(
-                width: (MediaQuery.of(context).size.width * 0.28).clamp(100.0, 140.0),
-                height: (MediaQuery.of(context).size.width * 0.28).clamp(100.0, 140.0),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: statusColor.withAlpha(40),
-                  border: Border.all(color: statusColor, width: 4),
-                  boxShadow: [
-                    BoxShadow(
-                      color: statusColor.withAlpha(60),
-                      blurRadius: 30,
-                      spreadRadius: 5,
-                    ),
-                  ],
-                ),
-                child: Icon(statusIcon, color: statusColor, size: 56),
-              ),
-              const SizedBox(height: 20),
+              Icon(Icons.speed_rounded, color: _getPPVColor(), size: 18),
+              const SizedBox(width: 8),
+              Flexible(child: Text(ppvContext, style: TextStyle(color: Colors.white.withAlpha(210), fontSize: 15, fontWeight: FontWeight.w600))),
+            ],
+          ),
 
-              // Status label
-              Text(
-                statusLabel,
+          // Vector PPV
+          if (_vectorPPV > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text("Vector PPV: ${_vectorPPV.toStringAsFixed(1)} mm/s", style: TextStyle(color: Colors.white.withAlpha(160), fontSize: 13)),
+            ),
+
+          // DIN badge
+          if (dinBadge.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(dinBadge, style: TextStyle(color: _getPPVColor(), fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+
+          // Soil moisture
+          if (_moisturePercent > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Soil: $_moisturePercent% - ${_getMoistureStatus()}',
                 style: TextStyle(
-                  color: statusColor,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-
-              // Status description
-              Text(
-                statusDescription,
-                style: TextStyle(
-                  color: Colors.white.withAlpha(180),
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-
-              // PPV value with context
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withAlpha(15),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withAlpha(40)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.speed_rounded, color: _getPPVColor(), size: 20),
-                    const SizedBox(width: 10),
-                    Flexible(
-                      child: Text(
-                        ppvContext,
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(220),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Vector PPV (from phone-side DSP)
-              if (_vectorPPV > 0) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(15),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.blue.withAlpha(60)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.all_inclusive, color: Colors.blue.withAlpha(200), size: 18),
-                      const SizedBox(width: 10),
-                      Text(
-                        "Vector PPV: ${_vectorPPV.toStringAsFixed(1)} mm/s",
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(200),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // DIN standard compliance badge
-              if (dinBadge.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _getPPVColor().withAlpha(30),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _getPPVColor().withAlpha(80)),
-                  ),
-                  child: Text(
-                    dinBadge,
-                    style: TextStyle(
-                      color: _getPPVColor(),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-
-              // Soil moisture (simple)
-              if (_moisturePercent > 0) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(10),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withAlpha(30)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.water_drop_rounded,
-                        color: (_moisturePercent < 30 || _moisturePercent > 60)
-                            ? Colors.orange
-                            : Colors.white.withAlpha(160),
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                        'Soil Moisture: $_moisturePercent% - ${_getMoistureStatus()}',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: (_moisturePercent < 30 || _moisturePercent > 60)
-                              ? Colors.orange
-                              : Colors.white.withAlpha(180),
-                          fontSize: 13,
-                        ),
-                      ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // PPV trend prediction warning (simple)
-              if (_ppvPrediction != null && _ppvPrediction!.isTrendingUp && _ppvPrediction!.minutesToLimit != null) ...[
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF8F00).withAlpha(30),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFF8F00).withAlpha(100), width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.trending_up, color: Color(0xFFFF8F00), size: 22),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Vibration increasing - may exceed limits in ~${_ppvPrediction!.minutesToLimit!.toStringAsFixed(0)} minutes',
-                          style: const TextStyle(
-                            color: Color(0xFFFF8F00),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // ML anomaly warning (simple)
-              if (_mlModelLoaded && _lastAnomalyResult.level == AnomalyLevel.anomaly) ...[
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withAlpha(25),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.red.withAlpha(80), width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.psychology_alt, color: Colors.redAccent, size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _t.tr('unusual_vibration'),
-                          style: TextStyle(
-                            color: Colors.redAccent.withAlpha(230),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Precursor pattern warning (simple mode)
-              if (_isPrecursorDriven && _lastPrecursorPattern != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF6F00).withAlpha(30),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFF6F00).withAlpha(100), width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF6F00), size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Precursor: ${_formatPrecursorPattern(_lastPrecursorPattern!)} '
-                          '(${(_lastPrecursorScore * 100).toStringAsFixed(0)}% confidence)',
-                          style: const TextStyle(color: Color(0xFFFF6F00), fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Fukuzono TTF / PSD (simple mode)
-              if (_fukuzonoTTF != null || _psdClassification != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  [
-                    if (_fukuzonoTTF != null)
-                      'Failure: ~${(_fukuzonoTTF! / 60).floor()}m ${(_fukuzonoTTF! % 60).floor()}s (R\u00B2=${_fukuzonoR2?.toStringAsFixed(2) ?? "?"})',
-                    if (_psdClassification != null)
-                      'PSD: $_psdClassification',
-                  ].join(' | '),
-                  style: TextStyle(
-                    color: (_fukuzonoTTF != null && _fukuzonoTTF! < 600)
-                        ? Colors.red
-                        : Colors.white54,
-                    fontSize: 12,
-                    fontWeight: _fukuzonoTTF != null ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                ),
-              ],
-
-              // Low battery warning
-              if (isConnected && _batteryPercent <= 20 && !_batteryCharging) ...[
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: (_batteryPercent <= 10 ? Colors.red : Colors.orange).withAlpha(25),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: (_batteryPercent <= 10 ? Colors.red : Colors.orange).withAlpha(80),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.battery_alert_rounded,
-                        color: _batteryPercent <= 10 ? Colors.red : Colors.orange,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _batteryPercent <= 10
-                              ? _t.tr('battery_critical')
-                              : _t.trArgs('battery_low', ['$_batteryPercent']),
-                          style: TextStyle(
-                            color: _batteryPercent <= 10 ? Colors.red : Colors.orange,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Calibration progress
-              if (_isCalibrating) ...[
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.tealAccent.withAlpha(20),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.tealAccent.withAlpha(80), width: 1),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _t.trArgs('learning_label', [_calibrationSiteName ?? '']),
-                        style: const TextStyle(color: Colors.tealAccent, fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      LinearProgressIndicator(
-                        value: _anomalyService.mlService.calibrationProgress,
-                        backgroundColor: Colors.white12,
-                        color: Colors.tealAccent,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _anomalyService.mlService.calibrationProgress >= 1.0
-                            ? _t.tr('calibration_ready')
-                            : _t.trArgs('calibration_progress', ['${_anomalyService.mlService.calibrationSampleCount}']),
-                        style: const TextStyle(color: Colors.white54, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Connection / last update info
-              const SizedBox(height: 16),
-              Text(
-                isConnected
-                    ? _t.trArgs('sensor_active', [_lastUpdate])
-                    : _t.tr('sensor_not_connected'),
-                style: TextStyle(
-                  color: Colors.white.withAlpha(100),
+                  color: (_moisturePercent < 30 || _moisturePercent > 60) ? Colors.orange : Colors.white.withAlpha(160),
                   fontSize: 12,
                 ),
               ),
-            ],
+            ),
+
+          // Warnings section
+          ..._buildSimpleWarnings(isConnected),
+
+          // Connection info
+          const SizedBox(height: 14),
+          Text(
+            isConnected ? _t.trArgs('sensor_active', [_lastUpdate]) : _t.tr('sensor_not_connected'),
+            style: TextStyle(color: Colors.white.withAlpha(90), fontSize: 11),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Build warning cards for simple mode (extracted to reduce nesting)
+  List<Widget> _buildSimpleWarnings(bool isConnected) {
+    final warnings = <Widget>[];
+
+    // PPV trend
+    if (_ppvPrediction != null && _ppvPrediction!.isTrendingUp && _ppvPrediction!.minutesToLimit != null) {
+      warnings.add(_simpleWarningRow(Icons.trending_up, const Color(0xFFFF8F00),
+        'Vibration increasing - may exceed limits in ~${_ppvPrediction!.minutesToLimit!.toStringAsFixed(0)} min'));
+    }
+
+    // ML anomaly
+    if (_mlModelLoaded && _lastAnomalyResult.level == AnomalyLevel.anomaly) {
+      warnings.add(_simpleWarningRow(Icons.psychology_alt, Colors.redAccent, _t.tr('unusual_vibration')));
+    }
+
+    // Precursor
+    if (_isPrecursorDriven && _lastPrecursorPattern != null) {
+      warnings.add(_simpleWarningRow(Icons.warning_amber_rounded, const Color(0xFFFF6F00),
+        'Precursor: ${_formatPrecursorPattern(_lastPrecursorPattern!)} (${(_lastPrecursorScore * 100).toStringAsFixed(0)}%)'));
+    }
+
+    // Fukuzono / PSD
+    if (_fukuzonoTTF != null || _psdClassification != null) {
+      final parts = <String>[];
+      if (_fukuzonoTTF != null) parts.add('Failure: ~${(_fukuzonoTTF! / 60).floor()}m ${(_fukuzonoTTF! % 60).floor()}s');
+      if (_psdClassification != null) parts.add('PSD: $_psdClassification');
+      warnings.add(Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(parts.join(' | '), style: TextStyle(
+          color: (_fukuzonoTTF != null && _fukuzonoTTF! < 600) ? Colors.red : Colors.white54, fontSize: 11,
+          fontWeight: _fukuzonoTTF != null ? FontWeight.w600 : FontWeight.normal,
+        )),
+      ));
+    }
+
+    // Low battery
+    if (isConnected && _batteryPercent <= 20 && !_batteryCharging) {
+      final c = _batteryPercent <= 10 ? Colors.red : Colors.orange;
+      warnings.add(_simpleWarningRow(Icons.battery_alert_rounded, c,
+        _batteryPercent <= 10 ? _t.tr('battery_critical') : _t.trArgs('battery_low', ['$_batteryPercent'])));
+    }
+
+    // Calibration
+    if (_isCalibrating) {
+      warnings.add(Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_t.trArgs('learning_label', [_calibrationSiteName ?? '']),
+              style: const TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            LinearProgressIndicator(value: _anomalyService.mlService.calibrationProgress, backgroundColor: Colors.white12, color: Colors.tealAccent),
+          ],
         ),
+      ));
+    }
+
+    return warnings;
+  }
+
+  Widget _simpleWarningRow(IconData icon, Color color, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600))),
+        ],
       ),
     );
   }
@@ -2621,100 +2273,52 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   Widget _buildSpectrogramCard() {
     const colormaps = ['viridis', 'hot', 'inferno'];
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withAlpha(25),
-                Colors.white.withAlpha(13),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withAlpha(90), width: 1),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(15),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Spectrogram', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          // Colormap selector
+          Row(
+            children: colormaps.map((cm) {
+              final selected = cm == _spectrogramColorMap;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: GestureDetector(
+                  onTap: () => setState(() => _spectrogramColorMap = cm),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF9C27B0).withAlpha(50),
-                      borderRadius: BorderRadius.circular(10),
+                      color: selected ? const Color(0xFF9C27B0).withAlpha(60) : Colors.white.withAlpha(10),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.waterfall_chart_rounded, color: Color(0xFF9C27B0), size: 18),
+                    child: Text(cm, style: TextStyle(
+                      color: selected ? const Color(0xFFCE93D8) : Colors.white.withAlpha(140), fontSize: 11,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    )),
                   ),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Time-Frequency Analysis', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-                        SizedBox(height: 2),
-                        Text('Real-time spectrogram with DIN 4150-3 limits', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // Colormap selector chips
-              Row(
-                children: colormaps.map((cm) {
-                  final selected = cm == _spectrogramColorMap;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _spectrogramColorMap = cm),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: selected ? const Color(0xFF9C27B0).withAlpha(80) : Colors.white.withAlpha(15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: selected ? const Color(0xFF9C27B0).withAlpha(150) : Colors.white.withAlpha(40),
-                            width: 1,
-                          ),
-                        ),
-                        child: Text(
-                          cm,
-                          style: TextStyle(
-                            color: selected ? const Color(0xFFCE93D8) : Colors.white.withAlpha(160),
-                            fontSize: 11,
-                            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 10),
-              // Spectrogram widget
-              SizedBox(
-                height: (MediaQuery.of(context).size.height * 0.12).clamp(150.0, 250.0),
-                child: SpectrogramWidget(
-                  spectrogramData: _spectrogramBuffer.data,
-                  sampleRate: 200,
-                  fftSize: 256,
-                  maxFrequency: 100,
-                  colorMap: _spectrogramColorMap,
-                  height: (MediaQuery.of(context).size.height * 0.12).clamp(150.0, 250.0),
                 ),
-              ),
-            ],
+              );
+            }).toList(),
           ),
-        ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: (MediaQuery.of(context).size.height * 0.12).clamp(150.0, 250.0),
+            child: SpectrogramWidget(
+              spectrogramData: _spectrogramBuffer.data,
+              sampleRate: 200, fftSize: 256, maxFrequency: 100,
+              colorMap: _spectrogramColorMap,
+              height: (MediaQuery.of(context).size.height * 0.12).clamp(150.0, 250.0),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2749,46 +2353,19 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                 ? Colors.orange // Orange when medium
                 : Colors.white; // White when good
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(36),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withAlpha(89), width: 1),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _batteryCharging
-                    ? Icons.battery_charging_full
-                    : _batteryPercent > 80
-                        ? Icons.battery_full
-                        : _batteryPercent > 50
-                            ? Icons.battery_5_bar
-                            : _batteryPercent > 20
-                                ? Icons.battery_3_bar
-                                : Icons.battery_1_bar,
-                color: batteryColor,
-                size: 16,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '$_batteryPercent%',
-                style: TextStyle(
-                  color: batteryColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          _batteryCharging ? Icons.battery_charging_full
+              : _batteryPercent > 50 ? Icons.battery_full
+              : _batteryPercent > 20 ? Icons.battery_3_bar
+              : Icons.battery_1_bar,
+          color: batteryColor, size: 16,
         ),
-      ),
+        const SizedBox(width: 2),
+        Text('$_batteryPercent%', style: TextStyle(color: batteryColor, fontSize: 11, fontWeight: FontWeight.w600)),
+      ],
     );
   }
 }
