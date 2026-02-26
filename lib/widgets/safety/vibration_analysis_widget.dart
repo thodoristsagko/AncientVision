@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 // ===================== VIBRATION ANALYSIS CARD (v2.0) =====================
@@ -46,66 +45,32 @@ class VibrationAnalysisCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool hasData = ppv > 0 || rms > 0;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withAlpha(25),
-                Colors.white.withAlpha(13),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withAlpha(90), width: 1),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(18),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
             children: [
-              // Header
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: ppvColor.withAlpha(50),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(Icons.analytics_rounded, color: ppvColor, size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  const Expanded(child: Text('Vibration Analysis', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: ppvColor.withAlpha(40),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: ppvColor.withAlpha(100), width: 1),
-                    ),
-                    child: Text(
-                      hazardLabel,
-                      style: TextStyle(color: ppvColor, fontSize: 10, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  if (onHistoryTap != null) ...[
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: onHistoryTap,
-                      child: Icon(Icons.history, color: Colors.white.withAlpha(180), size: 20),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text('DIN 4150-3 compliant vibration monitoring', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 11)),
-              const SizedBox(height: 14),
+              const Text('Vibration Analysis', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Text(hazardLabel, style: TextStyle(color: ppvColor, fontSize: 10, fontWeight: FontWeight.w700)),
+              if (onHistoryTap != null) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onHistoryTap,
+                  child: Icon(Icons.history, color: Colors.white.withAlpha(180), size: 20),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 14),
 
               if (!hasData)
                 Center(
@@ -249,8 +214,6 @@ class VibrationAnalysisCard extends StatelessWidget {
               ],
             ],
           ),
-        ),
-      ),
     );
   }
 

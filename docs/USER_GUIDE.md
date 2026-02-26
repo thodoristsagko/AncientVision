@@ -1,610 +1,91 @@
-# AncientVision User Guide
+# AncientVision — Quick Start Guide
 
-Step-by-step guide for using the AncientVision app.
-
----
-
-## Table of Contents
-
-1. [Getting Started](#getting-started)
-2. [Creating an Account](#creating-an-account)
-3. [Dashboard Overview](#dashboard-overview)
-4. [Recording a Finding](#recording-a-finding)
-5. [3D Photogrammetry](#3d-photogrammetry)
-6. [Managing Findings](#managing-findings)
-7. [Safety Monitoring](#safety-monitoring)
-8. [Exporting Data](#exporting-data)
-9. [Tips & Best Practices](#tips--best-practices)
+**For the archaeologist on Paros. Follow these steps to get up and running.**
 
 ---
 
-## Getting Started
+## Step 1: Open the App
 
-### Installation
+Launch **AncientVision** from your app drawer. You will land on the **Home** dashboard.
 
-1. Transfer `app-release.apk` to your Android device
-2. Open the APK file
-3. Allow installation from unknown sources if prompted
-4. Wait for installation to complete
-5. Open "AncientVision" from your app drawer
+## Step 2: Turn On the Sensor
 
-### Requirements
+Press the power button on the **M5StickC Plus 2** device. Wait until the screen shows "Sensor Ready".
 
-- Android 5.0 or later
-- 4GB RAM recommended
-- Camera with autofocus
-- Internet connection (for sync)
-- Bluetooth 4.0+ (for sensors)
+## Step 3: Connect via Bluetooth
 
----
+Go to the **Safety** tab (shield icon at the bottom). Tap **"Scan for Devices"** and select **"AncientVision-Sensor"**. Wait a few seconds for the connection — you will see live data appear.
 
-## Creating an Account
+## Step 4: Place the Sensor at the Excavation Site
 
-### Email Registration
+Put the M5StickC near the area you are working on. The sensor measures **ground vibration** and **soil moisture** in real time. You can walk away — data streams over Bluetooth.
 
-1. Open the app
-2. Tap "Register"
-3. Enter your full name
-4. Enter your email address
-5. Create a password (6+ characters)
-6. Tap "Create Account"
+## Step 5: Monitor Safety While You Work
 
-### Google Sign-In
+Switch to any tab — the Bluetooth connection stays alive in the background. If vibration or moisture reaches dangerous levels, the app will:
+- Show a **full-screen red alert** on any tab
+- Play an **alarm sound**
+- **Speak the warning** out loud (text-to-speech)
+- **Vibrate your phone**
 
-1. Open the app
-2. Tap "Sign in with Google"
-3. Select your Google account
-4. Allow permissions
+## Step 6: Understand the Safety Readings
 
-### Logging In
+| Sensor | Safe | Warning | Critical |
+|--------|------|---------|----------|
+| **Vibration (PPV)** | < 3 mm/s | 3–8 mm/s | > 8 mm/s |
+| **Soil Moisture** | 30–60% | 60–80% | > 80% (collapse risk) |
 
-1. Enter your email
-2. Enter your password
-3. Tap "Login"
+The app also runs **ML anomaly detection** — it will warn you about unusual vibration patterns even if they haven't crossed a threshold yet.
 
----
+## Step 7: Record a Finding
 
-## Dashboard Overview
+Go to the **Home** tab and tap **"Manual Entry"**. Fill in at least:
+- **Name** (e.g., "Bronze Coin")
+- **Type** (e.g., "Numismatic")
+- **Site** (e.g., "Paros — Sector B")
+- **Date**
 
-The dashboard shows your archaeological data at a glance.
+Add a photo if you want. Tap **"Save Finding"**.
 
-### Statistics
+## Step 8: Capture a 3D Model (Optional)
 
-| Card | Shows |
-|------|-------|
-| Total Findings | All recorded artifacts |
-| Today's Finds | Added in last 24 hours |
-| By Type | Breakdown by category |
-| By Site | Distribution by site |
+Go to the **Tools** tab → **3D Reconstruction**. Place the artifact on a plain background and take **12–16 photos** from all angles. The app guides you through each position. Then tap **"Reconstruct 3D Model"** and wait 1–3 minutes.
 
-### Quick Actions
+## Step 9: Browse Your Findings
 
-- **Manual Entry** - Record a new finding
-- **3D Capture** - Start photogrammetry
-- **Export PDF** - Generate reports
-- **View All** - Browse gallery
+Go to the **Findings** tab to see all recorded artifacts in a gallery or on a map. Tap any card to see its full details.
 
-### Sync Status
+## Step 10: Export a Report
 
-If you see a yellow banner:
-- Shows count of pending uploads
-- Tap "Sync Now" when online
-- Data saves automatically when connection returns
+Go to **Tools** → **PDF Reports**. Select the findings you want and tap **"Generate PDF"**. You can share the PDF directly via email or messaging.
 
----
+## Step 11: Mute Alerts (When Needed)
 
-## Recording a Finding
+The **speaker icon** in the bottom navigation bar lets you mute/unmute all alert sounds, alarms, and voice warnings across the entire app. Useful during meetings or phone calls.
 
-### Quick Method
+## Step 12: Check Sensor Battery
 
-1. Tap "Manual Entry" on dashboard
-2. Fill in basic fields:
-   - **Name** - What is it? (e.g., "Bronze Coin")
-   - **Type** - Category (e.g., "Numismatic")
-   - **Site** - Where found (e.g., "Delphi Sector A")
-   - **Date** - Discovery date
-3. Add a photo (optional)
-4. Tap "Save Finding"
+The Safety tab shows the M5StickC battery level (voltage and percentage). Charge it via USB-C when it drops below 20%.
 
-### Complete Documentation
+## Step 13: Test the Alert System
 
-For thorough archaeological recording:
+Press **Button A** on the M5StickC to send a test alert. Your phone should show a full-screen warning, play a sound, and vibrate. This confirms everything is working before you start excavating.
 
-**Basic Information**
-- Name, type, site, date
-- Description and notes
+## Step 14: End of Day
 
-**Location**
-- Use "Get GPS" for automatic coordinates
-- Or enter manually
-
-**Archaeological Context**
-- Find number (your catalog system)
-- Excavation unit (grid square)
-- Stratigraphic layer
-- Depth measurements
-
-**Physical Properties**
-- Dimensions (length, width, height in mm)
-- Weight in grams
-
-**Classification**
-- Material (terracotta, bronze, etc.)
-- Condition (excellent to fragmentary)
-- Dating method
-- Cultural period
-
-**Additional**
-- Soil type and Munsell color
-- Associated finds
-- Field notes
-- Excavator name
-
-### Auto-Save Feature
-
-Your work is automatically saved:
-- Drafts save every 2 seconds while typing
-- If app closes unexpectedly, your data is preserved
-- On next launch, you'll be asked to resume or discard
-
----
-
-## 3D Photogrammetry
-
-### Overview
-
-Create 3D models of artifacts using your phone camera.
-
-### Starting a Capture
-
-1. Go to **Tools** tab
-2. Tap the purple **3D Reconstruction** card
-3. Read the tutorial (first time)
-4. Tap "Start Capture"
-
-### Capturing Photos
-
-#### Understanding the Angle Guide
-
-The screen shows:
-- **Current angle** (1 of 16)
-- **Target position** (front, left, top, etc.)
-- **Elevation** (eye level, high angle, top)
-- **Sensor guidance** (device tilt)
-
-#### Capture Technique
-
-1. Place artifact on neutral background
-2. Ensure good lighting (avoid shadows)
-3. Hold phone steady
-4. Align with on-screen guide
-5. Tap capture button
-6. Wait for quality check
-7. Move to next angle
-
-#### Photo Requirements
-
-| Requirement | Why It Matters |
-|-------------|----------------|
-| Minimum 8 photos | Basic reconstruction |
-| Recommended 16 | Best quality |
-| Overlap 60-80% | Feature matching |
-| Sharp focus | Point detection |
-| Even lighting | Color accuracy |
-
-### Running Reconstruction
-
-After capturing:
-
-1. Tap "Reconstruct 3D Model"
-2. Watch progress indicator:
-   - Loading images
-   - Extracting features
-   - Matching features
-   - Estimating poses
-   - Triangulating points
-   - Bundle adjustment
-3. Wait 1-3 minutes (depends on photo count)
-4. View your 3D model!
-
-### 3D Viewer Controls
-
-| Gesture | Action |
-|---------|--------|
-| Drag | Rotate model |
-| Pinch | Zoom in/out |
-| Two-finger drag | Pan |
-| Double tap | Reset view |
-
-### Viewer Options
-
-- **Auto-rotate** - Continuous spin
-- **Point size** - Adjust dot size
-- **Colors** - Toggle RGB/grayscale
-- **Export** - Save as PLY file
-
-### After Reconstruction
-
-Two options:
-
-1. **View 3D Model** - Explore the reconstruction
-2. **Complete Form** - Go to manual entry with 3D data attached
-
-The 3D model data is automatically included when you save the finding.
-
----
-
-## Managing Findings
-
-### Viewing Findings
-
-**Gallery View**
-1. Go to **Findings** tab
-2. Browse grid of all findings
-3. Tap any card to view details
-
-**Map View**
-1. Go to **Findings** tab
-2. Tap map icon
-3. See findings as map markers
-4. Tap marker for preview
-
-### Searching
-
-1. Tap search icon
-2. Enter search term
-3. Searches: name, type, site
-4. Results update live
-
-### Filtering
-
-1. Tap filter icon
-2. Select criteria:
-   - Date range
-   - Type
-   - Site
-3. Apply filters
-
-### Finding Details
-
-Tap any finding to see:
-- Full photo gallery (swipe)
-- All metadata fields
-- 3D model (if available)
-- Export options
-
-### Editing a Finding
-
-1. Open finding details
-2. Tap edit icon
-3. Modify fields
-4. Tap "Save Changes"
-
-### Deleting a Finding
-
-1. Open finding details
-2. Tap delete icon
-3. Confirm deletion
-
-> **Warning:** Deletion is permanent!
-
----
-
-## Safety Monitoring
-
-### Connecting Sensor
-
-1. Power on M5StickC Plus 2
-2. Wait for "Sensor Ready" on device screen
-3. Go to **Safety** tab in app
-4. Tap "Scan for Devices"
-5. Select "AncientVision-Sensor"
-6. Wait for connection
-
-### Understanding Readings
-
-**Vibration** (Basic metrics, all firmware versions)
-| Value | Status | Meaning |
-|-------|--------|---------|
-| <0.3g | Safe | Normal |
-| 0.3-0.8g | Warning | Ground movement |
-| >0.8g | Critical | Earthquake/collapse risk |
-
-**NEW v4.0 Seismic Metrics** (only with v4.0 firmware)
-| Metric | Threshold | Meaning |
-|--------|-----------|---------|
-| Arias Intensity | Visual indicator | Cumulative seismic energy (π/2g·∫a²dt) |
-| CAV | 0.16 g·s | EPRI damage threshold |
-| Temperature | Display only | IMU temperature with 0.0005g/°C compensation |
-| DWT D1 | Bar graph | 50-100 Hz band (machinery) |
-| DWT D2 | Bar graph | 25-50 Hz band (structural) |
-| DWT D3 | Bar graph | 12-25 Hz band (seismic) |
-
-**Soil Moisture**
-| Value | Status | Meaning |
-|-------|--------|---------|
-| 30-60% | Safe | Optimal |
-| <30% | Dry | Cracking risk |
-| 60-80% | Wet | Saturation warning |
-| >80% | Critical | Collapse risk |
-
-### Alert System
-
-**Full-Screen Alerts**
-- Critical alerts appear as full-screen overlays on ALL tabs, not just the Safety tab
-- Includes haptic feedback (phone vibration)
-- Voice alerts via text-to-speech announce the danger
-- Alarm sound plays on critical alerts
-
-**Push Notifications**
-- Safety notifications fire regardless of which screen you're on
-- Works even when the app is minimized
-
-**Alert Indicators**
-- **Green** - All safe
-- **Yellow/Orange** - Warning level
-- **Red** - Critical - take action!
-
-### Global Mute Button
-
-- A mute button is visible in the bottom navigation bar on ALL tabs
-- Pressing it toggles all alert sounds, alarms, TTS, and full-screen overlays
-- The mute state is synchronized across the entire app
-- Green speaker icon = unmuted, Red speaker-off icon = muted
-
-### BLE Connection Persistence
-
-The Bluetooth connection to the M5StickC sensor stays alive even when you switch to other tabs (Home, Findings, Tools). You don't need to stay on the Safety tab to keep receiving sensor data.
-
-### Alert History
-
-Scroll down on the Safety tab to see:
-- Past alerts with timestamps
-- Vibration/moisture at time of alert
-- Trend patterns
-
-### Test Alert
-
-Press **Button A** on M5StickC to send test alert.
-
----
-
-## Exporting Data
-
-### PDF Reports
-
-Generate professional documentation:
-
-1. Go to **Tools** tab
-2. Tap "PDF Reports"
-3. Select findings to include
-4. Tap "Generate PDF"
-5. Share or save the file
-
-**PDF Contents:**
-- Finding name and photo
-- Metadata table
-- Archaeological context
-- Measurements
-- 3D model info (if available)
-
-### JSON Export
-
-Export all data as structured JSON:
-
-1. Go to **Tools** tab
-2. Tap "Export Data"
-3. Tap "Export as JSON"
-4. Share or save the file
-
-**Use cases:**
-- Backup your data
-- Import to other systems
-- Data analysis
-
-### 3D Model Export
-
-Export point clouds as PLY:
-
-1. Open finding with 3D model
-2. View 3D model
-3. Tap export icon
-4. Share PLY file
-
-**Compatible software:**
-- MeshLab
-- CloudCompare
-- Blender
-
----
-
-## Tips & Best Practices
-
-### Photogrammetry Tips
-
-**Lighting**
-- Use natural daylight when possible
-- Avoid direct sunlight (causes shadows)
-- Indoor: use diffused lighting
-- Avoid mixed light sources
-
-**Background**
-- Use neutral, matte background
-- Avoid shiny surfaces
-- Newspaper or cardboard works well
-- Ensure contrast with artifact
-
-**Capture**
-- Keep artifact stationary
-- Move around the object, not it
-- Maintain consistent distance
-- Overlap photos 60-80%
-
-**Quality Checklist**
-- [ ] All angles covered
-- [ ] Sharp focus in all photos
-- [ ] Consistent lighting
-- [ ] No motion blur
-- [ ] Artifact fills frame
-
-### Scanning Difficult Objects
-
-Some artifacts are challenging for photogrammetry. Here's how to handle them:
-
-**Problem Objects & Solutions:**
-
-| Object Type | Problem | Solution |
-|-------------|---------|----------|
-| Black/dark | Low contrast | Light chalk spray or flour dusting |
-| Shiny metal | Reflections move | Matte spray or powder coating |
-| Smooth pottery | Few features | Raking light to show texture |
-| Glass/transparent | Light passes through | Not suitable for photogrammetry |
-
-**Quick Fix: Temporary Texture**
-
-For black or smooth objects:
-1. Lightly dust with flour or talcum powder
-2. Use a soft brush to spread evenly
-3. Capture photos
-4. Brush/blow off powder when done
-
-This is a standard professional technique - even museum conservators use it!
-
-**Processing Method for Difficult Objects:**
-
-| Object Type | Recommended Method |
-|-------------|-------------------|
-| Textured artifacts | Either works |
-| Slightly smooth | Cloud Processing |
-| Very dark/smooth | Cloud + temporary texture |
-| Shiny metal | Must use powder coating |
-
-**Cloud vs On-Device:**
-- Cloud processing has better algorithms for difficult objects
-- But physics limits apply to both
-- For truly challenging objects, texture spray is the real solution
-
-### Data Entry Tips
-
-**Be Consistent**
-- Use same naming conventions
-- Follow your institution's standards
-- Use dropdown options when available
-
-**Be Complete**
-- Fill all applicable fields
-- Add photos whenever possible
-- Include GPS coordinates
-
-**Be Accurate**
-- Double-check measurements
-- Verify coordinates
-- Use correct dating methods
-
-### Offline Work
-
-**Before Going to Field**
-- Charge your phone fully
-- Ensure app is updated
-- Test camera and sensors
-
-**In the Field**
-- Data saves locally automatically
-- Don't worry about connectivity
-- Take as many photos as needed
-
-**After Returning**
-- Connect to WiFi
-- Tap "Sync Now" on dashboard
-- Verify all data uploaded
-
-### Battery Management
-
-**Save Battery**
-- Lower screen brightness
-- Turn off Bluetooth when not using sensors
-- Close other apps
-- Avoid video mode for photogrammetry
-
-**Expected Battery Use**
-- ~15-20% for full photogrammetry session
-- ~5% per hour with sensors connected
-- ~2% per hour idle
+Power off the M5StickC (hold the power button). Your findings are saved locally on the phone. When you have Wi-Fi, open the app and sync your data.
 
 ---
 
 ## Troubleshooting
 
-### App Won't Open
-
-1. Restart phone
-2. Clear app cache (Settings → Apps → AncientVision → Clear Cache)
-3. Reinstall app
-
-### Camera Not Working
-
-1. Check camera permissions (Settings → Apps → AncientVision → Permissions)
-2. Restart app
-3. Restart phone
-
-### 3D Reconstruction Fails
-
-**"Not enough features"**
-- Take more photos (minimum 8)
-- Ensure better lighting
-- Add texture to background
-
-**"Processing failed"**
-- Reduce number of photos to 12-16
-- Ensure photos are sharp
-- Try again with better conditions
-
-### Sync Not Working
-
-1. Check internet connection
-2. Check Firebase status
-3. Try manual sync
-4. Restart app
-
-### Sensor Not Connecting
-
-1. Ensure M5StickC is powered on
-2. Check Bluetooth is enabled on phone
-3. Move devices closer together
-4. Restart both devices
-
-### Data Missing
-
-1. Check if in offline queue (sync indicator)
-2. Search all findings
-3. Check date filters
-4. Contact support if still missing
+| Problem | Solution |
+|---------|----------|
+| Sensor won't connect | Make sure Bluetooth is on. Restart the M5StickC. Move closer. |
+| No vibration readings | Wait 10 seconds after connecting — the sensor calibrates on startup. |
+| 3D reconstruction fails | Take more photos (min 8), improve lighting, avoid shiny objects. |
+| App crashes | Clear cache (Settings → Apps → AncientVision → Clear Cache) and reopen. |
 
 ---
 
-## Keyboard Shortcuts
-
-For external keyboards:
-
-| Shortcut | Action |
-|----------|--------|
-| Tab | Next field |
-| Shift+Tab | Previous field |
-| Enter | Submit form |
-| Esc | Cancel/back |
-
----
-
-## Getting Help
-
-**In-App**
-- Tap (?) icon for contextual help
-- Tutorial mode for photogrammetry
-
-**Online**
-- Documentation: This guide
-- Video tutorials: Coming soon
-
-**Contact**
-- Report bugs via GitHub issues
-- Email support for urgent issues
+*AncientVision — Protecting heritage with technology. FLL Submerged 2025.*

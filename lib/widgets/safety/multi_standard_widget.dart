@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../services/vibration_metrics_service.dart';
 
@@ -74,51 +73,18 @@ class MultiStandardCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool hasData = classifications.isNotEmpty;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withAlpha(25),
-                Colors.white.withAlpha(13),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withAlpha(90), width: 1),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF9C27B0).withAlpha(50),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.policy_rounded, color: Color(0xFF9C27B0), size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('Multi-Standard Classification',
-                        style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text('International heritage vibration standards',
-                  style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 11)),
-              const SizedBox(height: 14),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(18),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Multi-Standard Classification', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 14),
 
               if (!hasData)
                 Center(
@@ -166,8 +132,6 @@ class MultiStandardCard extends StatelessWidget {
               ],
             ],
           ),
-        ),
-      ),
     );
   }
 

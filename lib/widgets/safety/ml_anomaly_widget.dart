@@ -74,116 +74,52 @@ class MLAnomalyIndicator extends StatelessWidget {
     final color = _getColor();
     final topContribs = _topContributors();
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: color.withAlpha(20),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withAlpha(80), width: 1),
-          ),
-          child: Column(
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(18),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header row
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: color.withAlpha(40),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(_getIcon(), color: color, size: 20),
-                  ),
-                  const SizedBox(width: 12),
+                  Icon(_getIcon(), color: color, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Anomaly Detection', style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 12, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Text(modelVersion, style: TextStyle(color: modelVersion.contains('Rule') ? const Color(0xFFFFC107) : const Color(0xFFCE93D8), fontSize: 9, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 6),
+                  Text(result.levelLabel, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // Score bar
+              Row(
+                children: [
+                  Text('Score: ', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 11)),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: SizedBox(
+                        height: 10,
+                        child: Stack(
                           children: [
-                            Text('Anomaly Detection', style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 12, fontWeight: FontWeight.w600)),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: modelVersion.contains('Rule')
-                                    ? const Color(0xFFFFC107).withAlpha(40)
-                                    : const Color(0xFF9C27B0).withAlpha(40),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                modelVersion,
-                                style: TextStyle(
-                                  color: modelVersion.contains('Rule')
-                                      ? const Color(0xFFFFC107)
-                                      : const Color(0xFFCE93D8),
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: color.withAlpha(50),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                result.levelLabel,
-                                style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700),
-                              ),
+                            Container(color: Colors.white.withAlpha(20)),
+                            FractionallySizedBox(
+                              widthFactor: result.score.clamp(0.0, 1.0),
+                              child: Container(color: color),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        // Score bar
-                        Row(
-                          children: [
-                            Text('Score: ', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 11)),
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(5),
-                                child: SizedBox(
-                                  height: 10,
-                                  child: Stack(
-                                    children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withAlpha(20),
-                                          borderRadius: BorderRadius.circular(5),
-                                        ),
-                                      ),
-                                      FractionallySizedBox(
-                                        widthFactor: result.score.clamp(0.0, 1.0),
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: color,
-                                            borderRadius: BorderRadius.circular(5),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${(result.score * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  Text('${(result.score * 100).toStringAsFixed(0)}%', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
                 ],
               ),
 
@@ -272,8 +208,6 @@ class MLAnomalyIndicator extends StatelessWidget {
               ],
             ],
           ),
-        ),
-      ),
     );
   }
 }

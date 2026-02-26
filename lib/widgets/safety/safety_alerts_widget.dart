@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../models/alert_data.dart';
 
@@ -9,39 +8,32 @@ class SafetyAlertsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(26),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withAlpha(89), width: 1),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Alerts', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 10),
-              if (alerts.isEmpty)
-                Text('No alerts yet', style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12))
-              else
-                ...alerts.take(5).map((alert) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: AlertRow(
-                    time: alert.time,
-                    level: alert.level,
-                    title: alert.title,
-                    trench: 'Trench B3',
-                    message: alert.message,
-                  ),
-                )),
-            ],
-          ),
-        ),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(18),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Alerts', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
+          if (alerts.isEmpty)
+            Text('No alerts yet', style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12))
+          else
+            ...alerts.take(5).map((alert) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: AlertRow(
+                time: alert.time,
+                level: alert.level,
+                title: alert.title,
+                trench: 'Trench B3',
+                message: alert.message,
+              ),
+            )),
+        ],
       ),
     );
   }
@@ -101,32 +93,25 @@ class SafetyInsightCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(20),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withAlpha(77), width: 1),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(18),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Safety Thresholds', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          SizedBox(height: 6),
+          Text(
+            '• Soil Moisture: 30-60% is safe range\n'
+            '• Vibration: <0.3g stable, >0.8g critical\n'
+            '• Connect M5StickC Plus 2 for live monitoring',
+            style: TextStyle(color: Colors.white70, fontSize: 12),
           ),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Safety Thresholds', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-              SizedBox(height: 6),
-              Text(
-                '• Soil Moisture: 30-60% is safe range\n'
-                '• Vibration: <0.3g stable, >0.8g critical\n'
-                '• Connect M5StickC Plus 2 for live monitoring',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }

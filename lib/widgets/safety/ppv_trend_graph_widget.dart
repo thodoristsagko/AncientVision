@@ -18,54 +18,24 @@ class PPVTrendGraphCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withAlpha(25),
-                Colors.white.withAlpha(13),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withAlpha(90), width: 1),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(18),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF5722).withAlpha(50),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.trending_up_rounded, color: Color(0xFFFF5722), size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text('PPV Trend', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF5722).withAlpha(40),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('DIN 4150-3', style: TextStyle(color: Color(0xFFFF5722), fontSize: 9, fontWeight: FontWeight.w600)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text('Peak Particle Velocity with heritage limit lines', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 11)),
-              const SizedBox(height: 12),
+              Text('PPV Trend', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+              Spacer(),
+              Text('DIN 4150-3', style: TextStyle(color: Color(0xFFFF5722), fontSize: 9, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 12),
               // Legend
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -127,8 +97,6 @@ class PPVTrendGraphCard extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-      ),
     );
   }
 

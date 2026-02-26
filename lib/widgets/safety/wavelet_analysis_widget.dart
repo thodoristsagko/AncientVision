@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../services/wavelet_service.dart';
@@ -35,70 +34,28 @@ class WaveletAnalysisCard extends StatelessWidget {
         ? const Color(0xFFFF5722)
         : const Color(0xFF7C4DFF);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withAlpha(25),
-                Colors.white.withAlpha(13),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: transientFlash
-                  ? const Color(0xFFFF5722).withAlpha(150)
-                  : Colors.white.withAlpha(90),
-              width: transientFlash ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(18),
+        borderRadius: BorderRadius.circular(16),
+        border: transientFlash
+            ? Border.all(color: const Color(0xFFFF5722).withAlpha(150), width: 1.5)
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
             children: [
-              // Header
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: accentColor.withAlpha(50),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(Icons.waves_rounded, color: accentColor, size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'Wavelet Analysis',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: accentColor.withAlpha(40),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: accentColor.withAlpha(100), width: 1),
-                    ),
-                    child: Text(
-                      'Haar DWT',
-                      style: TextStyle(color: accentColor, fontSize: 10, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '3-level decomposition / band energy distribution',
-                style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 11),
-              ),
-              const SizedBox(height: 14),
+              const Text('Wavelet Analysis', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Text('Haar DWT', style: TextStyle(color: accentColor, fontSize: 10, fontWeight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 14),
 
               // Transient detection indicator
               if (transientFlash) ...[
@@ -165,8 +122,6 @@ class WaveletAnalysisCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
     );
   }
 
