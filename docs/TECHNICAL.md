@@ -1154,7 +1154,7 @@ service cloud.firestore {
 
 ---
 
-## v4.1 Reliability & Safety Improvements
+## v4.0 Reliability & Safety Improvements
 
 ### Circular Buffers (O(1) vs O(N))
 Replaced 7 instances of `list.removeAt(0)` (O(N) shift) with `CircularBuffer<T>` backed by `Queue<T>` (O(1) dequeue). Affects `safety_view.dart` (6 buffers) and `spectrogram_widget.dart` (1 buffer).

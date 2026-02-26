@@ -6,6 +6,8 @@
 **Standard:** DIN 4150-3:1999
 **Date:** February 2026
 
+> **Note:** This document covers the v2.0/v3.0 firmware architecture. For the current v4.0 features (Arias Intensity, CAV, 3-level DWT, IMU temperature compensation, recursive STA/LTA, VAE anomaly detection), see [VIBRATION_RESEARCH_2026.md](VIBRATION_RESEARCH_2026.md).
+
 ---
 
 ## Table of Contents

@@ -417,7 +417,7 @@ On-device frequency band decomposition:
 - **NEW: DWT Visualization** - 3 frequency band bars (D1/D2/D3) with amplitude colors
 - **Conditional Rendering** - v4.0 features only show when v4.0 firmware detected
 
-### Rule-Based Anomaly Fallback (v4.1)
+### Rule-Based Anomaly Fallback (v4.0)
 When the TFLite ML model is unavailable or inference fails, a rule-based scoring engine ensures anomaly detection is **never disabled**:
 
 | Feature | Threshold Basis | Weight |
@@ -430,7 +430,7 @@ When the TFLite ML model is unavailable or inference fails, a rule-based scoring
 | Seismic Freq | Low-frequency concern (0.5-10 Hz + PPV>1.0) | 10% |
 | RMS | Sustained vibration energy (>0.5 g) | 5% |
 
-### Low Power Mode (v4.1)
+### Low Power Mode (v4.0)
 Activated by holding the M5 button for 3 seconds on the device:
 - BLE rate reduced from 2Hz to 0.5Hz
 - Display refresh reduced from 4Hz to 1Hz
@@ -729,7 +729,7 @@ When saving incomplete records:
 | Cloud Processing | ✅ Complete | OpenScan API |
 | Photo Capture | ✅ Complete | Camera + Gallery |
 | PDF Export | ✅ Complete | Professional |
-| Trench Safety Monitoring v4.1 | ✅ Complete | DWT + Arias + CAV + Temp + Rule-based fallback |
+| Trench Safety Monitoring v4.0 | ✅ Complete | DWT + Arias + CAV + Temp + Rule-based fallback |
 | Offline Support | ✅ Complete | Auto-save + Queue |
 | Cloud Database | ✅ Complete | Firebase Firestore |
 | Field Journal | ✅ Complete | Daily logging |
@@ -739,8 +739,8 @@ When saving incomplete records:
 | Settings Sync | ✅ Complete | Cross-device |
 | Quick Capture | ✅ Complete | Simplified single-photo |
 | Data Validation | ✅ Complete | Quality checks |
-| ML Anomaly Detection v4.1 | ✅ Complete | VAE with 10 features + rule-based fallback |
-| Low Power Mode v4.1 | ✅ Complete | 3s hold toggle, auto-escalation on elevated vibration |
+| ML Anomaly Detection v4.0 | ✅ Complete | VAE with 10 features + rule-based fallback |
+| Low Power Mode v4.0 | ✅ Complete | 3s hold toggle, auto-escalation on elevated vibration |
 | Coin AI | ✅ Complete | AI-powered coin identification |
-| Reliability Suite v4.1 | ✅ Complete | Circular buffers, memory leak fixes, setState batching |
-| Modular Architecture v4.1 | ✅ Complete | 25+ services, 181 tests |
+| Reliability Suite v4.0 | ✅ Complete | Circular buffers, memory leak fixes, setState batching |
+| Modular Architecture v4.0 | ✅ Complete | 25+ services, 181 tests |
