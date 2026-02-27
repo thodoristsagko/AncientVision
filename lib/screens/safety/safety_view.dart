@@ -508,7 +508,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
       if (mounted && _connectedDevice == null) {
-        _startScan();
+        _checkBluetoothAndScan();
       }
     });
   }
@@ -1575,7 +1575,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                           // Scan/Reconnect
                           if (!isConnected)
                             GestureDetector(
-                              onTap: () { _reconnectTimer?.cancel(); _reconnectAttempts = 0; _startScan(); },
+                              onTap: () { _reconnectTimer?.cancel(); _reconnectAttempts = 0; _checkBluetoothAndScan(); },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(color: const Color(0xFFFFC107), borderRadius: BorderRadius.circular(10)),
