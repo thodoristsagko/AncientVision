@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../models/alert_data.dart';
@@ -221,11 +222,44 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     super.dispose();
   }
 
+  Future<bool> _requestBlePermissions() async {
+    // Android 12+ needs BLUETOOTH_SCAN + BLUETOOTH_CONNECT
+    // Android 10-11 needs ACCESS_FINE_LOCATION for BLE scanning
+    final statuses = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.location,
+    ].request();
+
+    final scanOk = statuses[Permission.bluetoothScan]?.isGranted ?? false;
+    final connectOk = statuses[Permission.bluetoothConnect]?.isGranted ?? false;
+    final locationOk = statuses[Permission.location]?.isGranted ?? false;
+
+    // On Android 12+, location may not be needed if neverForLocation flag is set
+    // On Android 10-11, location is required for BLE scanning
+    if (locationOk || (scanOk && connectOk)) {
+      return true;
+    }
+
+    debugPrint('BLE permissions denied: scan=$scanOk connect=$connectOk location=$locationOk');
+    return false;
+  }
+
   Future<void> _checkBluetoothAndScan() async {
     if (await FlutterBluePlus.isSupported == false) {
       _showError('Bluetooth not supported');
       return;
     }
+
+    // Request BLE permissions before anything else
+    final hasPermissions = await _requestBlePermissions();
+    if (!mounted) return;
+    if (!hasPermissions) {
+      setState(() => _connectionStatus = 'Permissions denied');
+      _showError('Bluetooth/Location permissions are required for sensor connection');
+      return;
+    }
+
     final state = await FlutterBluePlus.adapterState.first;
     if (!mounted) return;
     if (state != BluetoothAdapterState.on) {
