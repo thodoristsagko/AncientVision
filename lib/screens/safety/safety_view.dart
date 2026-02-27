@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'dart:io' show Platform;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../models/alert_data.dart';
@@ -222,62 +222,42 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     super.dispose();
   }
 
-  Future<bool> _requestBlePermissions() async {
+  Future<void> _ensureLocationPermission() async {
+    // Android 11 and below require location permission for BLE scanning
+    // Use Geolocator (already a dependency) to request it
     try {
-      // Always request location — required for BLE on Android 11 and below,
-      // and doesn't hurt on Android 12+
-      final locationStatus = await Permission.locationWhenInUse.request();
-      debugPrint('>>> Permission locationWhenInUse: $locationStatus');
-
-      // On Android 12+ also request bluetooth permissions
-      // These are no-ops on older Android (auto-granted via manifest)
-      try {
-        final btScan = await Permission.bluetoothScan.request();
-        final btConnect = await Permission.bluetoothConnect.request();
-        debugPrint('>>> Permission bluetoothScan: $btScan, bluetoothConnect: $btConnect');
-      } catch (e) {
-        // Android 11 and below don't have these permissions — that's fine
-        debugPrint('>>> Bluetooth permissions not available (Android <12): $e');
+      LocationPermission perm = await Geolocator.checkPermission();
+      debugPrint('>>> Location permission check: $perm');
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+        debugPrint('>>> Location permission after request: $perm');
       }
-
-      // Location is the critical one for Android 11
-      if (locationStatus.isGranted || locationStatus.isLimited) {
-        return true;
+      if (perm == LocationPermission.deniedForever) {
+        debugPrint('>>> Location permanently denied — user must enable in settings');
+        if (mounted) {
+          _showError('Location permission required for Bluetooth. Please enable in Settings > Apps > AncientVision > Permissions');
+        }
       }
-
-      // If location was permanently denied, open settings
-      if (locationStatus.isPermanentlyDenied) {
-        debugPrint('>>> Location permanently denied — opening settings');
-        await openAppSettings();
-        return false;
-      }
-
-      debugPrint('>>> Location permission denied: $locationStatus');
-      return false;
     } catch (e) {
-      debugPrint('>>> Permission request error: $e');
-      // If permission_handler fails entirely, try scanning anyway
-      // (some devices/ROMs handle this differently)
-      return true;
+      debugPrint('>>> Location permission error (non-fatal): $e');
     }
   }
 
   Future<void> _checkBluetoothAndScan() async {
+    debugPrint('>>> _checkBluetoothAndScan START');
+
     if (await FlutterBluePlus.isSupported == false) {
       _showError('Bluetooth not supported');
       return;
     }
+    debugPrint('>>> BLE supported: true');
 
-    // Request BLE permissions before anything else
-    final hasPermissions = await _requestBlePermissions();
+    // Request location permission (required for BLE on Android 11)
+    await _ensureLocationPermission();
     if (!mounted) return;
-    if (!hasPermissions) {
-      setState(() => _connectionStatus = 'Permissions denied');
-      _showError('Bluetooth/Location permissions are required for sensor connection');
-      return;
-    }
 
     final state = await FlutterBluePlus.adapterState.first;
+    debugPrint('>>> Bluetooth adapter state: $state');
     if (!mounted) return;
     if (state != BluetoothAdapterState.on) {
       setState(() => _connectionStatus = 'Bluetooth OFF');
@@ -391,12 +371,19 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         debugPrint('Scan complete - AncientVision device not found');
       }
     } catch (e) {
-      debugPrint('BLE Scan error: $e');
+      debugPrint('>>> BLE Scan error: $e');
       if (mounted) {
         _scanSubscription?.cancel();
+        final errStr = e.toString().toLowerCase();
+        String status = 'Scan failed';
+        if (errStr.contains('permission') || errStr.contains('location')) {
+          status = 'Location permission required — enable in phone Settings';
+        } else {
+          status = 'Scan failed: $e';
+        }
         setState(() {
           _isScanning = false;
-          _connectionStatus = 'Scan failed: $e';
+          _connectionStatus = status;
         });
       }
     }
