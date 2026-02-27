@@ -223,26 +223,43 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   }
 
   Future<bool> _requestBlePermissions() async {
-    // Android 12+ needs BLUETOOTH_SCAN + BLUETOOTH_CONNECT
-    // Android 10-11 needs ACCESS_FINE_LOCATION for BLE scanning
-    final statuses = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.location,
-    ].request();
+    try {
+      // Always request location — required for BLE on Android 11 and below,
+      // and doesn't hurt on Android 12+
+      final locationStatus = await Permission.locationWhenInUse.request();
+      debugPrint('>>> Permission locationWhenInUse: $locationStatus');
 
-    final scanOk = statuses[Permission.bluetoothScan]?.isGranted ?? false;
-    final connectOk = statuses[Permission.bluetoothConnect]?.isGranted ?? false;
-    final locationOk = statuses[Permission.location]?.isGranted ?? false;
+      // On Android 12+ also request bluetooth permissions
+      // These are no-ops on older Android (auto-granted via manifest)
+      try {
+        final btScan = await Permission.bluetoothScan.request();
+        final btConnect = await Permission.bluetoothConnect.request();
+        debugPrint('>>> Permission bluetoothScan: $btScan, bluetoothConnect: $btConnect');
+      } catch (e) {
+        // Android 11 and below don't have these permissions — that's fine
+        debugPrint('>>> Bluetooth permissions not available (Android <12): $e');
+      }
 
-    // On Android 12+, location may not be needed if neverForLocation flag is set
-    // On Android 10-11, location is required for BLE scanning
-    if (locationOk || (scanOk && connectOk)) {
+      // Location is the critical one for Android 11
+      if (locationStatus.isGranted || locationStatus.isLimited) {
+        return true;
+      }
+
+      // If location was permanently denied, open settings
+      if (locationStatus.isPermanentlyDenied) {
+        debugPrint('>>> Location permanently denied — opening settings');
+        await openAppSettings();
+        return false;
+      }
+
+      debugPrint('>>> Location permission denied: $locationStatus');
+      return false;
+    } catch (e) {
+      debugPrint('>>> Permission request error: $e');
+      // If permission_handler fails entirely, try scanning anyway
+      // (some devices/ROMs handle this differently)
       return true;
     }
-
-    debugPrint('BLE permissions denied: scan=$scanOk connect=$connectOk location=$locationOk');
-    return false;
   }
 
   Future<void> _checkBluetoothAndScan() async {
