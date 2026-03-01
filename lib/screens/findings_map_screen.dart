@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/finding_model.dart';
 import '../services/geojson_service.dart';
 import '../services/shapefile_service.dart';
@@ -33,6 +35,8 @@ class _FindingsMapState extends State<FindingsMap> {
   bool _showFindings = true;
   bool _showLayerPanel = false;
   String? _selectedFeatureLabel;
+  LatLng? _myLocation;
+  StreamSubscription<Position>? _locationSub;
 
   final GeoJsonService _geoJsonService = GeoJsonService();
   final ShapefileService _shapefileService = ShapefileService();
@@ -46,6 +50,7 @@ class _FindingsMapState extends State<FindingsMap> {
       _reverseGeocode(widget.findings.first.latitude, widget.findings.first.longitude);
     }
     _loadGeoJsonLayers();
+    _startLocationTracking();
   }
 
   Future<void> _loadGeoJsonLayers() async {
@@ -65,6 +70,33 @@ class _FindingsMapState extends State<FindingsMap> {
       }
     } catch (e) {
       debugPrint('GeoJSON load error: $e');
+    }
+  }
+
+  Future<void> _startLocationTracking() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      const settings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 2,
+      );
+
+      _locationSub = Geolocator.getPositionStream(locationSettings: settings)
+          .listen((pos) {
+        if (mounted) {
+          setState(() => _myLocation = LatLng(pos.latitude, pos.longitude));
+        }
+      });
+    } catch (_) {
+      // Location unavailable — silently ignore
     }
   }
 
@@ -302,6 +334,28 @@ class _FindingsMapState extends State<FindingsMap> {
         .toList();
   }
 
+  List<Marker> _buildMyLocationMarker() {
+    if (_myLocation == null) return [];
+    return [
+      Marker(
+        point: _myLocation!,
+        width: 20,
+        height: 20,
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF2196F3),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x552196F3), blurRadius: 8, spreadRadius: 4),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final firstFinding = widget.findings.first;
@@ -326,6 +380,7 @@ class _FindingsMapState extends State<FindingsMap> {
               userAgentPackageName: 'com.example.ancient_vision',
               maxZoom: 19,
             ),
+            MarkerLayer(markers: _buildMyLocationMarker()),
             PolygonLayer(polygons: _buildGeoJsonPolygons()),
             PolylineLayer(polylines: _buildGeoJsonPolylines()),
             MarkerLayer(markers: _buildGeoJsonPointMarkers()),
@@ -381,6 +436,16 @@ class _FindingsMapState extends State<FindingsMap> {
                 icon: Icons.file_open,
                 tooltip: 'Import GIS Data',
                 onTap: _importGeoData,
+              ),
+              const SizedBox(height: 8),
+              _mapButton(
+                icon: Icons.my_location,
+                tooltip: 'Center on my location',
+                onTap: () {
+                  if (_myLocation != null && _mapController != null) {
+                    _mapController!.move(_myLocation!, _mapController!.camera.zoom);
+                  }
+                },
               ),
             ],
           ),
@@ -563,6 +628,7 @@ class _FindingsMapState extends State<FindingsMap> {
 
   @override
   void dispose() {
+    _locationSub?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
