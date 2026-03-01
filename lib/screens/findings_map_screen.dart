@@ -31,12 +31,11 @@ class _FindingsMapState extends State<FindingsMap> {
   bool _isLoadingLocation = false;
   bool _useSatellite = true;
   bool _showFindings = true;
-  bool _showGeoJsonLayers = true;
   bool _showLayerPanel = false;
 
   final GeoJsonService _geoJsonService = GeoJsonService();
   final ShapefileService _shapefileService = ShapefileService();
-  final List<GeoJsonLayer> _geoJsonLayers = [];
+  final List<_LayerEntry> _entries = [];
 
   @override
   void initState() {
@@ -57,8 +56,10 @@ class _FindingsMapState extends State<FindingsMap> {
       final saved = await _geoJsonService.loadSavedLayers();
       if (mounted) {
         setState(() {
-          _geoJsonLayers.add(sample);
-          _geoJsonLayers.addAll(saved);
+          _entries.add(_LayerEntry(layer: sample, isBundled: true));
+          for (final l in saved) {
+            _entries.add(_LayerEntry(layer: l));
+          }
         });
       }
     } catch (e) {
@@ -112,7 +113,7 @@ class _FindingsMapState extends State<FindingsMap> {
       await _geoJsonService.saveLayer(layer.name, geojsonStr);
 
       if (mounted) {
-        setState(() => _geoJsonLayers.add(layer));
+        setState(() => _entries.add(_LayerEntry(layer: layer)));
 
         if (layer.bounds != null && _mapController != null) {
           _mapController!.fitCamera(
@@ -227,38 +228,45 @@ class _FindingsMapState extends State<FindingsMap> {
   }
 
   List<Polygon> _buildGeoJsonPolygons() {
-    if (!_showGeoJsonLayers) return [];
-    return _geoJsonLayers.expand((layer) => layer.polygons.map((p) => Polygon(
-      points: p.points,
-      color: const Color(0x33FFC107),
-      borderColor: const Color(0xFFFFC107),
-      borderStrokeWidth: 2,
-      isFilled: true,
-      label: p.label,
-      labelStyle: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-    ))).toList();
+    return _entries
+        .where((e) => e.visible)
+        .expand((e) => e.layer.polygons.map((p) => Polygon(
+              points: p.points,
+              color: const Color(0x33FFC107),
+              borderColor: const Color(0xFFFFC107),
+              borderStrokeWidth: 2,
+              isFilled: true,
+              label: p.label,
+              labelStyle: const TextStyle(
+                  color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+            )))
+        .toList();
   }
 
   List<Polyline> _buildGeoJsonPolylines() {
-    if (!_showGeoJsonLayers) return [];
-    return _geoJsonLayers.expand((layer) => layer.polylines.map((p) => Polyline(
-      points: p.points,
-      color: const Color(0xFFFF9800),
-      strokeWidth: 3,
-    ))).toList();
+    return _entries
+        .where((e) => e.visible)
+        .expand((e) => e.layer.polylines.map((p) => Polyline(
+              points: p.points,
+              color: const Color(0xFFFF9800),
+              strokeWidth: 3,
+            )))
+        .toList();
   }
 
   List<Marker> _buildGeoJsonPointMarkers() {
-    if (!_showGeoJsonLayers) return [];
-    return _geoJsonLayers.expand((layer) => layer.points.map((p) => Marker(
-      point: p.position,
-      width: 30,
-      height: 30,
-      child: Tooltip(
-        message: p.label ?? '',
-        child: const Icon(Icons.place, color: Color(0xFFFF9800), size: 28),
-      ),
-    ))).toList();
+    return _entries
+        .where((e) => e.visible)
+        .expand((e) => e.layer.points.map((p) => Marker(
+              point: p.position,
+              width: 30,
+              height: 30,
+              child: Tooltip(
+                message: p.label ?? '',
+                child: const Icon(Icons.place, color: Color(0xFFFF9800), size: 28),
+              ),
+            )))
+        .toList();
   }
 
   @override
@@ -360,19 +368,17 @@ class _FindingsMapState extends State<FindingsMap> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Layers', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                  const Text('Layers',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14)),
                   const SizedBox(height: 8),
-                  _layerToggle('Findings', _showFindings, (v) => setState(() => _showFindings = v)),
-                  _layerToggle('GIS Layers', _showGeoJsonLayers, (v) => setState(() => _showGeoJsonLayers = v)),
-                  if (_geoJsonLayers.isNotEmpty) ...[
+                  _layerToggle(
+                      'Findings', _showFindings, (v) => setState(() => _showFindings = v)),
+                  if (_entries.isNotEmpty) ...[
                     const Divider(color: Colors.white24, height: 16),
-                    ...(_geoJsonLayers.map((l) => Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Text(
-                        '${l.name} (${l.polygons.length + l.polylines.length + l.points.length})',
-                        style: const TextStyle(color: Colors.white60, fontSize: 11),
-                      ),
-                    ))),
+                    ..._entries.map((e) => _layerRow(e)),
                   ],
                 ],
               ),
@@ -444,9 +450,56 @@ class _FindingsMapState extends State<FindingsMap> {
     );
   }
 
+  Widget _layerRow(_LayerEntry entry) {
+    final count = entry.layer.polygons.length +
+        entry.layer.polylines.length +
+        entry.layer.points.length;
+    return Row(
+      children: [
+        SizedBox(
+          width: 24,
+          height: 24,
+          child: Checkbox(
+            value: entry.visible,
+            onChanged: (v) => setState(() => entry.visible = v ?? true),
+            activeColor: const Color(0xFFFFC107),
+            checkColor: Colors.black,
+            side: const BorderSide(color: Colors.white54),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '${entry.layer.name} ($count)',
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (!entry.isBundled)
+          GestureDetector(
+            onTap: () => _deleteLayer(entry),
+            child: const Icon(Icons.delete_outline,
+                color: Colors.white38, size: 18),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _deleteLayer(_LayerEntry entry) async {
+    await _geoJsonService.removeLayer(entry.layer.name);
+    if (mounted) setState(() => _entries.remove(entry));
+  }
+
   @override
   void dispose() {
     _mapController?.dispose();
     super.dispose();
   }
+}
+
+class _LayerEntry {
+  final GeoJsonLayer layer;
+  bool visible = true;
+  final bool isBundled;
+  _LayerEntry({required this.layer, this.isBundled = false});
 }
