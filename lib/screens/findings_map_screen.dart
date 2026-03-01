@@ -32,6 +32,7 @@ class _FindingsMapState extends State<FindingsMap> {
   bool _useSatellite = true;
   bool _showFindings = true;
   bool _showLayerPanel = false;
+  String? _selectedFeatureLabel;
 
   final GeoJsonService _geoJsonService = GeoJsonService();
   final ShapefileService _shapefileService = ShapefileService();
@@ -227,6 +228,35 @@ class _FindingsMapState extends State<FindingsMap> {
     }).toList();
   }
 
+  /// Ray-casting point-in-polygon test.
+  bool _pointInPolygon(LatLng point, List<LatLng> polygon) {
+    bool inside = false;
+    final x = point.longitude;
+    final y = point.latitude;
+    for (int i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      final xi = polygon[i].longitude, yi = polygon[i].latitude;
+      final xj = polygon[j].longitude, yj = polygon[j].latitude;
+      if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  void _onMapTap(TapPosition tapPos, LatLng point) {
+    // Check visible polygon layers for a hit.
+    for (final entry in _entries.where((e) => e.visible)) {
+      for (final poly in entry.layer.polygons) {
+        if (_pointInPolygon(point, poly.points)) {
+          setState(() => _selectedFeatureLabel = poly.label ?? entry.layer.name);
+          return;
+        }
+      }
+    }
+    // No polygon hit — dismiss any existing popup.
+    setState(() => _selectedFeatureLabel = null);
+  }
+
   List<Polygon> _buildGeoJsonPolygons() {
     return _entries
         .where((e) => e.visible)
@@ -261,9 +291,12 @@ class _FindingsMapState extends State<FindingsMap> {
               point: p.position,
               width: 30,
               height: 30,
-              child: Tooltip(
-                message: p.label ?? '',
-                child: const Icon(Icons.place, color: Color(0xFFFF9800), size: 28),
+              child: GestureDetector(
+                onTap: () => setState(() => _selectedFeatureLabel = p.label),
+                child: Tooltip(
+                  message: p.label ?? '',
+                  child: const Icon(Icons.place, color: Color(0xFFFF9800), size: 28),
+                ),
               ),
             )))
         .toList();
@@ -283,6 +316,7 @@ class _FindingsMapState extends State<FindingsMap> {
             minZoom: 4,
             maxZoom: 19,
             interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
+            onTap: _onMapTap,
           ),
           children: [
             TileLayer(
@@ -408,6 +442,43 @@ class _FindingsMapState extends State<FindingsMap> {
             ),
           ),
         ),
+
+        // Feature info popup
+        if (_selectedFeatureLabel != null)
+          Positioned(
+            bottom: 56,
+            left: 12,
+            right: 12,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(210),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.info_outline, color: Color(0xFFFFC107), size: 16),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        _selectedFeatureLabel!,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => setState(() => _selectedFeatureLabel = null),
+                      child: const Icon(Icons.close, color: Colors.white54, size: 16),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
