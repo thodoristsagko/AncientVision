@@ -22,6 +22,27 @@ import 'screens/tools_view.dart';
 import 'screens/safety/index.dart';
 
 
+/// Sensor metrics passed to the alert overlay for context.
+class AlertMetrics {
+  final double ppv;
+  final double freq;
+  final double staLta;
+  final double crestFactor;
+  final double kurtosis;
+  final String hazardType;
+  final List<double> ppvHistory;
+
+  const AlertMetrics({
+    this.ppv = 0,
+    this.freq = 0,
+    this.staLta = 0,
+    this.crestFactor = 0,
+    this.kurtosis = 0,
+    this.hazardType = 'none',
+    this.ppvHistory = const [],
+  });
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -138,6 +159,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _showFullScreenAlert = false;
   String _fullScreenAlertMessage = '';
   String _fullScreenAlertLevel = 'warning';
+  AlertMetrics _fullScreenAlertMetrics = const AlertMetrics();
 
   // Audio/voice for alerts
   late FlutterTts _tts;
@@ -171,7 +193,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  void _triggerFullScreenAlert(String message, String level) async {
+  void _triggerFullScreenAlert(String message, String level, [AlertMetrics? metrics]) async {
     if (!mounted) return;
     if (_isMuted) return;
 
@@ -179,6 +201,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _showFullScreenAlert = true;
       _fullScreenAlertMessage = message;
       _fullScreenAlertLevel = level;
+      _fullScreenAlertMetrics = metrics ?? const AlertMetrics();
     });
 
     // Haptic feedback
@@ -257,6 +280,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             FullScreenAlertOverlay(
               message: _fullScreenAlertMessage,
               level: _fullScreenAlertLevel,
+              metrics: _fullScreenAlertMetrics,
               onDismiss: _dismissFullScreenAlert,
             ),
         ],

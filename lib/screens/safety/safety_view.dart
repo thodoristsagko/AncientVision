@@ -22,6 +22,7 @@ import '../../utils/circular_buffer.dart';
 import '../../services/vibration_dsp_service.dart';
 import '../../utils/ble_parser.dart' show RawAccelReassembler;
 import '../vibration_event_log_screen.dart';
+import '../../main.dart' show AlertMetrics;
 import '../../services/translation_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -30,7 +31,7 @@ const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 class SafetyView extends StatefulWidget {
   final bool isMuted;
   final VoidCallback onToggleMute;
-  final void Function(String message, String level) onAlert;
+  final void Function(String message, String level, [AlertMetrics? metrics]) onAlert;
 
   const SafetyView({
     super.key,
@@ -1195,7 +1196,15 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   /// Trigger full-screen alert via parent Dashboard (works on all tabs)
   void _triggerFullScreenAlert(String message, String level) {
     try {
-      widget.onAlert(message, level);
+      widget.onAlert(message, level, AlertMetrics(
+        ppv: _ppv,
+        freq: _dominantFreq,
+        staLta: _staLtaRatio,
+        crestFactor: _crestFactor,
+        kurtosis: _kurtosis,
+        hazardType: _hazardType,
+        ppvHistory: _ppvKalmanHistory.toList(),
+      ));
     } catch (e) {
       debugPrint('Alert callback failed: $e');
     }
