@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -8,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import '../models/finding_model.dart';
 import '../services/geojson_service.dart';
+import '../services/shapefile_service.dart';
 
 class FindingsMap extends StatefulWidget {
   final List<Finding> findings;
@@ -33,6 +35,7 @@ class _FindingsMapState extends State<FindingsMap> {
   bool _showLayerPanel = false;
 
   final GeoJsonService _geoJsonService = GeoJsonService();
+  final ShapefileService _shapefileService = ShapefileService();
   final List<GeoJsonLayer> _geoJsonLayers = [];
 
   @override
@@ -63,7 +66,7 @@ class _FindingsMapState extends State<FindingsMap> {
     }
   }
 
-  Future<void> _importGeoJson() async {
+  Future<void> _importGeoData() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
@@ -72,19 +75,41 @@ class _FindingsMapState extends State<FindingsMap> {
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
-      String? content;
-      if (file.path != null) {
-        content = await File(file.path!).readAsString();
-      } else if (file.bytes != null) {
-        content = utf8.decode(file.bytes!);
+      final lowerName = file.name.toLowerCase();
+
+      GeoJsonLayer layer;
+      String geojsonStr;
+
+      if (lowerName.endsWith('.zip')) {
+        // Shapefile ZIP import
+        Uint8List? bytes;
+        if (file.path != null) {
+          bytes = await File(file.path!).readAsBytes();
+        } else {
+          bytes = file.bytes;
+        }
+        if (bytes == null) return;
+
+        final name = file.name.replaceAll(RegExp(r'\.shp\.zip$|\.zip$', caseSensitive: false), '');
+        layer = _shapefileService.importFromZip(bytes, name: name);
+        geojsonStr = _shapefileService.toGeoJsonString(layer);
+      } else {
+        // GeoJSON import
+        String? content;
+        if (file.path != null) {
+          content = await File(file.path!).readAsString();
+        } else if (file.bytes != null) {
+          content = utf8.decode(file.bytes!);
+        }
+        if (content == null) return;
+
+        final geojson = json.decode(content) as Map<String, dynamic>;
+        final name = file.name.replaceAll('.geojson', '').replaceAll('.json', '');
+        layer = _geoJsonService.parse(geojson, name: name);
+        geojsonStr = content;
       }
-      if (content == null) return;
 
-      final geojson = json.decode(content) as Map<String, dynamic>;
-      final name = file.name.replaceAll('.geojson', '').replaceAll('.json', '');
-      final layer = _geoJsonService.parse(geojson, name: name);
-
-      await _geoJsonService.saveLayer(name, content);
+      await _geoJsonService.saveLayer(layer.name, geojsonStr);
 
       if (mounted) {
         setState(() => _geoJsonLayers.add(layer));
@@ -312,8 +337,8 @@ class _FindingsMapState extends State<FindingsMap> {
               const SizedBox(height: 8),
               _mapButton(
                 icon: Icons.file_open,
-                tooltip: 'Import GeoJSON',
-                onTap: _importGeoJson,
+                tooltip: 'Import GIS Data',
+                onTap: _importGeoData,
               ),
             ],
           ),
