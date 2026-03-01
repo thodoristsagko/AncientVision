@@ -30,7 +30,7 @@ Uint8List _buildShp(int shapeType, List<Uint8List> records) {
     builder.add(records[i]);
   }
 
-  return builder.toBytes() as Uint8List;
+  return Uint8List.fromList(builder.toBytes());
 }
 
 /// Build a Point record (shape type 1): 4 bytes type + 8 bytes x + 8 bytes y
@@ -144,7 +144,7 @@ Uint8List _buildDbf(List<String> names) {
     builder.add(ascii.encode(padded));
   }
 
-  return builder.toBytes() as Uint8List;
+  return Uint8List.fromList(builder.toBytes());
 }
 
 /// Create a ZIP archive containing .shp and optionally .dbf bytes.
