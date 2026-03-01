@@ -36,6 +36,7 @@ class _FindingsMapState extends State<FindingsMap> {
   bool _showFindings = true;
   bool _showLayerPanel = false;
   String? _selectedFeatureLabel;
+  bool _selectedIsCoord = false;
   LatLng? _myLocation;
   StreamSubscription<Position>? _locationSub;
 
@@ -276,18 +277,34 @@ class _FindingsMapState extends State<FindingsMap> {
     return inside;
   }
 
-  void _onMapTap(TapPosition tapPos, LatLng point) {
+  String _formatCoord(double value, {required bool isLat}) {
+    final abs = value.abs();
+    final dir = isLat
+        ? (value >= 0 ? 'N' : 'S')
+        : (value >= 0 ? 'E' : 'W');
+    return '${abs.toStringAsFixed(5)}°$dir';
+  }
+
+  void _onMapTap(TapPosition tapPos, LatLng tappedPoint) {
     // Check visible polygon layers for a hit.
     for (final entry in _entries.where((e) => e.visible)) {
       for (final poly in entry.layer.polygons) {
-        if (_pointInPolygon(point, poly.points)) {
-          setState(() => _selectedFeatureLabel = poly.label ?? entry.layer.name);
+        if (_pointInPolygon(tappedPoint, poly.points)) {
+          setState(() {
+            _selectedFeatureLabel = poly.label ?? entry.layer.name;
+            _selectedIsCoord = false;
+          });
           return;
         }
       }
     }
-    // No polygon hit — dismiss any existing popup.
-    setState(() => _selectedFeatureLabel = null);
+    // No polygon hit — show tapped coordinates.
+    setState(() {
+      _selectedFeatureLabel =
+          '${_formatCoord(tappedPoint.latitude, isLat: true)}, '
+          '${_formatCoord(tappedPoint.longitude, isLat: false)}';
+      _selectedIsCoord = true;
+    });
   }
 
   List<Polygon> _buildGeoJsonPolygons() {
@@ -325,7 +342,10 @@ class _FindingsMapState extends State<FindingsMap> {
               width: 30,
               height: 30,
               child: GestureDetector(
-                onTap: () => setState(() => _selectedFeatureLabel = p.label),
+                onTap: () => setState(() {
+                  _selectedFeatureLabel = p.label;
+                  _selectedIsCoord = false;
+                }),
                 child: Tooltip(
                   message: p.label ?? '',
                   child: const Icon(Icons.place, color: Color(0xFFFF9800), size: 28),
@@ -527,7 +547,11 @@ class _FindingsMapState extends State<FindingsMap> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.info_outline, color: Color(0xFFFFC107), size: 16),
+                    Icon(
+                      _selectedIsCoord ? Icons.location_on : Icons.info_outline,
+                      color: const Color(0xFFFFC107),
+                      size: 16,
+                    ),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
@@ -538,7 +562,10 @@ class _FindingsMapState extends State<FindingsMap> {
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
-                      onTap: () => setState(() => _selectedFeatureLabel = null),
+                      onTap: () => setState(() {
+                        _selectedFeatureLabel = null;
+                        _selectedIsCoord = false;
+                      }),
                       child: const Icon(Icons.close, color: Colors.white54, size: 16),
                     ),
                   ],
