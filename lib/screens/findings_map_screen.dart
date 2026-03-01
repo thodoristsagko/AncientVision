@@ -12,6 +12,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/finding_model.dart';
 import '../services/geojson_service.dart';
 import '../services/shapefile_service.dart';
+import '../services/cached_tile_provider.dart';
 
 class FindingsMap extends StatefulWidget {
   final List<Finding> findings;
@@ -379,6 +380,7 @@ class _FindingsMapState extends State<FindingsMap> {
                   : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.example.ancient_vision',
               maxZoom: 19,
+              tileProvider: CachedTileProvider(),
             ),
             MarkerLayer(markers: _buildMyLocationMarker()),
             PolygonLayer(polygons: _buildGeoJsonPolygons()),
