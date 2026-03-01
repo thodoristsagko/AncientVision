@@ -6,7 +6,7 @@ void main() {
   group('PpvSparkline', () {
     testWidgets('renders CustomPaint with data', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: SizedBox(
               width: 200,
@@ -26,7 +26,7 @@ void main() {
 
     testWidgets('renders empty state with no data', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: SizedBox(
               width: 200,
