@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import '../models/finding_model.dart';
+import '../services/geojson_service.dart';
 
 class FindingsMap extends StatefulWidget {
   final List<Finding> findings;
@@ -24,28 +27,92 @@ class _FindingsMapState extends State<FindingsMap> {
   MapController? _mapController;
   String _locationName = 'Archaeological Site';
   bool _isLoadingLocation = false;
+  bool _useSatellite = true;
+  bool _showFindings = true;
+  bool _showGeoJsonLayers = true;
+  bool _showLayerPanel = false;
+
+  final GeoJsonService _geoJsonService = GeoJsonService();
+  final List<GeoJsonLayer> _geoJsonLayers = [];
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
-    // Load initial location name
     if (widget.findings.isNotEmpty) {
       _reverseGeocode(widget.findings.first.latitude, widget.findings.first.longitude);
+    }
+    _loadGeoJsonLayers();
+  }
+
+  Future<void> _loadGeoJsonLayers() async {
+    try {
+      final sample = await _geoJsonService.loadBundled(
+        'assets/geo/sample_trenches.geojson',
+        name: 'Kalapodi Trenches',
+      );
+      final saved = await _geoJsonService.loadSavedLayers();
+      if (mounted) {
+        setState(() {
+          _geoJsonLayers.add(sample);
+          _geoJsonLayers.addAll(saved);
+        });
+      }
+    } catch (e) {
+      debugPrint('GeoJSON load error: $e');
+    }
+  }
+
+  Future<void> _importGeoJson() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      String? content;
+      if (file.path != null) {
+        content = await File(file.path!).readAsString();
+      } else if (file.bytes != null) {
+        content = utf8.decode(file.bytes!);
+      }
+      if (content == null) return;
+
+      final geojson = json.decode(content) as Map<String, dynamic>;
+      final name = file.name.replaceAll('.geojson', '').replaceAll('.json', '');
+      final layer = _geoJsonService.parse(geojson, name: name);
+
+      await _geoJsonService.saveLayer(name, content);
+
+      if (mounted) {
+        setState(() => _geoJsonLayers.add(layer));
+
+        if (layer.bounds != null && _mapController != null) {
+          _mapController!.fitCamera(
+            CameraFit.bounds(
+              bounds: layer.bounds!,
+              padding: const EdgeInsets.all(50),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to import: $e')),
+        );
+      }
     }
   }
 
   @override
   void didUpdateWidget(covariant FindingsMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // When selectedIndex changes, move map to that finding
     if (oldWidget.selectedIndex != widget.selectedIndex && widget.findings.isNotEmpty) {
       final selected = widget.findings[widget.selectedIndex];
-      _mapController?.move(
-        LatLng(selected.latitude, selected.longitude),
-        17.5,
-      );
-      // Update location name for the new position
+      _mapController?.move(LatLng(selected.latitude, selected.longitude), 17.5);
       _reverseGeocode(selected.latitude, selected.longitude);
     }
   }
@@ -53,44 +120,32 @@ class _FindingsMapState extends State<FindingsMap> {
   Future<void> _reverseGeocode(double lat, double lon) async {
     if (_isLoadingLocation) return;
     setState(() => _isLoadingLocation = true);
-
     try {
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1',
       );
-      final response = await http.get(url, headers: {
-        'User-Agent': 'AncientVision-FLL-App/1.0',
-      });
-
+      final response = await http.get(url, headers: {'User-Agent': 'AncientVision-FLL-App/1.0'});
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final address = data['address'] as Map<String, dynamic>?;
-
-        // Try to get a meaningful location name
         String name = data['name'] as String? ?? '';
         if (name.isEmpty) {
           name = address?['historic'] as String? ??
-                 address?['tourism'] as String? ??
-                 address?['archaeological_site'] as String? ??
-                 address?['amenity'] as String? ??
-                 address?['suburb'] as String? ??
-                 address?['neighbourhood'] as String? ??
-                 address?['village'] as String? ??
-                 address?['town'] as String? ??
-                 address?['city'] as String? ??
-                 'Archaeological Site';
+              address?['tourism'] as String? ??
+              address?['archaeological_site'] as String? ??
+              address?['amenity'] as String? ??
+              address?['suburb'] as String? ??
+              address?['neighbourhood'] as String? ??
+              address?['village'] as String? ??
+              address?['town'] as String? ??
+              address?['city'] as String? ??
+              'Archaeological Site';
         }
-
-        if (mounted) {
-          setState(() => _locationName = name);
-        }
+        if (mounted) setState(() => _locationName = name);
       }
-    } catch (e) {
-      // Keep the default name on error
-    } finally {
-      if (mounted) {
-        setState(() => _isLoadingLocation = false);
-      }
+    } catch (_) {}
+    finally {
+      if (mounted) setState(() => _isLoadingLocation = false);
     }
   }
 
@@ -104,53 +159,37 @@ class _FindingsMapState extends State<FindingsMap> {
     }
   }
 
-  List<Marker> _buildMarkers() {
+  List<Marker> _buildFindingMarkers() {
+    if (!_showFindings) return [];
     return widget.findings.asMap().entries.map((entry) {
       final index = entry.key;
       final finding = entry.value;
       final isSelected = index == widget.selectedIndex;
       final typeColor = Finding.getTypeColor(finding.type);
-
       return Marker(
         point: LatLng(finding.latitude, finding.longitude),
         width: isSelected ? 48 : 36,
         height: isSelected ? 48 : 36,
         child: GestureDetector(
-          onTap: () => _openInGoogleMaps(),
+          onTap: _openInGoogleMaps,
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Outer glow for selected marker
               if (isSelected)
                 Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: typeColor.withAlpha(77),
-                  ),
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: typeColor.withAlpha(77)),
                 ),
-              // Main marker icon
-              Icon(
-                Icons.location_pin,
-                size: isSelected ? 40 : 32,
+              Icon(Icons.location_pin, size: isSelected ? 40 : 32,
                 color: isSelected ? typeColor : typeColor.withAlpha(217),
-                shadows: [
-                  Shadow(
-                    color: Colors.black.withAlpha(128),
-                    blurRadius: 4,
-                  ),
-                ],
+                shadows: [Shadow(color: Colors.black.withAlpha(128), blurRadius: 4)],
               ),
-              // Type indicator dot
               Positioned(
                 top: isSelected ? 8 : 4,
                 child: Container(
-                  width: 8,
-                  height: 8,
+                  width: 8, height: 8,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
+                    color: Colors.white, shape: BoxShape.circle,
                     border: Border.all(color: typeColor, width: 2),
                   ),
                 ),
@@ -162,40 +201,74 @@ class _FindingsMapState extends State<FindingsMap> {
     }).toList();
   }
 
+  List<Polygon> _buildGeoJsonPolygons() {
+    if (!_showGeoJsonLayers) return [];
+    return _geoJsonLayers.expand((layer) => layer.polygons.map((p) => Polygon(
+      points: p.points,
+      color: const Color(0x33FFC107),
+      borderColor: const Color(0xFFFFC107),
+      borderStrokeWidth: 2,
+      isFilled: true,
+      label: p.label,
+      labelStyle: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+    ))).toList();
+  }
+
+  List<Polyline> _buildGeoJsonPolylines() {
+    if (!_showGeoJsonLayers) return [];
+    return _geoJsonLayers.expand((layer) => layer.polylines.map((p) => Polyline(
+      points: p.points,
+      color: const Color(0xFFFF9800),
+      strokeWidth: 3,
+    ))).toList();
+  }
+
+  List<Marker> _buildGeoJsonPointMarkers() {
+    if (!_showGeoJsonLayers) return [];
+    return _geoJsonLayers.expand((layer) => layer.points.map((p) => Marker(
+      point: p.position,
+      width: 30,
+      height: 30,
+      child: Tooltip(
+        message: p.label ?? '',
+        child: const Icon(Icons.place, color: Color(0xFFFF9800), size: 28),
+      ),
+    ))).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Center on the most recent finding (first in the list)
     final firstFinding = widget.findings.first;
 
     return Stack(
       children: [
-        // Interactive OpenStreetMap
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
             initialCenter: LatLng(firstFinding.latitude, firstFinding.longitude),
             initialZoom: 17.5,
-            minZoom: 10,
+            minZoom: 4,
             maxZoom: 19,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all,
-            ),
+            interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
           ),
           children: [
             TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: _useSatellite
+                  ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                  : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.example.ancient_vision',
+              maxZoom: 19,
             ),
-            MarkerLayer(
-              markers: _buildMarkers(),
-            ),
+            PolygonLayer(polygons: _buildGeoJsonPolygons()),
+            PolylineLayer(polylines: _buildGeoJsonPolylines()),
+            MarkerLayer(markers: _buildGeoJsonPointMarkers()),
+            MarkerLayer(markers: _buildFindingMarkers()),
           ],
         ),
 
-        // Map label overlay - dynamic location name
+        // Location label
         Positioned(
-          top: 12,
-          left: 12,
+          top: 12, left: 12,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -208,32 +281,82 @@ class _FindingsMapState extends State<FindingsMap> {
                 if (_isLoadingLocation)
                   const Padding(
                     padding: EdgeInsets.only(right: 6),
-                    child: SizedBox(
-                      width: 10,
-                      height: 10,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                    child: SizedBox(width: 10, height: 10,
+                      child: CircularProgressIndicator(strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
                       ),
                     ),
                   ),
-                Text(
-                  _locationName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(_locationName, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
         ),
 
-        // Open in Google Maps button
+        // Top-right controls
         Positioned(
-          bottom: 12,
-          right: 12,
+          top: 12, right: 12,
+          child: Column(
+            children: [
+              _mapButton(
+                icon: _useSatellite ? Icons.satellite_alt : Icons.map,
+                tooltip: _useSatellite ? 'Street view' : 'Satellite view',
+                onTap: () => setState(() => _useSatellite = !_useSatellite),
+              ),
+              const SizedBox(height: 8),
+              _mapButton(
+                icon: Icons.layers,
+                tooltip: 'Layers',
+                onTap: () => setState(() => _showLayerPanel = !_showLayerPanel),
+              ),
+              const SizedBox(height: 8),
+              _mapButton(
+                icon: Icons.file_open,
+                tooltip: 'Import GeoJSON',
+                onTap: _importGeoJson,
+              ),
+            ],
+          ),
+        ),
+
+        // Layer panel
+        if (_showLayerPanel)
+          Positioned(
+            top: 120, right: 12,
+            child: Container(
+              width: 200,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withAlpha(210),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Layers', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                  const SizedBox(height: 8),
+                  _layerToggle('Findings', _showFindings, (v) => setState(() => _showFindings = v)),
+                  _layerToggle('GIS Layers', _showGeoJsonLayers, (v) => setState(() => _showGeoJsonLayers = v)),
+                  if (_geoJsonLayers.isNotEmpty) ...[
+                    const Divider(color: Colors.white24, height: 16),
+                    ...(_geoJsonLayers.map((l) => Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        '${l.name} (${l.polygons.length + l.polylines.length + l.points.length})',
+                        style: const TextStyle(color: Colors.white60, fontSize: 11),
+                      ),
+                    ))),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
+        // Google Maps button
+        Positioned(
+          bottom: 12, right: 12,
           child: GestureDetector(
             onTap: _openInGoogleMaps,
             child: Container(
@@ -241,36 +364,57 @@ class _FindingsMapState extends State<FindingsMap> {
               decoration: BoxDecoration(
                 color: const Color(0xFFFFC107),
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(77),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
-                ],
+                boxShadow: [BoxShadow(color: Colors.black.withAlpha(77), blurRadius: 8, spreadRadius: 1)],
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.open_in_new,
-                    color: Color(0xFF3E2723),
-                    size: 16,
-                  ),
+                  Icon(Icons.open_in_new, color: Color(0xFF3E2723), size: 16),
                   SizedBox(width: 6),
-                  Text(
-                    'Open in Google Maps',
-                    style: TextStyle(
-                      color: Color(0xFF3E2723),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  Text('Google Maps', style: TextStyle(color: Color(0xFF3E2723), fontSize: 11, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _mapButton({required IconData icon, required String tooltip, required VoidCallback onTap}) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            color: Colors.black.withAlpha(179),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+
+  Widget _layerToggle(String label, bool value, ValueChanged<bool> onChanged) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 24, height: 24,
+          child: Checkbox(
+            value: value,
+            onChanged: (v) => onChanged(v ?? false),
+            activeColor: const Color(0xFFFFC107),
+            checkColor: Colors.black,
+            side: const BorderSide(color: Colors.white54),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 13)),
       ],
     );
   }
