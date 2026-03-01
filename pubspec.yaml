@@ -55,6 +55,7 @@ dependencies:
   google_mlkit_commons: ^0.7.1  # Shared ML Kit utilities
   tflite_flutter: ^0.11.0
   google_generative_ai: ^0.4.6  # Gemini AI for coin recognition  # TensorFlow Lite for custom coin classifier
+  file_picker: ^8.0.0
   exif: ^3.3.0
   model_viewer_plus: ^1.7.0  # GLTF/GLB 3D model viewer with textures
 
@@ -80,3 +81,4 @@ flutter:
     - assets/
     - assets/audio/
     - assets/ml/
+    - assets/geo/
