@@ -72,7 +72,7 @@ void main() {
       final options = TileLayer(
         urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       );
-      final coords = TileCoordinates(1, 1, 1);
+      const coords = TileCoordinates(1, 1, 1);
       final image = provider.getImage(coords, options);
       expect(image, isA<ImageProvider>());
     });
