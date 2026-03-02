@@ -1,27 +1,70 @@
 import 'package:flutter/material.dart';
 
-class LiveChip extends StatelessWidget {
+class LiveChip extends StatefulWidget {
   final bool isConnected;
   final String status;
 
   const LiveChip({super.key, required this.isConnected, required this.status});
 
   @override
+  State<LiveChip> createState() => _LiveChipState();
+}
+
+class _LiveChipState extends State<LiveChip>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  Widget _livePulseDot() {
+    if (!widget.isConnected) {
+      return Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: Colors.white38,
+          shape: BoxShape.circle,
+        ),
+      );
+    }
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (_, __) => Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: Color.fromRGBO(
+              76, 175, 80, 0.3 + _pulseController.value * 0.7),
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 8, height: 8,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isConnected ? const Color(0xFF4CAF50) : Colors.grey,
-          ),
-        ),
+        _livePulseDot(),
         const SizedBox(width: 5),
         Text(
-          isConnected ? 'LIVE' : 'OFFLINE',
-          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+          widget.isConnected ? 'LIVE' : 'OFFLINE',
+          style: const TextStyle(
+              color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
         ),
       ],
     );
