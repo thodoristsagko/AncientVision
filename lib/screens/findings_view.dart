@@ -18,10 +18,10 @@ class FindingsView extends StatefulWidget {
   const FindingsView({super.key});
 
   @override
-  State<FindingsView> createState() => _FindingsViewState();
+  State<FindingsView> createState() => FindingsViewState();
 }
 
-class _FindingsViewState extends State<FindingsView> {
+class FindingsViewState extends State<FindingsView> {
   List<Finding> _findings = [];
   List<Finding> _filteredFindings = [];
   bool _isLoading = true;
@@ -118,7 +118,7 @@ class _FindingsViewState extends State<FindingsView> {
     );
   }
 
-  void _showAddOptions(BuildContext context) {
+  void showAddOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -507,23 +507,6 @@ class _FindingsViewState extends State<FindingsView> {
                         ),
                       ),
                     ),
-                    const Spacer(),
-                    // Add button (FAB-style) - opens bottom sheet with options
-                    GestureDetector(
-                        onTap: () => _showAddOptions(context),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFC107),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.add_rounded,
-                            color: Color(0xFF3E2723),
-                            size: 22,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
 

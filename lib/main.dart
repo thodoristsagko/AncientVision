@@ -151,6 +151,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 3; // TEST BUILD: default to Monitor tab
+  final _findingsKey = GlobalKey<FindingsViewState>();
 
   // Global mute state (shared across all tabs)
   bool _isMuted = false;
@@ -241,7 +242,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       index: _currentIndex,
       children: [
         const DashboardHomeView(),
-        const FindingsView(),
+        FindingsView(key: _findingsKey),
         const ToolsView(),
         SafetyView(
           isMuted: _isMuted,
@@ -261,6 +262,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
             extendBody: true,
             backgroundColor: Colors.transparent,
             body: _buildBody(),
+            floatingActionButton: _currentIndex == 1
+                ? FloatingActionButton(
+                    onPressed: () {
+                      final ctx = _findingsKey.currentContext;
+                      if (ctx != null) {
+                        _findingsKey.currentState?.showAddOptions(ctx);
+                      }
+                    },
+                    backgroundColor: const Color(0xFFFFC107),
+                    foregroundColor: const Color(0xFF3E2723),
+                    child: const Icon(Icons.add_rounded),
+                  )
+                : null,
             bottomNavigationBar: SafeArea(
               minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: GlassBottomNavBar(
