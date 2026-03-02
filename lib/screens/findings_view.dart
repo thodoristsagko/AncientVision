@@ -497,6 +497,35 @@ class FindingsViewState extends State<FindingsView> {
     }
   }
 
+  Widget _sourceBadge(FindingSource source) {
+    final label = source == FindingSource.manual
+        ? 'Manual'
+        : source == FindingSource.photo
+            ? 'AI'
+            : 'Quick';
+    return Container(
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: source.color.withAlpha(40),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: source.color.withAlpha(80)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(source.icon, color: source.color, size: 9),
+          const SizedBox(width: 3),
+          Text(label,
+              style: TextStyle(
+                  color: source.color,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final selected = _filteredFindings.isNotEmpty ? _filteredFindings[_selectedIndex] : null;
@@ -870,6 +899,7 @@ class FindingsViewState extends State<FindingsView> {
                                           ],
                                         ),
                                       ),
+                                      _sourceBadge(f.source),
                                       // 3D model indicator
                                       if (f.model3dUrl != null)
                                         Container(
