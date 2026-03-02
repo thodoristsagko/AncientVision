@@ -13,7 +13,8 @@ class AIRecognitionScreen extends StatefulWidget {
   State<AIRecognitionScreen> createState() => _AIRecognitionScreenState();
 }
 
-class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
+class _AIRecognitionScreenState extends State<AIRecognitionScreen>
+    with SingleTickerProviderStateMixin {
   final _geminiService = GeminiCoinService();
   final _imagePicker = ImagePicker();
 
@@ -22,6 +23,8 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
   CoinClassificationResult? _coinResult;
   bool _isProcessing = false;
   bool _isSignificant = false;
+  late AnimationController _ringController;
+  late Animation<double> _ringAnimation;
   String? _error;
   String _statusMessage = '';
 
@@ -29,6 +32,17 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
   void initState() {
     super.initState();
     _geminiService.initialize();
+    _ringController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _ringAnimation = CurvedAnimation(parent: _ringController, curve: Curves.easeOut);
+  }
+
+  @override
+  void dispose() {
+    _ringController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickObverse(ImageSource source) async {
@@ -96,6 +110,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
           _coinResult = result;
           _isProcessing = false;
         });
+        _ringController.forward(from: 0);
       }
     } catch (e) {
       if (mounted) {
@@ -133,6 +148,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
       _isSignificant = false;
       _error = null;
     });
+    _ringController.reset();
   }
 
   @override
@@ -411,6 +427,44 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
     );
   }
 
+  Widget _buildConfidenceRing() {
+    final confidence = _coinResult!.confidence / 100.0;
+    final color = confidence >= 0.70
+        ? Colors.green
+        : confidence >= 0.50
+            ? const Color(0xFFFFC107)
+            : Colors.red;
+    return AnimatedBuilder(
+      animation: _ringAnimation,
+      builder: (_, __) {
+        final animated = _ringAnimation.value * confidence;
+        return SizedBox(
+          width: 80,
+          height: 80,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                value: animated,
+                backgroundColor: Colors.white12,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+                strokeWidth: 8,
+              ),
+              Text(
+                '${(_ringAnimation.value * _coinResult!.confidence).round()}%',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildCoinResultCard() {
     if (_coinResult == null) return const SizedBox.shrink();
 
@@ -538,20 +592,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD4AF37).withAlpha(77),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${_coinResult!.confidence.toStringAsFixed(0)}%',
-                  style: const TextStyle(
-                    color: Color(0xFFD4AF37),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+              _buildConfidenceRing(),
             ],
           ),
 
