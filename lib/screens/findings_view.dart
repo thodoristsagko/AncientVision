@@ -342,6 +342,7 @@ class _FindingsViewState extends State<FindingsView> {
           associatedFeatures: data['associatedFeatures'] != null
               ? List<String>.from(data['associatedFeatures'])
               : null,
+          isSignificant: data['isSignificant'] ?? false,
         );
       }).toList();
 
@@ -784,6 +785,7 @@ Future<void> _handleQuickCaptureResult(BuildContext context, Map<String, dynamic
     'photoGallery': persistedPath != null ? [persistedPath] : <String>[],
     'createdAt': DateTime.now().toIso8601String(),
     'source': 'quick',
+    'isSignificant': result['isSignificant'] ?? false,
   };
 
   // Save to local storage first (offline-first)

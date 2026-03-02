@@ -47,6 +47,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   String _nextId = 'A-001';
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isSignificant = false;
   bool _isGettingLocation = false;
 
   // Auto-save functionality
@@ -562,6 +563,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
         'reconstructionData': reconstructionData,
         'createdAt': FieldValue.serverTimestamp(),
         'source': source,
+        'isSignificant': _isSignificant,
       };
 
       try {
@@ -1277,7 +1279,24 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                   ),
 
 
-                  const SizedBox(height: 32),
+                  // Significant find toggle
+                  CheckboxListTile(
+                    value: _isSignificant,
+                    onChanged: (v) => setState(() => _isSignificant = v ?? false),
+                    title: const Text(
+                      'Mark as significant find',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'e.g. gold coin, complete ceramic',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                    activeColor: const Color(0xFFFFC107),
+                    checkColor: const Color(0xFF0D3A39),
+                    side: const BorderSide(color: Colors.white38),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const SizedBox(height: 24),
 
                   // SUBMIT BUTTON
                   SizedBox(

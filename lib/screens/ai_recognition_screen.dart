@@ -21,6 +21,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
   File? _reverseImage; // Back side
   CoinClassificationResult? _coinResult;
   bool _isProcessing = false;
+  bool _isSignificant = false;
   String? _error;
   String _statusMessage = '';
 
@@ -79,6 +80,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
       _isProcessing = true;
       _error = null;
       _coinResult = null;
+      _isSignificant = false;
       _statusMessage = _reverseImage != null
           ? 'Analyzing both sides with Gemini AI...'
           : 'Analyzing coin with Gemini AI...';
@@ -119,6 +121,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
       'isCoin': _coinResult!.isCoin,
       'characteristics': _coinResult!.characteristics,
       'regions': _coinResult!.regions,
+      'isSignificant': _isSignificant,
     });
   }
 
@@ -127,6 +130,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
       _obverseImage = null;
       _reverseImage = null;
       _coinResult = null;
+      _isSignificant = false;
       _error = null;
     });
   }
@@ -253,6 +257,26 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen> {
             if (_coinResult != null) ...[
               const SizedBox(height: 24),
               _buildCoinResultCard(),
+            ],
+
+            if (_coinResult != null) ...[
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                value: _isSignificant,
+                onChanged: (v) => setState(() => _isSignificant = v ?? false),
+                title: const Text(
+                  'Mark as significant find',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                subtitle: const Text(
+                  'e.g. rare coin, exceptional condition',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                activeColor: const Color(0xFFFFC107),
+                checkColor: const Color(0xFF0D3A39),
+                side: const BorderSide(color: Colors.white38),
+                contentPadding: EdgeInsets.zero,
+              ),
             ],
 
             // Info

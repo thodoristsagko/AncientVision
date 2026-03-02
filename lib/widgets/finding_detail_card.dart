@@ -109,6 +109,12 @@ class FindingDetailCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            if (finding.isSignificant)
+                              const Icon(
+                                Icons.star,
+                                color: Color(0xFFFFC107),
+                                size: 18,
+                              ),
                           ],
                         ),
                         const SizedBox(height: 4),

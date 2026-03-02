@@ -26,6 +26,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
   XFile? _capturedPhoto;
   ArtifactType? _selectedType;
   String _description = '';
+  bool _isSignificant = false;
   Position? _currentPosition;
   final _progressService = ProgressService();
 
@@ -530,6 +531,25 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                   ],
                 ),
               ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // Significant find toggle
+            CheckboxListTile(
+              value: _isSignificant,
+              onChanged: (v) => setState(() => _isSignificant = v ?? false),
+              title: const Text(
+                'Mark as significant find',
+                style: AppTextStyles.body,
+              ),
+              subtitle: const Text(
+                'e.g. gold coin, complete ceramic',
+                style: AppTextStyles.subtitleSmall,
+              ),
+              activeColor: AppColors.warning,
+              checkColor: AppColors.primaryDark,
+              side: const BorderSide(color: Colors.white38),
+              contentPadding: EdgeInsets.zero,
+            ),
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
@@ -730,6 +750,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
                 'longitude': _currentPosition!.longitude,
               }
             : null,
+        'isSignificant': _isSignificant,
       };
 
       // Show achievement if earned, then pop; otherwise just pop

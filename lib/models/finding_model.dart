@@ -67,6 +67,7 @@ class Finding {
   final String? matrixDescription;
   final String? harrisPosition;
   final List<String>? associatedFeatures;
+  final bool isSignificant;
 
   const Finding({
     required this.id,
@@ -105,6 +106,7 @@ class Finding {
     this.matrixDescription,
     this.harrisPosition,
     this.associatedFeatures,
+    this.isSignificant = false,
   });
 
   /// Check if this is a coin finding
