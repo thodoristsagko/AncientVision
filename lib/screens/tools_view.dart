@@ -54,6 +54,7 @@ class ToolsView extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
+                    _buildFeaturedSection(context),
 
                     // === DOCUMENTATION (merged Field Work + Capture) ===
                       _buildCategoryHeader('Documentation'),
@@ -72,21 +73,6 @@ class ToolsView extends StatelessWidget {
                       const SizedBox(height: 10),
                       _buildToolGrid(context, [
                         ToolCard(
-                          icon: Icons.flash_on_rounded,
-                          title: 'Quick Capture',
-                          description: 'Photo + note, instantly',
-                          color: const Color(0xFF2196F3),
-                          onTap: () async {
-                            final result = await Navigator.push<Map<String, dynamic>>(
-                              context,
-                              MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
-                            );
-                            if (result != null && context.mounted) {
-                              _handleQuickCaptureResult(context, result);
-                            }
-                          },
-                        ),
-                        ToolCard(
                           icon: Icons.edit_note_rounded,
                           title: 'Manual Entry',
                           description: 'Full recording form',
@@ -94,23 +80,6 @@ class ToolsView extends StatelessWidget {
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
-                          ),
-                        ),
-                      ]),
-                      const SizedBox(height: 18),
-
-                      // === AI & 3D ===
-                      _buildCategoryHeader('AI & 3D'),
-                      const SizedBox(height: 10),
-                      _buildToolGrid(context, [
-                        ToolCard(
-                          icon: Icons.monetization_on_rounded,
-                          title: 'Coin AI',
-                          description: 'AI coin identification',
-                          color: const Color(0xFF7C4DFF),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
                           ),
                         ),
                       ]),
@@ -136,23 +105,6 @@ class ToolsView extends StatelessWidget {
                           description: 'CSV, JSON, GeoJSON',
                           color: const Color(0xFF607D8B),
                           onTap: () => _showExportDialog(context),
-                        ),
-                        ToolCard(
-                          icon: Icons.picture_as_pdf_rounded,
-                          title: 'PDF Report',
-                          description: 'Share full findings report',
-                          color: const Color(0xFFE53935),
-                          onTap: () async {
-                            try {
-                              await PdfExportService().exportFindingsReport(context);
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Export failed: $e')),
-                                );
-                              }
-                            }
-                          },
                         ),
                       ]),
                       const SizedBox(height: 18),
@@ -221,6 +173,65 @@ class ToolsView extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildFeaturedSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildCategoryHeader('Featured'),
+        const SizedBox(height: 10),
+        HeroToolCard(
+          icon: Icons.monetization_on_rounded,
+          color: const Color(0xFF7C4DFF),
+          title: 'Coin AI Recognition',
+          subtitle: 'Identify coins using Google Gemini AI',
+          statusLabel: 'Gemini AI',
+          statusColor: const Color(0xFF4CAF50),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
+          ),
+        ),
+        HeroToolCard(
+          icon: Icons.flash_on_rounded,
+          color: const Color(0xFF2196F3),
+          title: 'Quick Capture',
+          subtitle: 'Record a finding in seconds',
+          statusLabel: 'Instant',
+          statusColor: const Color(0xFF2196F3),
+          onTap: () async {
+            final result = await Navigator.push<Map<String, dynamic>>(
+              context,
+              MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
+            );
+            if (result != null && context.mounted) {
+              _handleQuickCaptureResult(context, result);
+            }
+          },
+        ),
+        HeroToolCard(
+          icon: Icons.picture_as_pdf_rounded,
+          color: const Color(0xFFE53935),
+          title: 'PDF Report',
+          subtitle: 'Export all findings as a shareable report',
+          statusLabel: 'Ready',
+          statusColor: const Color(0xFF4CAF50),
+          onTap: () async {
+            try {
+              await PdfExportService().exportFindingsReport(context);
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Export failed: $e')),
+                );
+              }
+            }
+          },
+        ),
+        const SizedBox(height: 18),
+      ],
     );
   }
 
@@ -606,6 +617,90 @@ class ExportOptionTile extends StatelessWidget {
       subtitle: Text(subtitle, style: TextStyle(color: Colors.white.withAlpha(153), fontSize: 12)),
       trailing: Icon(Icons.chevron_right, color: Colors.white.withAlpha(128)),
       onTap: onTap,
+    );
+  }
+}
+
+class HeroToolCard extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final String statusLabel;
+  final Color statusColor;
+  final VoidCallback onTap;
+
+  const HeroToolCard({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.statusLabel,
+    required this.statusColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [color.withAlpha(38), Colors.white.withAlpha(8)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withAlpha(60)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: color.withAlpha(50),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: color, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(subtitle,
+                      style: TextStyle(
+                          color: Colors.white.withAlpha(160), fontSize: 12)),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusColor.withAlpha(30),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: statusColor.withAlpha(80)),
+              ),
+              child: Text(statusLabel,
+                  style: TextStyle(
+                      color: statusColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
