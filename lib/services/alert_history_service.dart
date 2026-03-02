@@ -7,6 +7,10 @@ class AlertHistoryService {
 
   Future<List<Map<String, dynamic>>> load() async {
     final prefs = await SharedPreferences.getInstance();
+    return _loadFromPrefs(prefs);
+  }
+
+  List<Map<String, dynamic>> _loadFromPrefs(SharedPreferences prefs) {
     final raw = prefs.getString(_key);
     if (raw == null) return [];
     final list = jsonDecode(raw) as List;
@@ -19,7 +23,8 @@ class AlertHistoryService {
     required double ppv,
     required String message,
   }) async {
-    final entries = await load();
+    final prefs = await SharedPreferences.getInstance();
+    final entries = _loadFromPrefs(prefs);
     entries.add({
       'timestamp': DateTime.now().toIso8601String(),
       'level': level,
@@ -30,7 +35,6 @@ class AlertHistoryService {
     final trimmed = entries.length > _maxEntries
         ? entries.sublist(entries.length - _maxEntries)
         : entries;
-    final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(trimmed));
   }
 

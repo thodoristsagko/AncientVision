@@ -55,6 +55,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   String _connectionStatus = 'Disconnected';
   int? _lastRssi;
   final _alertHistory = AlertHistoryService();
+  DateTime? _lastHistoryLogTime;
 
   double _accX = 0.0, _accY = 0.0, _accZ = 0.0;
   double _vibration = 0.0;
@@ -1255,7 +1256,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                           leading: Icon(Icons.warning_rounded,
                               color: isCritical ? Colors.red : const Color(0xFFFFC107)),
                           title: Text(e['message'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 13)),
-                          subtitle: Text('${e['type']} · ${(e['ppv'] as num).toStringAsFixed(2)} mm/s',
+                          subtitle: Text('${e['type']} · ${((e['ppv'] as num?) ?? 0).toStringAsFixed(2)} mm/s',
                               style: const TextStyle(color: Colors.white54, fontSize: 11)),
                           trailing: Text(ago, style: const TextStyle(color: Colors.white38, fontSize: 11)),
                         );
@@ -1282,12 +1283,17 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         hazardType: _hazardType,
         ppvHistory: _ppvKalmanHistory.toList(),
       ));
-      _alertHistory.add(
-        level: level,
-        type: _hazardType,
-        ppv: _ppv,
-        message: message,
-      ).catchError((_) {});
+      final now = DateTime.now();
+      if (_lastHistoryLogTime == null ||
+          now.difference(_lastHistoryLogTime!) > const Duration(seconds: 30)) {
+        _lastHistoryLogTime = now;
+        _alertHistory.add(
+          level: level,
+          type: _hazardType,
+          ppv: _ppv,
+          message: message,
+        ).catchError((_) {});
+      }
     } catch (e) {
       debugPrint('Alert callback failed: $e');
     }
