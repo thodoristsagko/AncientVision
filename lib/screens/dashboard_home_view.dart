@@ -2,12 +2,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../widgets/dashboard_home_widgets.dart';
 import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_service.dart';
 import 'notifications_screen.dart';
 import 'qr_scanner_screen.dart';
+import 'analytics_screen.dart';
 
 class DashboardHomeView extends StatefulWidget {
   const DashboardHomeView({super.key});
@@ -25,6 +27,11 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
   bool _isSyncing = false;
   int _unreadNotifications = 0;
 
+  int _significantFindings = 0;
+  Map<String, int> _findingsByType = {};
+  List<int> _last7DaysCounts = List.filled(7, 0);
+  bool _statsLoading = true;
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +40,45 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
     _loadLastFindings();
     _checkOfflineData();
     _loadUnreadNotifications();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('findings')
+          .get()
+          .timeout(const Duration(seconds: 10));
+      final now = DateTime.now();
+      int significant = 0;
+      final byType = <String, int>{};
+      final days = List.filled(7, 0);
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        if (data['isSignificant'] == true) significant++;
+        final type = (data['type'] as String? ?? 'Other').trim();
+        final key = ['Coin', 'Fragment', 'Structure'].contains(type) ? type : 'Other';
+        byType[key] = (byType[key] ?? 0) + 1;
+        final raw = data['createdAt'];
+        DateTime? created;
+        if (raw is String) created = DateTime.tryParse(raw);
+        if (raw is Timestamp) created = raw.toDate();
+        if (created != null) {
+          final daysAgo = now.difference(created).inDays;
+          if (daysAgo >= 0 && daysAgo < 7) days[6 - daysAgo]++;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _significantFindings = significant;
+          _findingsByType = byType;
+          _last7DaysCounts = days;
+          _statsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _statsLoading = false);
+    }
   }
 
   Future<void> _loadUnreadNotifications() async {
@@ -135,6 +181,103 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
     }
   }
 
+  Widget _statChip(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(color: color, fontSize: 22, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+      ],
+    );
+  }
+
+  Widget _buildStatsCard(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const AnalyticsScreen())),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(18),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withAlpha(26)),
+        ),
+        child: _statsLoading
+            ? const SizedBox(
+                height: 120,
+                child: Center(child: CircularProgressIndicator(color: Color(0xFFFFC107))),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Findings Overview',
+                      style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _statChip('Total', _totalFindings.toString(), Colors.white70),
+                      _statChip('Significant', _significantFindings.toString(), const Color(0xFFFFC107)),
+                      _statChip('Today', _todayFindings.toString(), const Color(0xFF2196F3)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 80,
+                    child: BarChart(
+                      BarChartData(
+                        alignment: BarChartAlignment.spaceAround,
+                        maxY: (_last7DaysCounts.fold(0, (a, b) => a > b ? a : b) + 1).toDouble(),
+                        barTouchData: BarTouchData(enabled: false),
+                        titlesData: FlTitlesData(
+                          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (value, _) {
+                                final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                                final today = DateTime.now().weekday - 1;
+                                final idx = ((today - (6 - value.toInt())) % 7 + 7) % 7;
+                                return Text(days[idx],
+                                    style: const TextStyle(color: Colors.white38, fontSize: 9));
+                              },
+                              reservedSize: 16,
+                            ),
+                          ),
+                        ),
+                        gridData: const FlGridData(show: false),
+                        borderData: FlBorderData(show: false),
+                        barGroups: _last7DaysCounts.asMap().entries.map((e) =>
+                            BarChartGroupData(x: e.key, barRods: [
+                              BarChartRodData(
+                                toY: e.value.toDouble(),
+                                color: const Color(0xFFFFC107),
+                                width: 14,
+                                borderRadius: BorderRadius.circular(4),
+                              )
+                            ])).toList(),
+                      ),
+                    ),
+                  ),
+                  if (_findingsByType.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: _findingsByType.entries.map((e) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('${e.key}: ${e.value}',
+                            style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                      )).toList(),
+                    ),
+                  ],
+                ],
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -223,6 +366,10 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
 
               // RECENT FINDINGS
               LastFindingsCard(findings: _lastFindings),
+              const SizedBox(height: 16),
+
+              // FINDINGS STATS CARD
+              _buildStatsCard(context),
 
               const SizedBox(height: 80),
             ],
