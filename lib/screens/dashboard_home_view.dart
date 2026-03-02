@@ -35,7 +35,6 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
   @override
   void initState() {
     super.initState();
-    _loadFindingsCounts();
     _loadUserName();
     _loadLastFindings();
     _checkOfflineData();
@@ -50,7 +49,9 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
           .get()
           .timeout(const Duration(seconds: 10));
       final now = DateTime.now();
+      final startOfDay = DateTime(now.year, now.month, now.day);
       int significant = 0;
+      int todayCount = 0;
       final byType = <String, int>{};
       final days = List.filled(7, 0);
       for (final doc in snap.docs) {
@@ -66,17 +67,21 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
         if (created != null) {
           final daysAgo = now.difference(created).inDays;
           if (daysAgo >= 0 && daysAgo < 7) days[6 - daysAgo]++;
+          if (!created.isBefore(startOfDay)) todayCount++;
         }
       }
       if (mounted) {
         setState(() {
+          _totalFindings = snap.docs.length;
+          _todayFindings = todayCount;
           _significantFindings = significant;
           _findingsByType = byType;
           _last7DaysCounts = days;
           _statsLoading = false;
         });
       }
-    } catch (_) {
+    } catch (e, stack) {
+      debugPrint('_loadStats error: $e\n$stack');
       if (mounted) setState(() => _statsLoading = false);
     }
   }
@@ -107,7 +112,7 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
           backgroundColor: const Color(0xFF4CAF50),
         ),
       );
-      _loadFindingsCounts();
+      _loadStats();
       _loadLastFindings();
     }
   }
@@ -152,32 +157,14 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
         if (mounted) setState(() => _userName = (profile['fullName'] as String).split(' ').first);
         return;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('_loadUserName error: $e');
+    }
     if (user.email != null && user.email!.isNotEmpty) {
       final name = user.email!.split('@').first;
       if (mounted) setState(() => _userName = name[0].toUpperCase() + name.substring(1).toLowerCase());
     } else {
       if (mounted) setState(() => _userName = 'User');
-    }
-  }
-
-  Future<void> _loadFindingsCounts() async {
-    try {
-      final totalSnapshot = await FirebaseFirestore.instance.collection('findings').get();
-      final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final todaySnapshot = await FirebaseFirestore.instance
-          .collection('findings')
-          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .get();
-      if (mounted) {
-        setState(() {
-          _totalFindings = totalSnapshot.docs.length;
-          _todayFindings = todaySnapshot.docs.length;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading findings counts: $e');
     }
   }
 
@@ -237,11 +224,13 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
                             sideTitles: SideTitles(
                               showTitles: true,
                               getTitlesWidget: (value, _) {
-                                final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-                                final today = DateTime.now().weekday - 1;
-                                final idx = ((today - (6 - value.toInt())) % 7 + 7) % 7;
-                                return Text(days[idx],
-                                    style: const TextStyle(color: Colors.white38, fontSize: 9));
+                                final i = value.toInt();
+                                final date = DateTime.now().add(Duration(days: i - 6));
+                                const abbr = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+                                return Text(
+                                  abbr[date.weekday - 1],
+                                  style: const TextStyle(color: Colors.white38, fontSize: 9),
+                                );
                               },
                               reservedSize: 16,
                             ),
