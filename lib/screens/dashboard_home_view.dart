@@ -173,12 +173,22 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
     }
   }
 
-  Widget _statChip(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(value, style: TextStyle(color: color, fontSize: 22, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-      ],
+  Widget _statChip(String label, int value, Color color) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: value.toDouble()),
+      duration: const Duration(milliseconds: 800),
+      curve: Curves.easeOut,
+      builder: (_, animated, __) => Column(
+        children: [
+          Text(
+            animated.round().toString(),
+            style: TextStyle(
+                color: color, fontSize: 22, fontWeight: FontWeight.bold),
+          ),
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        ],
+      ),
     );
   }
 
@@ -208,9 +218,9 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _statChip('Total', _totalFindings.toString(), Colors.white70),
-                      _statChip('Significant', _significantFindings.toString(), const Color(0xFFFFC107)),
-                      _statChip('Today', _todayFindings.toString(), const Color(0xFF2196F3)),
+                      _statChip('Total', _totalFindings, Colors.white70),
+                      _statChip('Significant', _significantFindings, const Color(0xFFFFC107)),
+                      _statChip('Today', _todayFindings, const Color(0xFF2196F3)),
                     ],
                   ),
                   const SizedBox(height: 16),
