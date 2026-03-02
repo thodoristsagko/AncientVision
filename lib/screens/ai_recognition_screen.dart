@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/ai_classification_service.dart';
 import '../services/gemini_coin_service.dart';
+import '../services/site_service.dart';
 
 /// AI-powered COIN recognition screen
 /// Captures front and back photos, then identifies the coin using Gemini AI
@@ -23,6 +24,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen>
   CoinClassificationResult? _coinResult;
   bool _isProcessing = false;
   bool _isSignificant = false;
+  String _site = '';
   late AnimationController _ringController;
   late Animation<double> _ringAnimation;
   String? _error;
@@ -37,6 +39,9 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen>
       duration: const Duration(milliseconds: 1000),
     );
     _ringAnimation = CurvedAnimation(parent: _ringController, curve: Curves.easeOut);
+    SiteService().getActiveSite().then((site) {
+      if (mounted && site.isNotEmpty) setState(() => _site = site);
+    });
   }
 
   @override
@@ -137,6 +142,7 @@ class _AIRecognitionScreenState extends State<AIRecognitionScreen>
       'characteristics': _coinResult!.characteristics,
       'regions': _coinResult!.regions,
       'isSignificant': _isSignificant,
+      'site': _site,
     });
   }
 

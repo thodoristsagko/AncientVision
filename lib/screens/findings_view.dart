@@ -14,6 +14,7 @@ import 'ai_recognition_screen.dart';
 import 'manual_entry_form_screen.dart';
 import '../widgets/finding_detail_card.dart';
 import '../config/env_config.dart';
+import '../services/site_service.dart';
 
 class FindingsView extends StatefulWidget {
   const FindingsView({super.key});
@@ -35,10 +36,16 @@ class FindingsViewState extends State<FindingsView> {
   bool _showFilters = false;
   bool _showSignificantOnly = false;
 
+  final _siteService = SiteService();
+  String _activeSite = '';
+
   @override
   void initState() {
     super.initState();
     _loadFindings();
+    _siteService.getActiveSite().then((s) {
+      if (mounted) setState(() => _activeSite = s);
+    });
   }
 
   @override
@@ -282,6 +289,87 @@ class FindingsViewState extends State<FindingsView> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showSiteSelector(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1C2523),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: FutureBuilder<List<String>>(
+          future: _siteService.getSites(),
+          builder: (ctx, snap) {
+            final sites = snap.data ?? [];
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Select Site',
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                ...sites.map((s) => ListTile(
+                  title: Text(s, style: const TextStyle(color: Colors.white)),
+                  trailing: _activeSite == s
+                      ? const Icon(Icons.check, color: Color(0xFFFFC107))
+                      : null,
+                  onTap: () async {
+                    await _siteService.setActiveSite(s);
+                    if (mounted) setState(() => _activeSite = s);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                )),
+                const Divider(color: Colors.white12),
+                ListTile(
+                  leading: const Icon(Icons.add, color: Color(0xFFFFC107)),
+                  title: const Text('New site…', style: TextStyle(color: Color(0xFFFFC107))),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final name = await _showNewSiteDialog(context);
+                    if (name != null && name.isNotEmpty) {
+                      await _siteService.addSite(name);
+                      await _siteService.setActiveSite(name);
+                      if (mounted) setState(() => _activeSite = name);
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _showNewSiteDialog(BuildContext context) {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C2523),
+        title: const Text('New Site', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Site name (e.g. Kalapodi Trench A)',
+            hintStyle: TextStyle(color: Colors.white38),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Add', style: TextStyle(color: Color(0xFFFFC107))),
+          ),
+        ],
       ),
     );
   }
@@ -603,6 +691,48 @@ class FindingsViewState extends State<FindingsView> {
                 ],
                 const SizedBox(height: 12),
 
+                // Site selector chip
+                GestureDetector(
+                  onTap: () => _showSiteSelector(context),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(20),
+                      borderRadius: BorderRadius.circular(20),
+                      border: _activeSite.isNotEmpty
+                          ? Border.all(color: Colors.white.withAlpha(50))
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _activeSite.isNotEmpty
+                              ? Icons.location_on_rounded
+                              : Icons.add_location_alt_rounded,
+                          color: _activeSite.isNotEmpty
+                              ? const Color(0xFFFFC107)
+                              : Colors.white54,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _activeSite.isNotEmpty ? _activeSite : 'Set site',
+                          style: TextStyle(
+                            color: _activeSite.isNotEmpty ? Colors.white70 : Colors.white54,
+                            fontSize: 12,
+                          ),
+                        ),
+                        if (_activeSite.isNotEmpty) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.expand_more, color: Colors.white38, size: 14),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+
               // Show loading or empty state
               if (_isLoading)
                 Container(
@@ -852,7 +982,7 @@ Future<void> _handleQuickCaptureResult(BuildContext context, Map<String, dynamic
     'id': localId,
     'name': description?.isNotEmpty == true ? description : 'Quick Capture ${DateTime.now().toIso8601String().split('T')[0]}',
     'type': typeLabel,
-    'site': 'Field Site',
+    'site': (result['site'] as String?)?.isNotEmpty == true ? result['site'] as String : 'Field Site',
     'date': DateTime.now().toIso8601String().split('T')[0],
     'description': description ?? '',
     'latitude': location?['latitude'] ?? 0.0,

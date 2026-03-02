@@ -7,6 +7,7 @@ import '../widgets/dashboard_home_widgets.dart';
 import '../services/auth_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/notification_service.dart';
+import '../services/site_service.dart';
 import 'notifications_screen.dart';
 import 'qr_scanner_screen.dart';
 import 'analytics_screen.dart';
@@ -31,6 +32,7 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
   Map<String, int> _findingsByType = {};
   List<int> _last7DaysCounts = List.filled(7, 0);
   bool _statsLoading = true;
+  String _activeSite = '';
 
   @override
   void initState() {
@@ -40,6 +42,9 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
     _checkOfflineData();
     _loadUnreadNotifications();
     _loadStats();
+    SiteService().getActiveSite().then((s) {
+      if (mounted) setState(() => _activeSite = s);
+    });
   }
 
   Future<void> _loadStats() async {
@@ -289,9 +294,26 @@ class DashboardHomeViewState extends State<DashboardHomeView> {
                   const LogoCard(),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      'Hello, ${_userName.isEmpty ? "..." : _userName}',
-                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Hello, ${_userName.isEmpty ? "..." : _userName}',
+                          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+                        ),
+                        if (_activeSite.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.location_on_rounded, color: Color(0xFFFFC107), size: 14),
+                                const SizedBox(width: 4),
+                                Text(_activeSite,
+                                    style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   _headerIcon(

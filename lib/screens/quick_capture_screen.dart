@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../models/artifact_classification.dart';
 import '../services/progress_service.dart';
+import '../services/site_service.dart';
 import '../utils/app_styles.dart';
 
 /// Quick Capture Mode - Simple single photo documentation
@@ -30,6 +31,8 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
   Position? _currentPosition;
   final _progressService = ProgressService();
 
+  String _site = '';
+
   // Camera controls
   double _currentZoom = 1.0;
   double _minZoom = 1.0;
@@ -44,6 +47,9 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
     _initializeCamera();
     _getCurrentLocation();
     _progressService.initialize();
+    SiteService().getActiveSite().then((site) {
+      if (mounted && site.isNotEmpty) setState(() => _site = site);
+    });
   }
 
   Future<void> _initializeCamera() async {
@@ -744,6 +750,7 @@ class _QuickCaptureScreenState extends State<QuickCaptureScreen> {
         'persistedPath': persistedPath,
         'type': _selectedType,
         'description': _description,
+        'site': _site,
         'location': _currentPosition != null
             ? {
                 'latitude': _currentPosition!.latitude,

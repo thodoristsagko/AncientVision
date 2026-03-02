@@ -14,6 +14,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/local_storage_service.dart';
 import '../services/image_service.dart';
+import '../services/site_service.dart';
 import '../models/reconstruction_result.dart';
 import '../config/env_config.dart';
 
@@ -98,6 +99,13 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen>
 
     // Load draft if exists
     _loadDraft();
+
+    // Pre-fill site from active site (only if draft didn't set it)
+    SiteService().getActiveSite().then((site) {
+      if (mounted && site.isNotEmpty && _siteController.text.isEmpty) {
+        setState(() => _siteController.text = site);
+      }
+    });
 
     // Setup auto-save (saves every 30 seconds)
     _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) {
