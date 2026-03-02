@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/local_storage_service.dart';
 import '../services/image_service.dart';
 import '../models/reconstruction_result.dart';
@@ -31,7 +33,8 @@ class ManualEntryFormScreen extends StatefulWidget {
   State<ManualEntryFormScreen> createState() => _ManualEntryFormScreenState();
 }
 
-class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
+class _ManualEntryFormScreenState extends State<ManualEntryFormScreen>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _typeController = TextEditingController();
@@ -49,6 +52,8 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   bool _isSaving = false;
   bool _isSignificant = false;
   bool _isGettingLocation = false;
+  bool _isListening = false;
+  late AnimationController _micPulseController;
 
   // Auto-save functionality
   Timer? _autoSaveTimer;
@@ -75,6 +80,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
   @override
   void initState() {
     super.initState();
+    _micPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
     _loadNextId();
     _generateRandomHints();
     // Set today's date as default
@@ -650,6 +659,42 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     }
   }
 
+  Future<void> _toggleVoice() async {
+    final stt = SpeechToText();
+    if (_isListening) {
+      await stt.stop();
+      if (mounted) setState(() => _isListening = false);
+      return;
+    }
+    final permission = await Permission.microphone.request();
+    if (!permission.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission required for voice input')),
+        );
+      }
+      return;
+    }
+    final available = await stt.initialize(
+      onError: (_) { if (mounted) setState(() => _isListening = false); },
+    );
+    if (!available) return;
+    if (mounted) setState(() => _isListening = true);
+    await stt.listen(
+      onResult: (result) {
+        if (result.finalResult && result.recognizedWords.isNotEmpty) {
+          final current = _descriptionController.text;
+          _descriptionController.text = current.isEmpty
+              ? result.recognizedWords
+              : '$current ${result.recognizedWords}';
+        }
+      },
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 5),
+    );
+    if (mounted) setState(() => _isListening = false);
+  }
+
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
@@ -661,6 +706,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     _dateController.dispose();
     _latController.dispose();
     _lngController.dispose();
+    _micPulseController.dispose();
     super.dispose();
   }
 
@@ -878,6 +924,20 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                     icon: Icons.description_outlined,
                     maxLines: 3,
                     isRequired: false,
+                    suffixIcon: AnimatedBuilder(
+                      animation: _micPulseController,
+                      builder: (_, __) => IconButton(
+                        icon: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none,
+                          color: _isListening
+                              ? Color.lerp(const Color(0xFFE53935), const Color(0xFFFFC107),
+                                  _micPulseController.value)!
+                              : Colors.white54,
+                        ),
+                        onPressed: _toggleVoice,
+                        tooltip: _isListening ? 'Stop listening' : 'Voice input',
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   _buildFormField(
@@ -1360,6 +1420,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
     required IconData icon,
     int maxLines = 1,
     bool isRequired = true,
+    Widget? suffixIcon,
   }) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -1420,6 +1481,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen> {
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.zero,
+                          suffixIcon: suffixIcon,
                         ),
                         validator: isRequired ? (value) {
                           if (value == null || value.isEmpty) {
