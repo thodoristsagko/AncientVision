@@ -23,6 +23,7 @@ import '../../utils/ble_parser.dart' show RawAccelReassembler;
 import '../vibration_event_log_screen.dart';
 import '../../main.dart' show AlertMetrics;
 import '../../services/translation_service.dart';
+import '../../services/alert_history_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -53,6 +54,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   bool _isConnecting = false;
   String _connectionStatus = 'Disconnected';
   int? _lastRssi;
+  final _alertHistory = AlertHistoryService();
 
   double _accX = 0.0, _accY = 0.0, _accZ = 0.0;
   double _vibration = 0.0;
@@ -1193,6 +1195,82 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   }
 
   /// Trigger full-screen alert via parent Dashboard (works on all tabs)
+  void _showAlertHistory(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.3,
+        builder: (_, controller) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1C2523),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
+                child: Row(
+                  children: [
+                    const Text('Alert History',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () async {
+                        await _alertHistory.clear();
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                      child: const Text('Clear', style: TextStyle(color: Colors.white54)),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: Colors.white12),
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _alertHistory.load(),
+                  builder: (_, snap) {
+                    if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)));
+                    final entries = snap.data!.reversed.toList();
+                    if (entries.isEmpty) {
+                      return const Center(child: Text('No alerts recorded', style: TextStyle(color: Colors.white54)));
+                    }
+                    return ListView.builder(
+                      controller: controller,
+                      itemCount: entries.length,
+                      itemBuilder: (_, i) {
+                        final e = entries[i];
+                        final ts = DateTime.tryParse(e['timestamp'] ?? '');
+                        final diff = ts != null ? DateTime.now().difference(ts) : null;
+                        final ago = diff == null ? '' :
+                            diff.inMinutes < 1 ? 'just now' :
+                            diff.inHours < 1 ? '${diff.inMinutes}m ago' :
+                            diff.inDays < 1 ? '${diff.inHours}h ago' :
+                            '${diff.inDays}d ago';
+                        final isCritical = e['level'] == 'critical';
+                        return ListTile(
+                          leading: Icon(Icons.warning_rounded,
+                              color: isCritical ? Colors.red : const Color(0xFFFFC107)),
+                          title: Text(e['message'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                          subtitle: Text('${e['type']} · ${(e['ppv'] as num).toStringAsFixed(2)} mm/s',
+                              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                          trailing: Text(ago, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _triggerFullScreenAlert(String message, String level) {
     try {
       widget.onAlert(message, level, AlertMetrics(
@@ -1204,6 +1282,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         hazardType: _hazardType,
         ppvHistory: _ppvKalmanHistory.toList(),
       ));
+      _alertHistory.add(
+        level: level,
+        type: _hazardType,
+        ppv: _ppv,
+        message: message,
+      ).catchError((_) {});
     } catch (e) {
       debugPrint('Alert callback failed: $e');
     }
@@ -1583,6 +1667,14 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                               ),
                             ),
                           ],
+                          const SizedBox(width: 6),
+                          IconButton(
+                            icon: const Icon(Icons.history_rounded, color: Colors.white70, size: 22),
+                            tooltip: 'Alert History',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () => _showAlertHistory(context),
+                          ),
                           const Spacer(),
                           // Scan/Reconnect
                           if (!isConnected)
