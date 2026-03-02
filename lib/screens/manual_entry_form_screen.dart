@@ -54,6 +54,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen>
   bool _isGettingLocation = false;
   bool _isListening = false;
   late AnimationController _micPulseController;
+  final _stt = SpeechToText();
 
   // Auto-save functionality
   Timer? _autoSaveTimer;
@@ -83,7 +84,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen>
     _micPulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
+    );
     _loadNextId();
     _generateRandomHints();
     // Set today's date as default
@@ -660,10 +661,10 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen>
   }
 
   Future<void> _toggleVoice() async {
-    final stt = SpeechToText();
     if (_isListening) {
-      await stt.stop();
+      await _stt.stop();
       if (mounted) setState(() => _isListening = false);
+      _micPulseController.stop();
       return;
     }
     final permission = await Permission.microphone.request();
@@ -675,12 +676,16 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen>
       }
       return;
     }
-    final available = await stt.initialize(
-      onError: (_) { if (mounted) setState(() => _isListening = false); },
+    final available = await _stt.initialize(
+      onError: (_) {
+        if (mounted) setState(() => _isListening = false);
+        _micPulseController.stop();
+      },
     );
     if (!available) return;
     if (mounted) setState(() => _isListening = true);
-    await stt.listen(
+    _micPulseController.repeat(reverse: true);
+    await _stt.listen(
       onResult: (result) {
         if (result.finalResult && result.recognizedWords.isNotEmpty) {
           final current = _descriptionController.text;
@@ -693,6 +698,7 @@ class _ManualEntryFormScreenState extends State<ManualEntryFormScreen>
       pauseFor: const Duration(seconds: 5),
     );
     if (mounted) setState(() => _isListening = false);
+    _micPulseController.stop();
   }
 
   @override
