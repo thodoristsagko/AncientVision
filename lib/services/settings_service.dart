@@ -101,6 +101,7 @@ class AppSettings {
 
   // Sensor
   final String lockedSensorMac;
+  final double calibrationBaselinePpv;
 
   // Display extras
   final bool nightMode;
@@ -130,6 +131,7 @@ class AppSettings {
     this.highQualityPreview = false,
     this.maxPhotosPerScan = 50,
     this.lockedSensorMac = '',
+    this.calibrationBaselinePpv = 0.0,
     this.nightMode = false,
   });
 
@@ -165,6 +167,7 @@ class AppSettings {
     bool? highQualityPreview,
     int? maxPhotosPerScan,
     String? lockedSensorMac,
+    double? calibrationBaselinePpv,
     bool? nightMode,
   }) =>
       AppSettings(
@@ -192,6 +195,7 @@ class AppSettings {
         highQualityPreview: highQualityPreview ?? this.highQualityPreview,
         maxPhotosPerScan: maxPhotosPerScan ?? this.maxPhotosPerScan,
         lockedSensorMac: lockedSensorMac ?? this.lockedSensorMac,
+        calibrationBaselinePpv: calibrationBaselinePpv ?? this.calibrationBaselinePpv,
         nightMode: nightMode ?? this.nightMode,
       );
 
@@ -220,6 +224,7 @@ class AppSettings {
         'highQualityPreview': highQualityPreview,
         'maxPhotosPerScan': maxPhotosPerScan,
         'lockedSensorMac': lockedSensorMac,
+        'calibrationBaselinePpv': calibrationBaselinePpv,
         'nightMode': nightMode,
       };
 
@@ -257,6 +262,7 @@ class AppSettings {
         highQualityPreview: json['highQualityPreview'] ?? false,
         maxPhotosPerScan: json['maxPhotosPerScan'] ?? 50,
         lockedSensorMac: json['lockedSensorMac'] ?? '',
+        calibrationBaselinePpv: (json['calibrationBaselinePpv'] ?? 0.0).toDouble(),
         nightMode: json['nightMode'] ?? false,
       );
 }
@@ -399,6 +405,9 @@ class SettingsService extends ChangeNotifier {
         break;
       case 'lockedSensorMac':
         _settings = _settings.copyWith(lockedSensorMac: value as String);
+        break;
+      case 'calibrationBaselinePpv':
+        _settings = _settings.copyWith(calibrationBaselinePpv: value as double);
         break;
       case 'nightMode':
         _settings = _settings.copyWith(nightMode: value as bool);

@@ -138,6 +138,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   bool _isCalibrating = false;
   String? _calibrationSiteName;
 
+  // PPV baseline calibration
+  static const int _kCalibrationSeconds = 5;
+  bool _isPpvCalibrating = false;
+  final List<double> _calibrationSamples = [];
+  final _settingsServiceCal = SettingsService();
+
   // Translation
   final _t = TranslationService();
 
@@ -763,6 +769,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
           // Parse v2.0+ fields (backward compatible - defaults to 0 if missing)
           _ppv = (data['ppv'] as num?)?.toDouble() ?? 0.0;
+          if (_isPpvCalibrating) _calibrationSamples.add(_ppv);
           if (_ppv > 0 || _rms > 0) _hasReceivedVibData = true;
           _rms = (data['rms'] as num?)?.toDouble() ?? 0.0;
           _crestFactor = (data['crest'] as num?)?.toDouble() ?? 0.0;
@@ -794,10 +801,10 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           }
 
           // PPV alarm: DIN 4150-3 heritage limit exceeded
-          if (_ppv > 3.0) {
+          if (_effectivePpv > 3.0) {
             _triggerFullScreenAlert(
               _t.tr('stop_work'),
-              _ppv > 10.0 ? 'critical' : 'warning',
+              _effectivePpv > 10.0 ? 'critical' : 'warning',
             );
             HapticFeedback.heavyImpact();
           }
@@ -1476,10 +1483,10 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   String _getVibrationStatus() {
     // DIN 4150-3 compliant status using PPV
-    if (_ppv > 10.0) return _t.tr('critical_evacuate');
-    if (_ppv > 3.0) return _t.tr('din_exceeded');
-    if (_ppv > 2.5) return _t.tr('heritage_limit');
-    if (_ppv > 0.3) return _t.tr('perceptible');
+    if (_effectivePpv > 10.0) return _t.tr('critical_evacuate');
+    if (_effectivePpv > 3.0) return _t.tr('din_exceeded');
+    if (_effectivePpv > 2.5) return _t.tr('heritage_limit');
+    if (_effectivePpv > 0.3) return _t.tr('perceptible');
     // Fallback to legacy threshold if no PPV data
     if (_ppv == 0.0 && _vibration > 0.8) return _t.tr('critical_evacuate');
     if (_ppv == 0.0 && _vibration > 0.3) return _t.tr('use_caution');
@@ -1503,10 +1510,10 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   }
 
   Color _getPPVColor() {
-    if (_ppv > 10.0) return const Color(0xFFE53935); // Red - structural damage
-    if (_ppv > 3.0) return const Color(0xFFFF5722);  // Deep orange - DIN exceeded
-    if (_ppv > 2.5) return const Color(0xFFFF9800);  // Orange - heritage limit
-    if (_ppv > 0.3) return const Color(0xFFFFC107);  // Amber - perceptible
+    if (_effectivePpv > 10.0) return const Color(0xFFE53935); // Red - structural damage
+    if (_effectivePpv > 3.0) return const Color(0xFFFF5722);  // Deep orange - DIN exceeded
+    if (_effectivePpv > 2.5) return const Color(0xFFFF9800);  // Orange - heritage limit
+    if (_effectivePpv > 0.3) return const Color(0xFFFFC107);  // Amber - perceptible
     return const Color(0xFF4CAF50);                    // Green - safe
   }
 
@@ -1608,6 +1615,40 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     );
   }
 
+  // === PPV Baseline Calibration ===
+
+  double get _effectivePpv {
+    final baseline = _settingsServiceCal.settings.calibrationBaselinePpv;
+    return (_ppv - baseline).clamp(0.0, double.infinity);
+  }
+
+  Future<void> _startPpvCalibration() async {
+    if (_isPpvCalibrating) return;
+    setState(() {
+      _isPpvCalibrating = true;
+      _calibrationSamples.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Calibrating… keep sensor still for $_kCalibrationSeconds seconds'),
+        duration: Duration(seconds: _kCalibrationSeconds),
+      ),
+    );
+    await Future.delayed(const Duration(seconds: _kCalibrationSeconds));
+    if (!mounted) return;
+    final mean = _calibrationSamples.isEmpty
+        ? 0.0
+        : _calibrationSamples.fold(0.0, (a, b) => a + b) / _calibrationSamples.length;
+    await _settingsServiceCal.updateSetting('calibrationBaselinePpv', mean);
+    if (!mounted) return;
+    setState(() => _isPpvCalibrating = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Baseline set: ${mean.toStringAsFixed(3)} mm/s')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
@@ -1680,6 +1721,21 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                             onPressed: () => _showAlertHistory(context),
+                          ),
+                          TextButton.icon(
+                            onPressed: _isPpvCalibrating ? null : _startPpvCalibration,
+                            icon: Icon(
+                              _isPpvCalibrating ? Icons.hourglass_top : Icons.tune_rounded,
+                              size: 16,
+                              color: _isPpvCalibrating ? Colors.white38 : Colors.white70,
+                            ),
+                            label: Text(
+                              _isPpvCalibrating ? 'Calibrating…' : 'Calibrate',
+                              style: TextStyle(
+                                color: _isPpvCalibrating ? Colors.white38 : Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
                           const Spacer(),
                           // Scan/Reconnect
@@ -2190,13 +2246,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   /// Determine the simplified safety level from all available data
   String _getSimpleSafetyLevel() {
     // Danger: PPV exceeds DIN 4150-3 heritage limits or critical alert active
-    if (_ppv > 3.0 || _alertLevel == 'critical') return 'danger';
+    if (_effectivePpv > 3.0 || _alertLevel == 'critical') return 'danger';
     // Also danger if legacy vibration is critical and no PPV data
     if (_ppv == 0.0 && _vibration > 0.8) return 'danger';
 
     // Caution: approaching limits, warning alert, or notable vibration
-    if (_ppv > 1.5 || _alertLevel == 'warning') return 'caution';
-    if (_ppv > 0.3) return 'caution';
+    if (_effectivePpv > 1.5 || _alertLevel == 'warning') return 'caution';
+    if (_effectivePpv > 0.3) return 'caution';
     if (_ppv == 0.0 && _vibration > 0.3) return 'caution';
     // Soil moisture out of range
     if (_moisturePercent > 0 && (_moisturePercent < 30 || _moisturePercent > 60)) return 'caution';
