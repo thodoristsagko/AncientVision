@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
@@ -25,6 +26,7 @@ class FindingsViewState extends State<FindingsView> {
   List<Finding> _findings = [];
   List<Finding> _filteredFindings = [];
   bool _isLoading = true;
+  bool _isDemoMode = false;
   int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   FindingSource? _selectedSource; // null means "All"
@@ -124,6 +126,12 @@ class FindingsViewState extends State<FindingsView> {
   }
 
   void showAddOptions(BuildContext context) {
+    if (_isDemoMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Demo mode — connect to save findings')),
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -278,6 +286,40 @@ class FindingsViewState extends State<FindingsView> {
     );
   }
 
+  Future<void> _loadDemoFindings() async {
+    try {
+      final raw = await rootBundle.loadString('assets/data/demo_findings.json');
+      final list = jsonDecode(raw) as List;
+      final findings = list.map((data) => Finding(
+        id: data['id'] as String,
+        name: data['name'] as String,
+        type: data['type'] as String,
+        site: (data['site'] as String?) ?? '',
+        date: data['date'] as String,
+        description: (data['description'] as String?) ?? '',
+        latitude: (data['latitude'] ?? 0.0).toDouble(),
+        longitude: (data['longitude'] ?? 0.0).toDouble(),
+        source: FindingSource.fromString(data['source'] as String?),
+        photoGallery: const [],
+        isSignificant: (data['isSignificant'] as bool?) ?? false,
+      )).toList();
+      setState(() {
+        _findings = findings;
+        _filteredFindings = findings;
+        _isLoading = false;
+        _isDemoMode = true;
+      });
+    } catch (e) {
+      debugPrint('Error loading demo findings: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load demo data')),
+        );
+      }
+    }
+  }
+
   Future<void> _loadFindings() async {
     debugPrint('=== _loadFindings called ===');
     try {
@@ -362,26 +404,7 @@ class FindingsViewState extends State<FindingsView> {
     } catch (e) {
       debugPrint('Error loading findings: $e');
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Failed to load findings: $e')),
-              ],
-            ),
-            backgroundColor: Colors.red.shade700,
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: _loadFindings,
-            ),
-          ),
-        );
+        await _loadDemoFindings();
       }
     }
   }
@@ -610,6 +633,25 @@ class FindingsViewState extends State<FindingsView> {
                   ),
                 )
               else ...[
+                if (_isDemoMode)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFC107).withAlpha(40),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFFC107).withAlpha(100)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.wifi_off_rounded, color: Color(0xFFFFC107), size: 14),
+                        SizedBox(width: 6),
+                        Text('Demo Mode — offline sample data',
+                            style: TextStyle(color: Color(0xFFFFC107), fontSize: 12)),
+                      ],
+                    ),
+                  ),
                 // RECENT FINDINGS TABLE WITH SWIPE TO DELETE
                 Container(
                   padding: const EdgeInsets.all(8),
