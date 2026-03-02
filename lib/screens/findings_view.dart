@@ -31,6 +31,7 @@ class FindingsViewState extends State<FindingsView> {
 
   // Filter chips visibility
   bool _showFilters = false;
+  bool _showSignificantOnly = false;
 
   @override
   void initState() {
@@ -52,6 +53,10 @@ class FindingsViewState extends State<FindingsView> {
       // Filter by source if selected
       if (_selectedSource != null) {
         filtered = filtered.where((f) => f.source == _selectedSource).toList();
+      }
+
+      if (_showSignificantOnly) {
+        filtered = filtered.where((f) => f.isSignificant).toList();
       }
 
       // Filter by search query
@@ -497,6 +502,52 @@ class FindingsViewState extends State<FindingsView> {
                               Text(
                                 _selectedSource!.label,
                                 style: const TextStyle(
+                                  color: Color(0xFFFFC107),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Significant filter toggle
+                    GestureDetector(
+                      onTap: () {
+                        setState(() => _showSignificantOnly = !_showSignificantOnly);
+                        _filterFindings(_searchController.text);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _showSignificantOnly
+                              ? const Color(0xFFFFC107).withAlpha(51)
+                              : Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _showSignificantOnly
+                                ? const Color(0xFFFFC107).withAlpha(128)
+                                : Colors.white.withAlpha(51),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.star_rounded,
+                              color: _showSignificantOnly
+                                  ? const Color(0xFFFFC107)
+                                  : Colors.white.withAlpha(179),
+                              size: 18,
+                            ),
+                            if (_showSignificantOnly) ...[
+                              const SizedBox(width: 4),
+                              const Text(
+                                'Significant',
+                                style: TextStyle(
                                   color: Color(0xFFFFC107),
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,

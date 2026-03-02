@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../config/env_config.dart';
 import '../services/auth_service.dart';
 import '../services/export_service.dart';
+import '../services/pdf_export_service.dart';
 import '../services/local_storage_service.dart';
 import 'field_journal_screen.dart';
 import 'quick_capture_screen.dart';
@@ -135,6 +136,23 @@ class ToolsView extends StatelessWidget {
                           description: 'CSV, JSON, GeoJSON',
                           color: const Color(0xFF607D8B),
                           onTap: () => _showExportDialog(context),
+                        ),
+                        ToolCard(
+                          icon: Icons.picture_as_pdf_rounded,
+                          title: 'PDF Report',
+                          description: 'Share full findings report',
+                          color: const Color(0xFFE53935),
+                          onTap: () async {
+                            try {
+                              await PdfExportService().exportFindingsReport(context);
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Export failed: $e')),
+                                );
+                              }
+                            }
+                          },
                         ),
                       ]),
                       const SizedBox(height: 18),
