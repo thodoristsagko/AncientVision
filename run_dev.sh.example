@@ -1,0 +1,8 @@
+#!/bin/bash
+# Copy this to run_dev.sh and fill in your API keys.
+# run_dev.sh is gitignored — never commit it.
+flutter run \
+  --dart-define=GEMINI_API_KEY=your_gemini_key_here \
+  --dart-define=IMGBB_API_KEY=your_imgbb_key_here \
+  --dart-define=NUMISTA_API_KEY=your_numista_key_here \
+  "$@"
