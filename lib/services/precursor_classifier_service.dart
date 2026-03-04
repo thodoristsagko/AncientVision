@@ -61,6 +61,23 @@ class PrecursorClassifierService {
         trendFeatures['kurtosis_trend'] ?? 1.0, trendFeatures['stalta_trend'] ?? 1.0,
         trendFeatures['cusum_max'] ?? 0.0, autoencoderScore,
       ];
+      if (kDebugMode) {
+        final featureNames = [
+          'rms', 'ppv', 'freq', 'crest', 'centroid', 'kurtosis',
+          'stalta', 'arias', 'cav', 'temp', 'psdSlope',
+          'ppv_trend', 'freq_trend', 'kurtosis_trend', 'stalta_trend',
+          'cusum_max', 'autoencoder_score'
+        ];
+        final zeroFeatures = <String>[];
+        for (int i = 0; i < raw.length; i++) {
+          if (raw[i] == 0.0 && i < featureNames.length) {
+            zeroFeatures.add(featureNames[i]);
+          }
+        }
+        if (zeroFeatures.length > 5) {
+          debugPrint('PrecursorClassifier: WARNING — ${zeroFeatures.length}/17 features are 0.0: $zeroFeatures');
+        }
+      }
       // Apply scaler normalization if available
       final input = _scalerMean.isNotEmpty
           ? List<double>.generate(raw.length, (i) =>

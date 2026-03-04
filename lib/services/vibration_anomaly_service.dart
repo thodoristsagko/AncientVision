@@ -31,6 +31,14 @@ class VibrationAnomalyService {
   bool _isInitialized = false;
   bool _useRuleBased = false;
 
+  // P68: retry counter — how many consecutive ML failures have occurred
+  int _ruleBasedFailCount = 0;
+  static const int _maxMlRetries = 3; // after this many failures, stay rule-based permanently
+
+  // P69: running average inference time
+  double _avgInferenceMs = 0.0;
+  int _inferenceCount = 0;
+
   // Scaler parameters (from training)
   List<double> _scalerMean = [];
   List<double> _scalerScale = [];
@@ -46,6 +54,12 @@ class VibrationAnomalyService {
   String _modelType = 'autoencoder'; // 'autoencoder' or 'vae'
   double _beta = 1.0; // KL divergence weight for VAE scoring
 
+  // P70: Model fingerprint (sum of first 64 bytes of .tflite file)
+  int _modelFingerprint = 0;
+
+  /// P70: Hex fingerprint of the loaded .tflite model bytes.
+  String get modelFingerprint => _modelFingerprint.toRadixString(16);
+
   // Adaptive statistical anomaly detection (Tier 1.5 — between rule-based and ML)
   final AdaptiveAnomalyService _adaptiveService = AdaptiveAnomalyService();
 
@@ -58,6 +72,24 @@ class VibrationAnomalyService {
   AdaptiveAnomalyService get adaptiveService => _adaptiveService;
   MlAnomalyService get mlService => _mlService;
   PrecursorClassifierService get precursorService => _precursorService;
+
+  /// P69: Average TFLite inference time in milliseconds.
+  double get avgInferenceMs => _avgInferenceMs;
+
+  /// P68: Attempt to re-enable ML inference if it previously failed.
+  ///
+  /// Resets [_useRuleBased] to false so the next [detect] call will try the
+  /// TFLite model again. No-op if the failure count has exceeded [_maxMlRetries]
+  /// (permanent rule-based mode until app restart) or the model is not loaded.
+  void attemptMlRetry() {
+    if (_ruleBasedFailCount == 0) return; // no failure recorded
+    if (_ruleBasedFailCount > _maxMlRetries) return; // permanent fallback
+    if (_interpreter == null) return; // model not loaded — can't retry
+    _useRuleBased = false;
+    if (kDebugMode) {
+      debugPrint('VibrationAnomalyService: Retrying ML inference (failCount=$_ruleBasedFailCount)');
+    }
+  }
 
   String get modeLabel {
     if (!_useRuleBased && _isInitialized && _interpreter != null) {
@@ -83,6 +115,21 @@ class VibrationAnomalyService {
       _interpreter =
           await Interpreter.fromAsset('ml/vibration_anomaly.tflite');
       debugPrint('VibrationAnomalyService: TFLite model loaded');
+
+      // P70: Compute model fingerprint from first 64 bytes of file
+      try {
+        final modelBytes = await rootBundle.load('assets/ml/vibration_anomaly.tflite');
+        int fingerprint = 0;
+        final bytes = modelBytes.buffer.asUint8List();
+        final len = bytes.length < 64 ? bytes.length : 64;
+        for (int i = 0; i < len; i++) {
+          fingerprint += bytes[i];
+        }
+        _modelFingerprint = fingerprint;
+        debugPrint('VibrationAnomalyService: Model fingerprint = ${modelFingerprint}');
+      } catch (e) {
+        debugPrint('VibrationAnomalyService: Fingerprint computation failed (non-fatal): $e');
+      }
 
       // Load scaler parameters
       final scalerJson =
@@ -125,6 +172,17 @@ class VibrationAnomalyService {
       await _precursorService.initialize();
 
       _isInitialized = true;
+
+      // P49: Model warm-up — run one dummy inference to pre-warm the TFLite interpreter
+      try {
+        final dummyInput = [List<double>.filled(_inputDim, 0.0)];
+        final dummyOutput = [List<double>.filled(_inputDim, 0.0)];
+        _interpreter!.run(dummyInput, dummyOutput);
+        debugPrint('VibrationAnomalyService: Model warm-up complete');
+      } catch (e) {
+        debugPrint('VibrationAnomalyService: Warm-up failed (non-fatal): $e');
+      }
+
       return true;
     } catch (e) {
       debugPrint('VibrationAnomalyService: ML model not available — using rule-based detection');
@@ -146,6 +204,11 @@ class VibrationAnomalyService {
   ///
   /// Returns: [AnomalyResult] with score and classification.
   AnomalyResult detect(Map<String, double> features) {
+    // P68: attempt to re-enable ML if it previously failed (within retry budget)
+    if (_useRuleBased && _ruleBasedFailCount > 0) {
+      attemptMlRetry();
+    }
+
     // ALWAYS feed the adaptive baseline so it keeps learning
     _adaptiveService.updateBaseline(features);
 
@@ -193,7 +256,13 @@ class VibrationAnomalyService {
       final inputTensor = [input.map((e) => e.toDouble()).toList()];
       final outputTensor = [List<double>.filled(_inputDim, 0.0)];
 
+      // P69: track inference latency for performance monitoring
+      final sw = Stopwatch()..start();
       _interpreter!.run(inputTensor, outputTensor);
+      sw.stop();
+      _avgInferenceMs = (_avgInferenceMs * _inferenceCount + sw.elapsedMilliseconds) /
+          (_inferenceCount + 1);
+      _inferenceCount++;
 
       // Calculate reconstruction error (MSE)
       double mse = 0;
@@ -256,7 +325,15 @@ class VibrationAnomalyService {
         precursorConfidence: precursorResult?.confidence ?? 0.0,
       );
     } catch (e) {
-      debugPrint('VibrationAnomalyService: Inference error: $e — using rule-based fallback');
+      _ruleBasedFailCount++;
+      _useRuleBased = true;
+      if (_ruleBasedFailCount > _maxMlRetries) {
+        debugPrint('VibrationAnomalyService: ML permanently disabled after $_ruleBasedFailCount failures — '
+            'rule-based only until app restart');
+      } else {
+        debugPrint('VibrationAnomalyService: Inference error ($e) — '
+            'rule-based fallback (failCount=$_ruleBasedFailCount, max=$_maxMlRetries)');
+      }
       return _ruleBasedDetect(features);
     }
   }
@@ -416,7 +493,7 @@ class AnomalyResult {
       case AnomalyLevel.anomaly:
         return 'Anomaly';
       case AnomalyLevel.unknown:
-        return 'N/A';
+        return 'Initializing';
     }
   }
 }

@@ -25,6 +25,18 @@ import '../../main.dart' show AlertMetrics;
 import '../../services/translation_service.dart';
 import '../../services/alert_history_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../../services/session_export_service.dart';
+import '../../services/calibration_progress_service.dart';
+import '../../services/inference_timing_service.dart';
+import '../../services/device_memory_service.dart';
+import '../../utils/ble_packet_tracker.dart';
+import '../settings_screen.dart';
+import '../diagnostics_screen.dart';
+import '../about_screen.dart';
+import '../../widgets/ppv_trend_chart.dart';
+import '../../widgets/anomaly_level_badge.dart';
+import '../../services/local_notification_service.dart';
+import '../../services/network_status_service.dart';
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 
@@ -108,6 +120,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   // PPV history for trend graph (DIN 4150-3)
   final CircularBuffer<Map<String, dynamic>> _ppvHistory = CircularBuffer(60);
 
+  // P188: Simple double list for PpvTrendChart widget (capped at 60)
+  final List<double> _ppvChartValues = [];
+
   // Vibration feature log for ML training data
   final CircularBuffer<Map<String, dynamic>> _vibrationFeatureLog = CircularBuffer(500);
 
@@ -184,8 +199,49 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   bool _simpleMode = true;
   bool _hasReceivedVibData = false; // Latches true once PPV/RMS data arrives
 
+  // P46: Session peak tracking
+  double _sessionPeakPpv = 0.0;
+  double _sessionPeakScore = 0.0;
+
+  // P47: All-clear timer (30s continuous normal before showing green confirmed)
+  DateTime? _normalSince;
+
+  // P50: Haptic feedback on level escalation
+  AnomalyLevel _lastLevel = AnomalyLevel.unknown;
+
+  // P57: Inference debounce — max 2Hz
+  DateTime? _lastInferenceTime;
+
+  // P59: Alert escalation — track how long device has been at AnomalyLevel.anomaly
+  DateTime? _anomalySince;
+
+  // P60: Stale data detection (5s no data → show dashes)
+  bool _isStale = false;
+  Timer? _staleTimer;
+
+  // P62: Packet sequence tracking
+  int _lastSeq = 0;
+  DateTime _lastPacketTime = DateTime.now();
+
+  // P61: Session timer
+  final DateTime _sessionStart = DateTime.now();
+  Timer? _sessionTimer;
+  String _sessionElapsed = '00:00:00';
+
   // FFT BLE data from firmware (real spectral bins)
   FftBleData? _lastFftData;
+
+  // P51: Session export
+  final _sessionExportService = SessionExportService.instance;
+
+  // P52: Calibration progress service
+  final _calibrationProgress = CalibrationProgressService(requiredSamples: 100);
+
+  // P55: BLE packet tracker for missed packet detection
+  final _packetTracker = BlePacketTracker();
+
+  // P7: Last connected device hint (from DeviceMemoryService)
+  String? _lastDeviceHint;
 
   // BLE characteristic references for bidirectional communication
   BluetoothCharacteristic? _alertCharacteristic;
@@ -197,12 +253,32 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     _startFirebaseLogging();
     _loadSensorHistory();
     _initAnomalyModel();
+    // P191: Initialize local (OS-level) notifications for critical alerts
+    LocalNotificationService.instance.initialize();
+    // P192: Initialize network status monitoring for offline banner
+    NetworkStatusService.instance.initialize();
+    // P7: Load last connected device name for UI hint
+    DeviceMemoryService.instance.getLastDeviceName().then((name) {
+      if (mounted && name != null) {
+        setState(() => _lastDeviceHint = name);
+      }
+    });
     // Throttled UI refresh: max 2 repaints/sec to prevent flickering
     _uiRefreshTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) {
       if (_uiDirty && mounted) {
         _uiDirty = false;
         setState(() {});
       }
+    });
+
+    // P61: Session timer — update elapsed every second
+    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final elapsed = DateTime.now().difference(_sessionStart);
+      final h = elapsed.inHours.toString().padLeft(2, '0');
+      final m = (elapsed.inMinutes % 60).toString().padLeft(2, '0');
+      final s = (elapsed.inSeconds % 60).toString().padLeft(2, '0');
+      setState(() => _sessionElapsed = '$h:$m:$s');
     });
   }
 
@@ -226,6 +302,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     _reconnectTimer?.cancel();
     _keepAliveTimer?.cancel();
     _uiRefreshTimer?.cancel();
+    _staleTimer?.cancel();
+    _sessionTimer?.cancel();
     _dspService.dispose();
     _anomalyService.dispose();
     super.dispose();
@@ -426,6 +504,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         _reconnectAttempts = 0;
       });
       WakelockPlus.enable();
+
+      // P7: Save connected device to memory for auto-reconnect hint
+      final deviceId = device.remoteId.str;
+      final deviceName = device.platformName.isNotEmpty ? device.platformName : deviceId;
+      DeviceMemoryService.instance.saveDevice(id: deviceId, name: deviceName);
+      if (mounted) setState(() => _lastDeviceHint = deviceName);
 
       _dspService.reset();
       _rawAccelReassembler.reset();
@@ -748,6 +832,26 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       // Update last data received for keepalive monitoring
       _lastDataReceived = DateTime.now();
 
+      // P60: Reset stale timer — cancel any pending stale flag, restart 5s countdown
+      _staleTimer?.cancel();
+      if (_isStale) {
+        _isStale = false;
+        _uiDirty = true;
+      }
+      _staleTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() => _isStale = true);
+        }
+      });
+
+      // P62: Track packet sequence number from firmware "seq" field
+      if (data.containsKey('seq')) {
+        _lastSeq = (data['seq'] as num).toInt();
+        _lastPacketTime = DateTime.now();
+        // P55: Track missed packets via BlePacketTracker
+        _packetTracker.track(_lastSeq);
+      }
+
       // Debug: log received data with full UUID
       debugPrint('>>> PARSED BLE Data UUID=$charUuid data=$data');
 
@@ -770,6 +874,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           // Parse v2.0+ fields (backward compatible - defaults to 0 if missing)
           _ppv = (data['ppv'] as num?)?.toDouble() ?? 0.0;
           if (_isPpvCalibrating) _calibrationSamples.add(_ppv);
+          // P52: Feed calibration progress service on every sample
+          _calibrationProgress.addSample();
           if (_ppv > 0 || _rms > 0) _hasReceivedVibData = true;
           _rms = (data['rms'] as num?)?.toDouble() ?? 0.0;
           _crestFactor = (data['crest'] as num?)?.toDouble() ?? 0.0;
@@ -800,6 +906,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             _ppvPeakTime = DateTime.now();
           }
 
+          // P46: Session peak tracking
+          if (_ppv > _sessionPeakPpv) _sessionPeakPpv = _ppv;
+
           // PPV alarm: DIN 4150-3 heritage limit exceeded
           if (_effectivePpv > 3.0) {
             _triggerFullScreenAlert(
@@ -827,6 +936,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             'stalta': _staLtaRatio,
             'timestamp': DateTime.now(),
           });
+
+          // P188: Feed PpvTrendChart with simple double history
+          _ppvChartValues.add(_ppv);
+          if (_ppvChartValues.length > 60) {
+            _ppvChartValues.removeAt(0);
+          }
 
           // Log feature vector for ML training
           _vibrationFeatureLog.add({
@@ -1023,6 +1138,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
     // 5. ML anomaly detection
     if (_mlModelLoaded && (_ppv > 0 || _rms > 0)) {
+      // P57: Debounce inference to max 2Hz (500ms minimum interval)
+      final now = DateTime.now();
+      if (_lastInferenceTime != null && now.difference(_lastInferenceTime!).inMilliseconds < 500) {
+        // Skip inference this packet — too soon
+      } else {
+        _lastInferenceTime = now;
       try {
         final features = {
           'rms': _rms,
@@ -1038,11 +1159,50 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           'psdSlope': _psdSlope ?? 0.0,
         };
 
+        final inferSw = Stopwatch()..start();
         final result = _anomalyService.detect(features);
+        inferSw.stop();
+        // P48: Record inference timing
+        InferenceTimingService.instance.record(inferSw.elapsedMilliseconds.toDouble());
         _anomalyScoreHistory.add(result.score);
         _lastAnomalyResult = result;
         _lastMLFeatures = features;
         needsRebuild = true;
+
+        // P46: Update session peak anomaly score
+        if (result.score > _sessionPeakScore) _sessionPeakScore = result.score;
+
+        // P47: Track all-clear timer — reset if not normal, start if entering normal
+        if (result.level != AnomalyLevel.normal) {
+          _normalSince = null;
+        } else {
+          _normalSince ??= DateTime.now();
+        }
+
+        // P59: Track how long device stays at AnomalyLevel.anomaly
+        if (result.level == AnomalyLevel.anomaly) {
+          _anomalySince ??= DateTime.now();
+        } else {
+          _anomalySince = null;
+        }
+
+        // P50: Haptic feedback on level UP transitions
+        if (result.level.index > _lastLevel.index) {
+          if (result.level == AnomalyLevel.anomaly) {
+            HapticFeedback.vibrate(); // strong — escalated to anomaly
+          } else {
+            HapticFeedback.mediumImpact(); // moderate escalation
+          }
+        }
+
+        // P191: OS-level notification on anomaly escalation / clear
+        if (result.level == AnomalyLevel.anomaly && _lastLevel != AnomalyLevel.anomaly) {
+          LocalNotificationService.instance.showCriticalAlert(ppv: _ppv);
+        } else if (result.level == AnomalyLevel.normal && _lastLevel == AnomalyLevel.anomaly) {
+          LocalNotificationService.instance.cancelAll();
+        }
+
+        _lastLevel = result.level;
 
         // Alarm + haptic for red-level ML anomaly
         if (result.level == AnomalyLevel.anomaly && result.score >= 0.8) {
@@ -1062,6 +1222,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       } catch (e) {
         debugPrint('ML anomaly detection error: $e');
       }
+      } // end else (debounce guard)
     }
 
     // 5b. Feed PSD slope to adaptive service and compute Fukuzono
@@ -1656,6 +1817,40 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
     return Stack(
       children: [
+        // P192: Offline banner — shown at top when no network
+        ListenableBuilder(
+          listenable: NetworkStatusService.instance,
+          builder: (context, _) {
+            if (NetworkStatusService.instance.status != NetworkStatus.disconnected) {
+              return const SizedBox.shrink();
+            }
+            return Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  color: Colors.orange.withAlpha(220),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off_rounded, color: Colors.white, size: 16),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Offline — data not syncing',
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+
         // Main content
         Container(
           decoration: const BoxDecoration(
@@ -1695,6 +1890,35 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                         ],
                       ),
                       const SizedBox(height: 6),
+                      // P61: Session timer + P51: Export button
+                      Row(
+                        children: [
+                          Icon(Icons.timer_outlined, color: Colors.white.withAlpha(80), size: 13),
+                          const SizedBox(width: 4),
+                          Text('Session: $_sessionElapsed',
+                              style: TextStyle(color: Colors.white.withAlpha(80), fontSize: 11)),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () async {
+                              final records = _vibrationFeatureLog.toList();
+                              if (records.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('No session data to export yet')),
+                                );
+                                return;
+                              }
+                              try {
+                                await _sessionExportService.exportSession(records);
+                              } catch (e) {
+                                debugPrint('Session export error: $e');
+                              }
+                            },
+                            child: Icon(Icons.upload_rounded, color: Colors.white.withAlpha(120), size: 16),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+
                       // Action row
                       Row(
                         children: [
@@ -1721,6 +1945,36 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                             onPressed: () => _showAlertHistory(context),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.info_outline, color: Colors.white70, size: 22),
+                            tooltip: 'About',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AboutScreen()),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.developer_mode, color: Colors.white70, size: 22),
+                            tooltip: 'Diagnostics',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const DiagnosticsScreen()),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.settings_rounded, color: Colors.white70, size: 22),
+                            tooltip: 'Settings',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                            ),
                           ),
                           TextButton.icon(
                             onPressed: _isPpvCalibrating ? null : _startPpvCalibration,
@@ -1866,29 +2120,59 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   /// Build STATUS tab - most important, shown first
   Widget _buildStatusTab(bool isConnected) {
+    // P59: Check if anomaly has been sustained >15s → escalate display to CRITICAL
+    final bool _isEscalatedCritical = _anomalySince != null &&
+        DateTime.now().difference(_anomalySince!).inSeconds > 15;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // P59: Escalation banner — shown when anomaly sustained >15s
+          if (_isEscalatedCritical) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.red.withAlpha(40),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.red.withAlpha(150), width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.crisis_alert_rounded, color: Colors.red, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'CRITICAL — Anomaly sustained for ${DateTime.now().difference(_anomalySince!).inSeconds}s. Evacuate area immediately.',
+                      style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           // STATS ROW - PPV (primary metric) + Moisture
           Row(
             children: [
               Expanded(
                 child: SafetyStatCard(
                   title: 'PPV (DIN 4150-3)',
-                  value: _ppv > 0 ? '${_ppv.toStringAsFixed(1)} mm/s' : '${_vibration.toStringAsFixed(3)} g',
-                  status: _getVibrationStatus(),
-                  statusColor: _getPPVColor(),
+                  value: _isStale ? '---' : (_ppv > 0 ? '${_ppv.toStringAsFixed(1)} mm/s' : '${_vibration.toStringAsFixed(3)} g'),
+                  status: _isStale ? 'No data' : _getVibrationStatus(),
+                  statusColor: _isStale ? Colors.grey : _getPPVColor(),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: SafetyStatCard(
                   title: 'Soil Moisture',
-                  value: '$_moisturePercent %',
-                  status: _getMoistureStatus(),
-                  statusColor: (_moisturePercent < 30 || _moisturePercent > 60) ? Colors.orange : null,
+                  value: _isStale ? '---' : '$_moisturePercent %',
+                  status: _isStale ? 'No data' : _getMoistureStatus(),
+                  statusColor: _isStale ? Colors.grey : ((_moisturePercent < 30 || _moisturePercent > 60) ? Colors.orange : null),
                 ),
               ),
             ],
@@ -1926,6 +2210,29 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           ),
           const SizedBox(height: 12),
 
+          // P188: PPV rolling trend (compact sparkline below main analysis card)
+          if (_ppvChartValues.isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(10),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('PPV Trend', style: TextStyle(color: Colors.white.withAlpha(160), fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  RepaintBoundary(
+                    child: PpvTrendChart(values: _ppvChartValues, threshold: 0.3),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           // Precursor pattern warning card (if active)
           if (_isPrecursorDriven && _lastPrecursorPattern != null) ...[
             Container(
@@ -1945,12 +2252,14 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'PRECURSOR: ${_formatPrecursorPattern(_lastPrecursorPattern!)}',
+                          'PRECURSOR: ${_getPrecursorDescription(_lastPrecursorPattern)}',
                           style: const TextStyle(color: Color(0xFFFF6F00), fontSize: 13, fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Confidence: ${(_lastPrecursorScore * 100).toStringAsFixed(0)}% — Physics-informed pattern match',
+                          'Confidence: ${(_lastPrecursorScore * 100).toStringAsFixed(0)}%'
+                          '${_lastAnomalyResult.precursorConfidence >= 0.0 ? ' · Classifier: ${(_lastAnomalyResult.precursorConfidence * 100).toStringAsFixed(1)}%' : ''}'
+                          ' — Physics-informed pattern match',
                           style: TextStyle(color: const Color(0xFFFF6F00).withAlpha(180), fontSize: 11),
                         ),
                       ],
@@ -2011,6 +2320,42 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             const SizedBox(height: 12),
           ],
 
+          // P52: Calibration progress bar (shown while not yet calibrated)
+          if (!_calibrationProgress.isCalibrated) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Calibrating baseline… (${_calibrationProgress.samplesCollected}/100 samples)',
+                    style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 11),
+                  ),
+                  const SizedBox(height: 4),
+                  LinearProgressIndicator(
+                    value: _calibrationProgress.progress,
+                    backgroundColor: Colors.white12,
+                    color: Colors.tealAccent,
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // P190: AnomalyLevelBadge — prominent level display above ML indicator
+          if (_mlModelLoaded && _hasReceivedVibData) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Text('ML Status:', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+                  const SizedBox(width: 8),
+                  AnomalyLevelBadge(level: _lastAnomalyResult.level, large: true),
+                ],
+              ),
+            ),
+          ],
+
           // ML / Adaptive Anomaly Detection Indicator (Tier 2)
           if (_mlModelLoaded && _hasReceivedVibData)
             MLAnomalyIndicator(
@@ -2019,6 +2364,23 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               anomalyHistory: _anomalyScoreHistory.toList(),
               modelVersion: _anomalyService.modeLabel,
             ),
+          // P58: Confidence display alongside anomaly score
+          if (_mlModelLoaded && _hasReceivedVibData && _lastAnomalyResult.precursorConfidence >= 0.0) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.percent_rounded, color: Colors.white.withAlpha(100), size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Classifier confidence: ${(_lastAnomalyResult.precursorConfidence * 100).toStringAsFixed(1)}%',
+                    style: TextStyle(color: Colors.white.withAlpha(130), fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (_mlModelLoaded && _hasReceivedVibData)
             const SizedBox(height: 12),
 
@@ -2191,6 +2553,14 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                 _buildMetricRow('DWT Level 1 (50-100Hz)', _dwt1.toStringAsFixed(3)),
                 _buildMetricRow('DWT Level 2 (25-50Hz)', _dwt2.toStringAsFixed(3)),
                 _buildMetricRow('DWT Level 3 (12-25Hz)', _dwt3.toStringAsFixed(3)),
+                // P48: Inference timing summary
+                if (InferenceTimingService.instance.count > 0) ...[
+                  const Divider(color: Colors.white12, height: 16),
+                  Text(
+                    'Inference: ${InferenceTimingService.instance.summary}',
+                    style: const TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2290,9 +2660,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         statusIcon = Icons.check_circle_rounded;
     }
 
-    // PPV context string
+    // PPV context string — P60: show dashes if data is stale
     final String ppvContext;
-    if (_ppv > 0) {
+    if (_isStale) {
+      ppvContext = '--- mm/s';
+    } else if (_ppv > 0) {
       final freqLimit = _dominantFreq <= 10 ? 3.0 : (_dominantFreq <= 50 ? 5.0 : 8.0);
       final percentage = (_ppv / freqLimit * 100).clamp(0, 999).toStringAsFixed(0);
       if (_ppv >= freqLimit) {
@@ -2375,12 +2747,87 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           // Warnings section
           ..._buildSimpleWarnings(isConnected),
 
+          // P60: Stale data warning
+          if (_isStale && isConnected) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.signal_wifi_off_rounded, color: Colors.orange.withAlpha(200), size: 14),
+                const SizedBox(width: 6),
+                Text('No data — sensor may be offline',
+                    style: TextStyle(color: Colors.orange.withAlpha(200), fontSize: 11, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ],
+
+          // P46: Session peak values
+          if (_sessionPeakPpv > 0 || _sessionPeakScore > 0) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Session Peak: PPV ${_sessionPeakPpv.toStringAsFixed(2)} mm/s | Score ${_sessionPeakScore.toStringAsFixed(3)}',
+              style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ],
+
+          // P47: All-clear indicator (only after 30 continuous seconds of normal)
+          if (_normalSince != null &&
+              DateTime.now().difference(_normalSince!).inSeconds >= 30 &&
+              safetyLevel == 'safe') ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4CAF50).withAlpha(40),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF4CAF50).withAlpha(120)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.verified_rounded, color: Color(0xFF4CAF50), size: 14),
+                  const SizedBox(width: 6),
+                  Text('ALL CLEAR — ${DateTime.now().difference(_normalSince!).inSeconds}s normal',
+                      style: const TextStyle(color: Color(0xFF4CAF50), fontSize: 11, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ],
+
           // Connection info
           const SizedBox(height: 14),
           Text(
-            isConnected ? _t.trArgs('sensor_active', [_lastUpdate]) : _t.tr('sensor_not_connected'),
+            isConnected
+                ? (_isStale ? '--- last: $_lastUpdate' : _t.trArgs('sensor_active', [_lastUpdate]))
+                : _t.tr('sensor_not_connected'),
             style: TextStyle(color: Colors.white.withAlpha(90), fontSize: 11),
           ),
+
+          // P62: Packet sequence number and timestamp
+          if (isConnected && _lastSeq > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Pkt #$_lastSeq • ${_lastPacketTime.toString().split('.').first}',
+              style: TextStyle(color: Colors.white.withAlpha(60), fontSize: 10),
+            ),
+          ],
+          // P55: Missed packet counter (shown only when > 0)
+          if (isConnected && _packetTracker.missedPackets > 0) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Missed: ${_packetTracker.missedPackets}',
+              style: const TextStyle(color: Colors.orangeAccent, fontSize: 10),
+            ),
+          ],
+          // P7: Last device hint when disconnected
+          if (!isConnected && _lastDeviceHint != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Last: $_lastDeviceHint',
+              style: TextStyle(color: Colors.white.withAlpha(70), fontSize: 10),
+            ),
+          ],
         ],
       ),
     );
@@ -2401,10 +2848,21 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       warnings.add(_simpleWarningRow(Icons.psychology_alt, Colors.redAccent, _t.tr('unusual_vibration')));
     }
 
+    // P59: Escalation — anomaly persisting >15s → show CRITICAL override
+    if (_anomalySince != null &&
+        DateTime.now().difference(_anomalySince!).inSeconds > 15) {
+      final elapsed = DateTime.now().difference(_anomalySince!).inSeconds;
+      warnings.add(_simpleWarningRow(
+        Icons.crisis_alert_rounded,
+        Colors.red,
+        'CRITICAL — Anomaly sustained for ${elapsed}s. Evacuate area.',
+      ));
+    }
+
     // Precursor
     if (_isPrecursorDriven && _lastPrecursorPattern != null) {
       warnings.add(_simpleWarningRow(Icons.warning_amber_rounded, const Color(0xFFFF6F00),
-        'Precursor: ${_formatPrecursorPattern(_lastPrecursorPattern!)} (${(_lastPrecursorScore * 100).toStringAsFixed(0)}%)'));
+        '${_getPrecursorDescription(_lastPrecursorPattern)} (${(_lastPrecursorScore * 100).toStringAsFixed(0)}%)'));
     }
 
     // Fukuzono / PSD
@@ -2466,6 +2924,21 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       case 'crack_propagation': return _t.tr('crack_propagation');
       case 'imminent_failure': return _t.tr('imminent_failure');
       default: return pattern;
+    }
+  }
+
+  /// P53: Human-readable descriptions for precursor classifier output
+  String _getPrecursorDescription(String? className) {
+    switch (className) {
+      case 'soil_creep':
+        return 'Soil Creep — gradual downslope movement detected';
+      case 'crack_propagation':
+        return 'Crack Propagation — fracture activity in subsoil';
+      case 'imminent_failure':
+        return 'IMMINENT FAILURE — evacuate the area immediately';
+      case 'normal':
+      default:
+        return 'Normal ground vibration';
     }
   }
 
