@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -23,10 +24,9 @@ import '../../utils/ble_parser.dart' show RawAccelReassembler;
 import '../vibration_event_log_screen.dart';
 import '../../main.dart' show AlertMetrics;
 import '../../services/translation_service.dart';
-import '../../services/alert_history_service.dart';
+import '../../services/alert_history_service.dart' as ahs;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../services/session_export_service.dart';
-import '../../services/calibration_progress_service.dart';
 import '../../services/inference_timing_service.dart';
 import '../../services/device_memory_service.dart';
 import '../../utils/ble_packet_tracker.dart';
@@ -37,6 +37,12 @@ import '../../widgets/ppv_trend_chart.dart';
 import '../../widgets/anomaly_level_badge.dart';
 import '../../services/local_notification_service.dart';
 import '../../services/network_status_service.dart';
+import '../../services/session_history_service.dart';
+import '../../services/critical_event_log_service.dart';
+import '../../services/session_sync_service.dart';
+import '../../widgets/battery_indicator.dart';
+import '../../utils/ble_reconnect_manager.dart';
+import '../../widgets/ble_reconnect_banner.dart';
 
 const String _bleSensorServiceUUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 
@@ -66,7 +72,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   bool _isConnecting = false;
   String _connectionStatus = 'Disconnected';
   int? _lastRssi;
-  final _alertHistory = AlertHistoryService();
+  final _alertHistory = ahs.AlertHistoryService();
   DateTime? _lastHistoryLogTime;
 
   double _accX = 0.0, _accY = 0.0, _accZ = 0.0;
@@ -188,12 +194,19 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   static const int _maxReconnectAttempts = 10;
   Timer? _reconnectTimer;
   Timer? _keepAliveTimer;
+  // P67/P68: BleReconnectManager — exponential backoff with live countdown UI
+  final _reconnectManager = BleReconnectManager();
+  bool _isReconnecting = false;
   DateTime? _lastDataReceived;
   DateTime? _keepAliveStartTime;
   String? _lastNotifiedAlertLevel; // Prevent duplicate notifications
   int _truncatedPackets = 0; // Count of dropped truncated BLE packets
   Timer? _uiRefreshTimer; // Throttled UI refresh at fixed rate
   bool _uiDirty = false; // Flag: new data arrived since last refresh
+
+  // Connection attempt timeout feedback — show "Still connecting..." after 5 s
+  bool _connectingSlowly = false;
+  Timer? _connectingSlowTimer;
 
   // Simple/Detailed view mode toggle (simple by default for archaeologist UX)
   bool _simpleMode = true;
@@ -202,6 +215,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   // P46: Session peak tracking
   double _sessionPeakPpv = 0.0;
   double _sessionPeakScore = 0.0;
+
+  // Session counters for auto-save on disconnect
+  int _sampleCount = 0;
+  int _anomalyEventCount = 0;
+  // Track previous anomaly level to detect CRITICAL transitions (P59 escalation)
+  bool _wasEscalatedCritical = false;
 
   // P47: All-clear timer (30s continuous normal before showing green confirmed)
   DateTime? _normalSince;
@@ -234,14 +253,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   // P51: Session export
   final _sessionExportService = SessionExportService.instance;
 
-  // P52: Calibration progress service
-  final _calibrationProgress = CalibrationProgressService(requiredSamples: 100);
-
   // P55: BLE packet tracker for missed packet detection
   final _packetTracker = BlePacketTracker();
 
   // P7: Last connected device hint (from DeviceMemoryService)
   String? _lastDeviceHint;
+  // P68: Last connected device ID for auto-select in scan
+  String? _lastDeviceId;
 
   // BLE characteristic references for bidirectional communication
   BluetoothCharacteristic? _alertCharacteristic;
@@ -263,6 +281,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         setState(() => _lastDeviceHint = name);
       }
     });
+    // P68: Load last device ID for auto-select during BLE scan
+    DeviceMemoryService.instance.getLastDeviceId().then((id) {
+      if (mounted) _lastDeviceId = id;
+    });
+    // Record app start time for DiagnosticsScreen uptime tracking
+    SharedPreferences.getInstance().then((p) =>
+        p.setInt('app_start_time', DateTime.now().millisecondsSinceEpoch));
     // Throttled UI refresh: max 2 repaints/sec to prevent flickering
     _uiRefreshTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) {
       if (_uiDirty && mounted) {
@@ -304,6 +329,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     _uiRefreshTimer?.cancel();
     _staleTimer?.cancel();
     _sessionTimer?.cancel();
+    _connectingSlowTimer?.cancel();
     _dspService.dispose();
     _anomalyService.dispose();
     super.dispose();
@@ -426,11 +452,17 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           if (lockedMac.isNotEmpty) {
             matched = r.device.remoteId.str.toLowerCase() == lockedMac.toLowerCase();
           } else {
-            matched = nameLower.contains('ancientvision') ||
-                nameLower.contains('ancient') ||
-                nameLower.contains('m5stick') ||
-                nameLower.contains('m5-') ||
-                nameLower.startsWith('m5');
+            // P68: Prefer the remembered device by ID, then fall back to name filter
+            final deviceId = r.device.remoteId.str;
+            if (_lastDeviceId != null && deviceId == _lastDeviceId) {
+              matched = true;
+              debugPrint('>>> AUTO-SELECTED remembered device: $name ($deviceId)');
+            } else {
+              matched = _isAncientVisionDevice(r) ||
+                  nameLower.contains('m5stick') ||
+                  nameLower.contains('m5-') ||
+                  nameLower.startsWith('m5');
+            }
           }
 
           if (matched) {
@@ -476,6 +508,18 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     }
   }
 
+  /// P68: Returns true if the scan result matches an AncientVision sensor.
+  ///
+  /// Checks both platformName (cached OS name) and advName (live advertisement)
+  /// because Android often provides an empty platformName during active scans.
+  bool _isAncientVisionDevice(ScanResult result) {
+    final name = result.device.platformName.isNotEmpty
+        ? result.device.platformName
+        : result.advertisementData.advName;
+    final nameLower = name.toLowerCase();
+    return nameLower.contains('ancientvision') || nameLower.contains('ancient');
+  }
+
   Future<void> _connectToDevice(BluetoothDevice device) async {
     if (_isConnecting || _connectedDevice != null) {
       debugPrint('>>> _connectToDevice SKIPPED: isConnecting=$_isConnecting connectedDevice=$_connectedDevice');
@@ -485,9 +529,18 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     debugPrint('>>> _connectToDevice START: ${device.remoteId}');
     setState(() {
       _isConnecting = true;
+      _connectingSlowly = false;
       _connectionStatus = 'Connecting...';
     });
     _reconnectTimer?.cancel();
+
+    // After 5 s without a connection, surface "Still connecting..." to the user.
+    _connectingSlowTimer?.cancel();
+    _connectingSlowTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && _isConnecting) {
+        setState(() => _connectingSlowly = true);
+      }
+    });
 
     try {
       await device.connect(
@@ -495,21 +548,32 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         autoConnect: false,
       );
       debugPrint('>>> device.connect() SUCCEEDED');
+      _connectingSlowTimer?.cancel();
 
       setState(() {
         _connectedDevice = device;
         _isConnecting = false;
         _isScanning = false;
+        _connectingSlowly = false;
         _connectionStatus = 'Connected';
         _reconnectAttempts = 0;
+        _isReconnecting = false;
       });
       WakelockPlus.enable();
+
+      // P67/P68: Stop reconnect manager and reset ML baselines on reconnect
+      _reconnectManager.reset();
+      _anomalyService.resetBaseline();   // P67: clear adaptive calibration baseline
+      _anomalyService.attemptMlRetry();  // P68: re-enable ML inference if previously failed
 
       // P7: Save connected device to memory for auto-reconnect hint
       final deviceId = device.remoteId.str;
       final deviceName = device.platformName.isNotEmpty ? device.platformName : deviceId;
       DeviceMemoryService.instance.saveDevice(id: deviceId, name: deviceName);
       if (mounted) setState(() => _lastDeviceHint = deviceName);
+      // Persist last device name for DiagnosticsScreen (fire-and-forget)
+      SharedPreferences.getInstance().then((p) =>
+          p.setString('last_device_name', deviceName));
 
       _dspService.reset();
       _rawAccelReassembler.reset();
@@ -542,9 +606,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
       await _discoverAndSubscribe(device);
     } catch (e) {
+      _connectingSlowTimer?.cancel();
       if (mounted) {
         setState(() {
           _isConnecting = false;
+          _connectingSlowly = false;
           _connectionStatus = 'Connection failed';
         });
         // Auto-retry with exponential backoff
@@ -557,6 +623,46 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   void _handleDisconnection() {
     if (!mounted) return;
     final deviceName = _connectedDevice?.platformName ?? 'Sensor';
+
+    // Task 1: Auto-save session on disconnect if data was collected
+    if (_sampleCount > 0) {
+      final record = SessionRecord(
+        id: DateTime.now().toIso8601String(),
+        start: _sessionStart,
+        end: DateTime.now(),
+        peakPpv: _sessionPeakPpv,
+        peakScore: _sessionPeakScore,
+        sampleCount: _sampleCount,
+        anomalyEvents: _anomalyEventCount,
+        deviceName: deviceName,
+      );
+      SessionHistoryService.instance.saveSession(record);
+      debugPrint('[Session] Auto-saved: $_sampleCount samples, peakPPV=${_sessionPeakPpv.toStringAsFixed(2)}, anomalyEvents=$_anomalyEventCount');
+
+      // Task 3: Auto-sync session feature log to collector
+      final featureLog = _vibrationFeatureLog.toList();
+      if (featureLog.isNotEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Session uploading...'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        SessionSyncService.instance.syncSession(featureLog).then((_) {
+          if (!mounted) return;
+          final success = SessionSyncService.instance.status == SyncStatus.done;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(success ? 'Session synced' : 'Sync failed'),
+              backgroundColor: success ? Colors.green : Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        });
+      }
+    }
 
     // Cancel all BLE subscriptions to prevent stale data / duplicates on reconnect
     for (final sub in _charSubscriptions) {
@@ -583,7 +689,28 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     // Cancel keepalive
     _keepAliveTimer?.cancel();
 
-    // Schedule reconnect with exponential backoff
+    // P67/P68: Start BleReconnectManager for structured backoff + live countdown UI
+    if (mounted) setState(() => _isReconnecting = true);
+    _reconnectManager.onCountdownTick = () {
+      if (mounted) setState(() {}); // refresh countdown display
+    };
+    _reconnectManager.startReconnect(
+      onAttempt: () {
+        if (mounted && _connectedDevice == null) {
+          _checkBluetoothAndScan();
+        }
+      },
+      onGiveUp: () {
+        if (mounted) {
+          setState(() {
+            _isReconnecting = false;
+            _connectionStatus = 'Connection lost - tap Scan';
+          });
+        }
+      },
+    );
+
+    // Also use legacy backoff counter for _connectionStatus text fallback
     _scheduleReconnect();
   }
 
@@ -734,8 +861,41 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
       if (!foundService) {
         debugPrint('>>> WARNING: Our sensor service was NOT found!');
       }
+
+      // Task 4: RTC time sync — send current unix timestamp to firmware CMD characteristic
+      // CMD char UUID: beb5483e-36e1-4688-b7f5-ea07361b26ad
+      await _sendRtcSync(services);
     } catch (e) {
       debugPrint('Service discovery error: $e');
+    }
+  }
+
+  /// Send TIME:<epoch> to the firmware CMD characteristic to sync RTC.
+  Future<void> _sendRtcSync(List<BluetoothService> services) async {
+    try {
+      BluetoothCharacteristic? cmdChar;
+      for (final service in services) {
+        for (final char in service.characteristics) {
+          final uuid = char.uuid.toString().toLowerCase();
+          if (uuid.endsWith('26ad') || uuid.contains('b26ad')) {
+            if (char.properties.write || char.properties.writeWithoutResponse) {
+              cmdChar = char;
+              break;
+            }
+          }
+        }
+        if (cmdChar != null) break;
+      }
+      if (cmdChar == null) {
+        debugPrint('>>> RTC sync: CMD characteristic not found');
+        return;
+      }
+      final epoch = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final cmd = 'TIME:$epoch';
+      await cmdChar.write(utf8.encode(cmd), withoutResponse: false);
+      debugPrint('>>> RTC synced to device: $cmd');
+    } catch (e) {
+      debugPrint('>>> RTC sync error (non-fatal): $e');
     }
   }
 
@@ -874,8 +1034,6 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           // Parse v2.0+ fields (backward compatible - defaults to 0 if missing)
           _ppv = (data['ppv'] as num?)?.toDouble() ?? 0.0;
           if (_isPpvCalibrating) _calibrationSamples.add(_ppv);
-          // P52: Feed calibration progress service on every sample
-          _calibrationProgress.addSample();
           if (_ppv > 0 || _rms > 0) _hasReceivedVibData = true;
           _rms = (data['rms'] as num?)?.toDouble() ?? 0.0;
           _crestFactor = (data['crest'] as num?)?.toDouble() ?? 0.0;
@@ -908,6 +1066,9 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
           // P46: Session peak tracking
           if (_ppv > _sessionPeakPpv) _sessionPeakPpv = _ppv;
+
+          // Session sample counter (for auto-save on disconnect)
+          _sampleCount++;
 
           // PPV alarm: DIN 4150-3 heritage limit exceeded
           if (_effectivePpv > 3.0) {
@@ -953,6 +1114,17 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             'kurt': _kurtosis,
             'stalta': _staLtaRatio,
             'timestamp': DateTime.now().toIso8601String(),
+          });
+
+          // Persist firmware diagnostic fields for DiagnosticsScreen (fire-and-forget)
+          SharedPreferences.getInstance().then((p) {
+            p.setString('fw_version', data['fw']?.toString() ?? '');
+            p.setInt('seq', data['seq'] is int ? data['seq'] as int : 0);
+            p.setInt('boots', data['boots'] is int ? data['boots'] as int : 0);
+            p.setBool('gain', data['gain'] is bool ? data['gain'] as bool : false);
+            p.setBool('cal', data['cal'] is bool ? data['cal'] as bool : false);
+            p.setDouble('tmp', data['tmp'] is num ? (data['tmp'] as num).toDouble() : 0.0);
+            p.setString('uptime', _formatUptime(data['up'] is int ? data['up'] as int : 0));
           });
 
           debugPrint('>>> VIBRATION v4.0: PPV=${_ppv}mm/s Freq=${_dominantFreq}Hz Crest=$_crestFactor Kurt=$_kurtosis STA/LTA=$_staLtaRatio Arias=$_arias CAV=$_cav Temp=${_temp}C DWT=[$_dwt1,$_dwt2,$_dwt3] History=${_ppvHistory.length} pts ML=${_lastAnomalyResult.levelLabel}');
@@ -1198,9 +1370,31 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         // P191: OS-level notification on anomaly escalation / clear
         if (result.level == AnomalyLevel.anomaly && _lastLevel != AnomalyLevel.anomaly) {
           LocalNotificationService.instance.showCriticalAlert(ppv: _ppv);
+          // Task 2: Log GPS-tagged CRITICAL event on first transition to anomaly
+          _anomalyEventCount++;
+          final deviceId = _connectedDevice?.remoteId.str;
+          CriticalEventLogService.instance.logEvent(
+            ppv: _ppv,
+            anomalyScore: result.score,
+            deviceId: deviceId,
+          );
         } else if (result.level == AnomalyLevel.normal && _lastLevel == AnomalyLevel.anomaly) {
           LocalNotificationService.instance.cancelAll();
         }
+
+        // Task 2: Also log when P59 escalation transitions to CRITICAL (>15s sustained)
+        final isNowCritical = _anomalySince != null &&
+            DateTime.now().difference(_anomalySince!).inSeconds > 15;
+        if (isNowCritical && !_wasEscalatedCritical) {
+          _anomalyEventCount++;
+          final deviceId = _connectedDevice?.remoteId.str;
+          CriticalEventLogService.instance.logEvent(
+            ppv: _ppv,
+            anomalyScore: result.score,
+            deviceId: deviceId,
+          );
+        }
+        _wasEscalatedCritical = isNowCritical;
 
         _lastLevel = result.level;
 
@@ -1399,7 +1593,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               ),
               const Divider(color: Colors.white12),
               Expanded(
-                child: FutureBuilder<List<Map<String, dynamic>>>(
+                child: FutureBuilder<List<ahs.AlertData>>(
                   future: _alertHistory.load(),
                   builder: (_, snap) {
                     if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)));
@@ -1412,19 +1606,17 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                       itemCount: entries.length,
                       itemBuilder: (_, i) {
                         final e = entries[i];
-                        final ts = DateTime.tryParse(e['timestamp'] ?? '');
-                        final diff = ts != null ? DateTime.now().difference(ts) : null;
-                        final ago = diff == null ? '' :
-                            diff.inMinutes < 1 ? 'just now' :
+                        final diff = DateTime.now().difference(e.timestamp);
+                        final ago = diff.inMinutes < 1 ? 'just now' :
                             diff.inHours < 1 ? '${diff.inMinutes}m ago' :
                             diff.inDays < 1 ? '${diff.inHours}h ago' :
                             '${diff.inDays}d ago';
-                        final isCritical = e['level'] == 'critical';
+                        final isCritical = e.level == 'critical';
                         return ListTile(
                           leading: Icon(Icons.warning_rounded,
                               color: isCritical ? Colors.red : const Color(0xFFFFC107)),
-                          title: Text(e['message'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 13)),
-                          subtitle: Text('${e['type']} · ${((e['ppv'] as num?) ?? 0).toStringAsFixed(2)} mm/s',
+                          title: Text(e.message, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                          subtitle: Text('${e.type} · ${e.ppv.toStringAsFixed(2)} mm/s',
                               style: const TextStyle(color: Colors.white54, fontSize: 11)),
                           trailing: Text(ago, style: const TextStyle(color: Colors.white38, fontSize: 11)),
                         );
@@ -1634,6 +1826,13 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
+  String _formatUptime(int seconds) {
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = seconds % 60;
+    return '${h}h ${m}m ${s}s';
+  }
+
   void _showError(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1817,6 +2016,38 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
     return Stack(
       children: [
+        // P67/P68: BLE reconnect banner — shown at top when disconnected
+        if (_isReconnecting)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: BleReconnectBanner(
+              attemptNumber: _reconnectManager.currentAttempt,
+              maxAttempts: BleReconnectManager.maxAttempts,
+              secondsUntilRetry: _reconnectManager.secondsUntilRetry,
+              onRetryNow: () => _reconnectManager.retryNow(
+                onAttempt: () {
+                  if (mounted && _connectedDevice == null) {
+                    _checkBluetoothAndScan();
+                  }
+                },
+                onGiveUp: () {
+                  if (mounted) {
+                    setState(() {
+                      _isReconnecting = false;
+                      _connectionStatus = 'Connection lost - tap Scan';
+                    });
+                  }
+                },
+              ),
+              onCancel: () {
+                _reconnectManager.cancel();
+                if (mounted) setState(() => _isReconnecting = false);
+              },
+            ),
+          ),
+
         // P192: Offline banner — shown at top when no network
         ListenableBuilder(
           listenable: NetworkStatusService.instance,
@@ -1834,12 +2065,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   color: Colors.orange.withAlpha(220),
-                  child: Row(
+                  child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.cloud_off_rounded, color: Colors.white, size: 16),
-                      const SizedBox(width: 8),
-                      const Text(
+                      Icon(Icons.cloud_off_rounded, color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Text(
                         'Offline — data not syncing',
                         style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                       ),
@@ -1885,7 +2116,11 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                           ],
                           if (isConnected) ...[
                             const SizedBox(width: 4),
-                            _buildBatteryChip(),
+                            BatteryIndicator(
+                              voltage: _batteryVoltage,
+                              isCharging: _batteryCharging,
+                              percentage: _batteryPercent.toDouble(),
+                            ),
                           ],
                         ],
                       ),
@@ -1917,6 +2152,34 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                           ),
                         ],
                       ),
+                      // Connection attempt slow feedback — shown when connect takes >5 s
+                      if (_connectingSlowly) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.amber.withAlpha(200),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Still connecting — please wait\u2026',
+                              style: TextStyle(
+                                color: Colors.amber.withAlpha(200),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+
                       const SizedBox(height: 4),
 
                       // Action row
@@ -2121,7 +2384,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   /// Build STATUS tab - most important, shown first
   Widget _buildStatusTab(bool isConnected) {
     // P59: Check if anomaly has been sustained >15s → escalate display to CRITICAL
-    final bool _isEscalatedCritical = _anomalySince != null &&
+    final bool isEscalatedCritical = _anomalySince != null &&
         DateTime.now().difference(_anomalySince!).inSeconds > 15;
 
     return SingleChildScrollView(
@@ -2130,7 +2393,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // P59: Escalation banner — shown when anomaly sustained >15s
-          if (_isEscalatedCritical) ...[
+          if (isEscalatedCritical) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -2320,22 +2583,47 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             const SizedBox(height: 12),
           ],
 
-          // P52: Calibration progress bar (shown while not yet calibrated)
-          if (!_calibrationProgress.isCalibrated) ...[
+          // P52: Calibration progress bar (shown while adaptive service is still calibrating)
+          if (!_anomalyService.adaptiveService.isCalibrated) ...[
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Calibrating baseline… (${_calibrationProgress.samplesCollected}/100 samples)',
-                    style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 11),
+                  Row(
+                    children: [
+                      const Icon(Icons.tune, size: 14, color: Colors.amber),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Calibrating: ${(_anomalyService.adaptiveService.calibrationProgress * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(fontSize: 12, color: Colors.amber),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
-                  LinearProgressIndicator(
-                    value: _calibrationProgress.progress,
-                    backgroundColor: Colors.white12,
-                    color: Colors.tealAccent,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: _anomalyService.adaptiveService.calibrationProgress,
+                      backgroundColor: Colors.white12,
+                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.amber),
+                      minHeight: 4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (_anomalyService.adaptiveService.calibrationQualityLabel.isNotEmpty &&
+              _anomalyService.adaptiveService.calibrationQualityLabel != 'Poor') ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, size: 12, color: Colors.greenAccent),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Calibration: ${_anomalyService.adaptiveService.calibrationQualityLabel}',
+                    style: const TextStyle(fontSize: 11, color: Colors.white60),
                   ),
                 ],
               ),
@@ -2376,6 +2664,23 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                   Text(
                     'Classifier confidence: ${(_lastAnomalyResult.precursorConfidence * 100).toStringAsFixed(1)}%',
                     style: TextStyle(color: Colors.white.withAlpha(130), fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // P48: Inference timing chip — only shown after at least one timed inference
+          if (_mlModelLoaded && _hasReceivedVibData && InferenceTimingService.instance.count > 0) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.timer_outlined, color: Colors.white.withAlpha(80), size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                    'ML: ${InferenceTimingService.instance.rollingAvgMs.toStringAsFixed(1)} ms avg',
+                    style: TextStyle(color: Colors.white.withAlpha(100), fontSize: 11),
                   ),
                 ],
               ),
@@ -2500,9 +2805,12 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           if (_spectrogramBuffer.length > 2)
             const SizedBox(height: 12),
 
-          // Sensor History Graph Card (legacy moisture + vibration)
+          // Sensor History Graph Card (legacy moisture + vibration + PPV metrics)
           RepaintBoundary(
-            child: SensorHistoryGraphCard(sensorHistory: _sensorHistory.toList()),
+            child: SensorHistoryGraphCard(
+              sensorHistory: _sensorHistory.toList(),
+              ppvHistory: _ppvHistory.toList(),
+            ),
           ),
           const SizedBox(height: 100),
         ],
@@ -2524,6 +2832,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               damageIndex: _vibrationMetrics.damageIndex,
               housnerSI: _housnerSI,
               isConnected: isConnected,
+              currentPpv: _ppv,
             ),
           if (_hasReceivedVibData)
             const SizedBox(height: 12),
@@ -3016,29 +3325,4 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     );
   }
 
-  /// Build battery indicator chip (v4.1)
-  Widget _buildBatteryChip() {
-    final Color batteryColor = _batteryCharging
-        ? const Color(0xFF4CAF50) // Green when charging
-        : _batteryPercent < 20
-            ? Colors.red // Red when low
-            : _batteryPercent < 50
-                ? Colors.orange // Orange when medium
-                : Colors.white; // White when good
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          _batteryCharging ? Icons.battery_charging_full
-              : _batteryPercent > 50 ? Icons.battery_full
-              : _batteryPercent > 20 ? Icons.battery_3_bar
-              : Icons.battery_1_bar,
-          color: batteryColor, size: 16,
-        ),
-        const SizedBox(width: 2),
-        Text('$_batteryPercent%', style: TextStyle(color: batteryColor, fontSize: 11, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
 }

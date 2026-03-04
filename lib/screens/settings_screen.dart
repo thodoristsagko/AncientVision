@@ -1,18 +1,46 @@
 // ignore_for_file: use_build_context_synchronously
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../screens/calibration_wizard_screen.dart';
+import '../services/alert_history_service.dart';
+import '../services/session_history_service.dart';
 import '../services/settings_service.dart';
 import '../services/backup_service.dart';
 import '../services/biometric_service.dart';
 import '../services/coin/index.dart';
 import '../services/gemini_coin_service.dart';
+import '../services/vibration_anomaly_service.dart';
 import '../utils/app_styles.dart';
 
 // Vibration monitor prefs keys
 const String _kBlePrefixKey = 'vibmon_ble_prefix';
 const String _kPpvThresholdKey = 'vibmon_ppv_threshold';
 const String _kInferenceFreqKey = 'vibmon_inference_freq';
+
+// Data management prefs keys
+const String _kDataRetentionDaysKey = 'data_retention_days';
+const String _kExportFormatKey = 'export_format';
+
+// Calibration prefs keys
+const String _kLastCalibrationTimeKey = 'last_calibration_time';
+
+// Notification prefs keys
+const String _kNotificationsEnabledKey = 'notificationsEnabled';
+const String _kAlertSoundEnabledKey = 'alertSoundEnabled';
+const String _kNotifCriticalSoundKey = 'notif_critical_sound';
+const String _kNotifVibrationKey = 'notif_vibration';
+const String _kNotifCooldownMinutesKey = 'notif_cooldown_minutes';
+
+// BLE prefs keys
+const String _kAutoConnectKey = 'autoConnect';
+const String _kScanTimeoutSecondsKey = 'scanTimeoutSeconds';
+
+// Data / collector prefs keys
+const String _kAutoUploadKey = 'autoUpload';
+const String _kCollectorUrlKey = 'collectorUrl';
 
 /// Settings Screen - Simplified for essential features
 class SettingsScreen extends StatefulWidget {
@@ -40,6 +68,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _blePrefixController = TextEditingController(text: 'ancientvision');
   double _ppvAlertThreshold = 0.3;
   String _inferenceFreq = '2Hz';
+
+  // Calibration settings
+  String? _lastCalibrationTime;
+
+  // Notification settings
+  bool _notificationsEnabled = true;
+  bool _alertSoundEnabled = true;
+  bool _notifCriticalSound = true;
+  bool _notifVibration = true;
+  int _notifCooldownMinutes = 5;
+
+  // BLE settings
+  bool _autoConnect = true;
+  int _scanTimeoutSeconds = 10;
+
+  // Data / collector settings
+  bool _autoUpload = false;
+  String _collectorUrl = 'http://192.168.1.100:8765';
+
+  // Data management settings
+  int _dataRetentionDays = 30;
+  String _exportFormat = 'csv';
 
   @override
   void initState() {
@@ -70,6 +120,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _blePrefixController.text = prefs.getString(_kBlePrefixKey) ?? 'ancientvision';
     _ppvAlertThreshold = prefs.getDouble(_kPpvThresholdKey) ?? 0.3;
     _inferenceFreq = prefs.getString(_kInferenceFreqKey) ?? '2Hz';
+
+    // Calibration settings
+    _lastCalibrationTime = prefs.getString(_kLastCalibrationTimeKey);
+
+    // Notification settings
+    _notificationsEnabled = prefs.getBool(_kNotificationsEnabledKey) ?? true;
+    _alertSoundEnabled = prefs.getBool(_kAlertSoundEnabledKey) ?? true;
+    _notifCriticalSound = prefs.getBool(_kNotifCriticalSoundKey) ?? true;
+    _notifVibration = prefs.getBool(_kNotifVibrationKey) ?? true;
+    _notifCooldownMinutes = prefs.getInt(_kNotifCooldownMinutesKey) ?? 5;
+
+    // BLE settings
+    _autoConnect = prefs.getBool(_kAutoConnectKey) ?? true;
+    _scanTimeoutSeconds = prefs.getInt(_kScanTimeoutSecondsKey) ?? 10;
+
+    // Data / collector settings
+    _autoUpload = prefs.getBool(_kAutoUploadKey) ?? false;
+    _collectorUrl = prefs.getString(_kCollectorUrlKey) ?? 'http://192.168.1.100:8765';
+
+    // Data management settings
+    _dataRetentionDays = prefs.getInt(_kDataRetentionDaysKey) ?? 30;
+    _exportFormat = prefs.getString(_kExportFormatKey) ?? 'csv';
   }
 
   Future<void> _saveVibmonSettings() async {
@@ -77,6 +149,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setString(_kBlePrefixKey, _blePrefixController.text.trim());
     await prefs.setDouble(_kPpvThresholdKey, _ppvAlertThreshold);
     await prefs.setString(_kInferenceFreqKey, _inferenceFreq);
+
+    // Apply to the running anomaly service immediately (no app restart needed)
+    final anomalyService = VibrationAnomalyService.instance;
+    anomalyService.setAlertThreshold(_ppvAlertThreshold);
+    const hzMap = {'1Hz': 1.0, '2Hz': 2.0, '5Hz': 5.0};
+    anomalyService.setMaxInferenceHz(hzMap[_inferenceFreq] ?? 2.0);
   }
 
   Future<void> _loadBiometricState() async {
@@ -160,6 +238,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                     // === DISPLAY ===
                     _buildSection('Display', Icons.display_settings, [
+                      _buildThemeModeTile(),
+                      const Divider(height: 1, color: Colors.white12),
                       _buildSwitchTile(
                         'Show GPS Coordinates',
                         'Display location on findings',
@@ -187,9 +267,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ]),
                     const SizedBox(height: AppSpacing.xxl),
 
+                    // === NOTIFICATIONS ===
+                    _buildSection('Notifications', Icons.notifications_active, [
+                      _buildNotificationsEnabledTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildAlertSoundTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildCriticalAlertSoundTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildVibrationOnAlertTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildAlertCooldownTile(),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
+                    // === BLUETOOTH ===
+                    _buildSection('Bluetooth', Icons.bluetooth_searching, [
+                      _buildAutoConnectTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildScanTimeoutTile(),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
+                    // === DATA ===
+                    _buildSection('Data', Icons.storage, [
+                      _buildAutoUploadTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildCollectorUrlTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildDataRetentionTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildExportFormatTile(),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
                     // === SENSOR ===
                     _buildSection('Sensor Connection', Icons.bluetooth, [
                       _buildSensorLockTile(),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
+                    // === SENSOR CALIBRATION ===
+                    _buildSection('Sensor Calibration', Icons.tune, [
+                      _buildCalibrationWizardTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildSendCalibrateTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildLastCalibrationTile(),
+                    ]),
+                    const SizedBox(height: AppSpacing.xxl),
+
+                    // === DATA & PRIVACY ===
+                    _buildSection('Data & Privacy', Icons.privacy_tip, [
+                      _buildExportSettingsTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildClearSessionHistoryTile(),
+                      const Divider(height: 1, color: Colors.white12),
+                      _buildClearAlertHistoryTile(),
                     ]),
                     const SizedBox(height: AppSpacing.xxxl),
 
@@ -198,7 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: AppSpacing.xxl),
 
                     // === APP INFO ===
-                    _buildAppInfo(),
+                    _buildAppInfoSection(),
                     const SizedBox(height: 80),
                   ],
                 ),
@@ -347,8 +481,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Slider(
             value: _ppvAlertThreshold,
             min: 0.1,
-            max: 2.0,
-            divisions: 19,
+            max: 5.0,
+            divisions: 49,
             activeColor: AppColors.accent,
             inactiveColor: AppColors.cardBorder,
             onChanged: (value) async {
@@ -357,6 +491,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildThemeModeTile() {
+    return ListTile(
+      leading: const Icon(Icons.brightness_medium, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Theme', style: AppTextStyles.body),
+      subtitle: Text(
+        'App appearance: ${_settingsService.settings.themeMode.label}',
+        style: AppTextStyles.subtitleSmall,
+      ),
+      trailing: DropdownButton<AppThemeMode>(
+        value: _settingsService.settings.themeMode,
+        dropdownColor: AppColors.primaryDark,
+        underline: const SizedBox.shrink(),
+        style: AppTextStyles.body,
+        items: AppThemeMode.values
+            .map(
+              (m) => DropdownMenuItem(
+                value: m,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(m.icon, color: AppColors.accent, size: 18),
+                    const SizedBox(width: 6),
+                    Text(m.label),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+        onChanged: (value) async {
+          if (value != null) {
+            await _updateSetting('themeMode', value);
+          }
+        },
       ),
     );
   }
@@ -773,39 +944,540 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildResetButton() {
-    return Center(
-      child: OutlinedButton.icon(
-        onPressed: _showResetConfirmation,
-        icon: const Icon(Icons.restore, color: AppColors.warning, size: AppSizes.iconSmall),
-        label: Text('Reset All Settings', style: AppTextStyles.button.copyWith(color: AppColors.warning)),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: AppColors.warning),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        ),
+  Widget _buildNotificationsEnabledTile() {
+    return SwitchListTile(
+      secondary: const Icon(Icons.notifications, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Critical alert notifications', style: AppTextStyles.body),
+      subtitle: const Text('OS-level alerts for hazard events', style: AppTextStyles.subtitleSmall),
+      value: _notificationsEnabled,
+      activeColor: AppColors.accent,
+      onChanged: (value) async {
+        setState(() => _notificationsEnabled = value);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_kNotificationsEnabledKey, value);
+      },
+    );
+  }
+
+  Widget _buildAlertSoundTile() {
+    return SwitchListTile(
+      secondary: const Icon(Icons.volume_up, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Alert sound', style: AppTextStyles.body),
+      subtitle: const Text('Play sound with critical alerts', style: AppTextStyles.subtitleSmall),
+      value: _alertSoundEnabled,
+      activeColor: AppColors.accent,
+      onChanged: (value) async {
+        setState(() => _alertSoundEnabled = value);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_kAlertSoundEnabledKey, value);
+      },
+    );
+  }
+
+  Widget _buildAutoConnectTile() {
+    return SwitchListTile(
+      secondary: const Icon(Icons.bluetooth_connected, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Auto-connect to last device', style: AppTextStyles.body),
+      subtitle: const Text('Reconnect automatically on app start', style: AppTextStyles.subtitleSmall),
+      value: _autoConnect,
+      activeColor: AppColors.accent,
+      onChanged: (value) async {
+        setState(() => _autoConnect = value);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_kAutoConnectKey, value);
+      },
+    );
+  }
+
+  Widget _buildScanTimeoutTile() {
+    const options = [5, 10, 30];
+    return ListTile(
+      leading: const Icon(Icons.timer, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('BLE scan timeout', style: AppTextStyles.body),
+      subtitle: const Text('How long to scan before stopping', style: AppTextStyles.subtitleSmall),
+      trailing: DropdownButton<int>(
+        value: _scanTimeoutSeconds,
+        dropdownColor: AppColors.primaryDark,
+        underline: const SizedBox.shrink(),
+        style: AppTextStyles.body,
+        items: options
+            .map((s) => DropdownMenuItem(value: s, child: Text('${s}s')))
+            .toList(),
+        onChanged: (value) async {
+          if (value != null) {
+            setState(() => _scanTimeoutSeconds = value);
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt(_kScanTimeoutSecondsKey, value);
+          }
+        },
       ),
     );
   }
 
-  Widget _buildAppInfo() {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.xl),
-      decoration: AppDecorations.section,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: AppDecorations.circleBadge(AppColors.accent),
-            child: const Icon(Icons.explore, color: AppColors.accent, size: AppSizes.iconXLarge),
+  Widget _buildAutoUploadTile() {
+    return SwitchListTile(
+      secondary: const Icon(Icons.cloud_upload, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Auto-upload sessions', style: AppTextStyles.body),
+      subtitle: const Text('Send session data to collector after each session', style: AppTextStyles.subtitleSmall),
+      value: _autoUpload,
+      activeColor: AppColors.accent,
+      onChanged: (value) async {
+        setState(() => _autoUpload = value);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_kAutoUploadKey, value);
+      },
+    );
+  }
+
+  Widget _buildCollectorUrlTile() {
+    return ListTile(
+      leading: const Icon(Icons.dns, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Collector URL', style: AppTextStyles.body),
+      subtitle: Text(
+        _collectorUrl,
+        style: AppTextStyles.subtitleSmall,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: const Icon(Icons.edit, color: AppColors.textSecondary, size: 18),
+      onTap: () {
+        final controller = TextEditingController(text: _collectorUrl);
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.primaryDark,
+            title: const Text('Collector URL', style: AppTextStyles.h3),
+            content: TextField(
+              controller: controller,
+              style: AppTextStyles.body,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: 'URL',
+                labelStyle: AppTextStyles.subtitleSmall,
+                hintText: 'http://192.168.1.100:8765',
+                hintStyle: AppTextStyles.caption,
+                enabledBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: AppColors.cardBorder),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: AppColors.accent),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel', style: AppTextStyles.button.copyWith(color: AppColors.textSecondary)),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final url = controller.text.trim();
+                  if (url.isNotEmpty) {
+                    setState(() => _collectorUrl = url);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString(_kCollectorUrlKey, url);
+                  }
+                  Navigator.pop(ctx);
+                },
+                child: Text('Save', style: AppTextStyles.button.copyWith(color: AppColors.accent)),
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          const Text('AncientVision', style: AppTextStyles.h3),
-          const Text('Version 1.0.0', style: AppTextStyles.subtitleSmall),
-          const SizedBox(height: AppSpacing.sm),
-          const Text('Archaeological Field Documentation', style: AppTextStyles.caption),
-          const SizedBox(height: AppSpacing.xs),
-          Text('FLL Competition 2024', style: AppTextStyles.accentText.copyWith(fontSize: 11)),
+        );
+      },
+    );
+  }
+
+  Widget _buildDataRetentionTile() {
+    const options = <int>[7, 30, 90, -1]; // -1 = Forever
+    String label(int days) => days == -1 ? 'Forever' : '$days days';
+    return ListTile(
+      leading: const Icon(Icons.calendar_today, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Keep field data', style: AppTextStyles.body),
+      subtitle: const Text('How long to retain recorded session data', style: AppTextStyles.subtitleSmall),
+      trailing: DropdownButton<int>(
+        value: options.contains(_dataRetentionDays) ? _dataRetentionDays : 30,
+        dropdownColor: AppColors.primaryDark,
+        underline: const SizedBox.shrink(),
+        style: AppTextStyles.body,
+        items: options.map((d) => DropdownMenuItem(value: d, child: Text(label(d)))).toList(),
+        onChanged: (value) async {
+          if (value != null) {
+            setState(() => _dataRetentionDays = value);
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt(_kDataRetentionDaysKey, value);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildExportFormatTile() {
+    return ListTile(
+      leading: const Icon(Icons.file_download, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Session export format', style: AppTextStyles.body),
+      subtitle: Text(
+        _exportFormat == 'csv' ? 'CSV — spreadsheet compatible' : 'JSON — structured data',
+        style: AppTextStyles.subtitleSmall,
+      ),
+      trailing: DropdownButton<String>(
+        value: _exportFormat,
+        dropdownColor: AppColors.primaryDark,
+        underline: const SizedBox.shrink(),
+        style: AppTextStyles.body,
+        items: const [
+          DropdownMenuItem(value: 'csv', child: Text('CSV')),
+          DropdownMenuItem(value: 'json', child: Text('JSON')),
         ],
+        onChanged: (value) async {
+          if (value != null) {
+            setState(() => _exportFormat = value);
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_kExportFormatKey, value);
+          }
+        },
+      ),
+    );
+  }
+
+  // =========================================================================
+  // SENSOR CALIBRATION TILES
+  // =========================================================================
+
+  Widget _buildCalibrationWizardTile() {
+    return ListTile(
+      leading: const Icon(Icons.science, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Run Calibration Wizard', style: AppTextStyles.body),
+      subtitle: const Text('Step-by-step sensor baseline setup', style: AppTextStyles.subtitleSmall),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CalibrationWizardScreen()),
+        );
+      },
+    );
+  }
+
+  Widget _buildSendCalibrateTile() {
+    return ListTile(
+      leading: const Icon(Icons.send, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Send CALIBRATE command', style: AppTextStyles.body),
+      subtitle: const Text('Trigger firmware re-calibration over BLE', style: AppTextStyles.subtitleSmall),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      onTap: () async {
+        final devices = FlutterBluePlus.connectedDevices;
+        if (devices.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Connect to device first'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+        try {
+          final device = devices.first;
+          final services = await device.discoverServices();
+          bool sent = false;
+          for (final svc in services) {
+            for (final char in svc.characteristics) {
+              if (char.properties.write || char.properties.writeWithoutResponse) {
+                await char.write(const Utf8Encoder().convert('CALIBRATE'));
+                sent = true;
+                break;
+              }
+            }
+            if (sent) break;
+          }
+          if (sent) {
+            final now = DateTime.now().toIso8601String();
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_kLastCalibrationTimeKey, now);
+            if (mounted) {
+              setState(() => _lastCalibrationTime = now);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('CALIBRATE command sent'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No writable BLE characteristic found'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildLastCalibrationTile() {
+    String subtitle;
+    if (_lastCalibrationTime == null) {
+      subtitle = 'Never';
+    } else {
+      try {
+        final dt = DateTime.parse(_lastCalibrationTime!).toLocal();
+        subtitle = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+            '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      } catch (_) {
+        subtitle = _lastCalibrationTime!;
+      }
+    }
+    return ListTile(
+      leading: const Icon(Icons.history, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Last calibration', style: AppTextStyles.body),
+      subtitle: Text(subtitle, style: AppTextStyles.subtitleSmall),
+    );
+  }
+
+  // =========================================================================
+  // ENHANCED NOTIFICATION TILES
+  // =========================================================================
+
+  Widget _buildCriticalAlertSoundTile() {
+    return SwitchListTile(
+      secondary: const Icon(Icons.volume_up, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Critical alert sound', style: AppTextStyles.body),
+      subtitle: const Text('Play loud sound for critical hazard alerts', style: AppTextStyles.subtitleSmall),
+      value: _notifCriticalSound,
+      activeColor: AppColors.accent,
+      onChanged: (value) async {
+        setState(() => _notifCriticalSound = value);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_kNotifCriticalSoundKey, value);
+      },
+    );
+  }
+
+  Widget _buildVibrationOnAlertTile() {
+    return SwitchListTile(
+      secondary: const Icon(Icons.vibration, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Vibration on alert', style: AppTextStyles.body),
+      subtitle: const Text('Haptic feedback when alert triggers', style: AppTextStyles.subtitleSmall),
+      value: _notifVibration,
+      activeColor: AppColors.accent,
+      onChanged: (value) async {
+        setState(() => _notifVibration = value);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_kNotifVibrationKey, value);
+      },
+    );
+  }
+
+  Widget _buildAlertCooldownTile() {
+    const options = [1, 5, 10, 30];
+    return ListTile(
+      leading: const Icon(Icons.timelapse, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Alert cooldown', style: AppTextStyles.body),
+      subtitle: const Text('Minimum time between repeated alerts', style: AppTextStyles.subtitleSmall),
+      trailing: DropdownButton<int>(
+        value: _notifCooldownMinutes,
+        dropdownColor: AppColors.primaryDark,
+        underline: const SizedBox.shrink(),
+        style: AppTextStyles.body,
+        items: options
+            .map((m) => DropdownMenuItem(value: m, child: Text('${m}m')))
+            .toList(),
+        onChanged: (value) async {
+          if (value != null) {
+            setState(() => _notifCooldownMinutes = value);
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt(_kNotifCooldownMinutesKey, value);
+          }
+        },
+      ),
+    );
+  }
+
+  // =========================================================================
+  // DATA & PRIVACY TILES
+  // =========================================================================
+
+  Widget _buildExportSettingsTile() {
+    return ListTile(
+      leading: const Icon(Icons.ios_share, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Export app settings', style: AppTextStyles.body),
+      subtitle: const Text('Share all settings as JSON', style: AppTextStyles.subtitleSmall),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      onTap: () async {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final keys = prefs.getKeys();
+          final Map<String, dynamic> allPrefs = {};
+          for (final key in keys) {
+            final val = prefs.get(key);
+            allPrefs[key] = val;
+          }
+          final json = const JsonEncoder.withIndent('  ').convert(allPrefs);
+          await Share.share(json, subject: 'AncientVision Settings Export');
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildClearSessionHistoryTile() {
+    return ListTile(
+      leading: const Icon(Icons.delete_sweep, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Clear session history', style: AppTextStyles.body),
+      subtitle: const Text('Remove all recorded vibration sessions', style: AppTextStyles.subtitleSmall),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      onTap: () {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.primaryDark,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
+            title: const Text('Clear Session History?', style: AppTextStyles.h3),
+            content: const Text(
+              'All recorded sessions will be permanently deleted.',
+              style: AppTextStyles.subtitle,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel', style: AppTextStyles.button.copyWith(color: AppColors.textSecondary)),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    await SessionHistoryService.instance.clearAll();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Session history cleared'),
+                          backgroundColor: AppColors.success,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
+                },
+                child: Text('Clear', style: AppTextStyles.button.copyWith(color: AppColors.error)),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildClearAlertHistoryTile() {
+    return ListTile(
+      leading: const Icon(Icons.notifications_off, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+      title: const Text('Clear alert history', style: AppTextStyles.body),
+      subtitle: const Text('Remove all recorded hazard alerts', style: AppTextStyles.subtitleSmall),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+      onTap: () {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.primaryDark,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.borderRadiusLarge)),
+            title: const Text('Clear Alert History?', style: AppTextStyles.h3),
+            content: const Text(
+              'All recorded alerts will be permanently deleted.',
+              style: AppTextStyles.subtitle,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel', style: AppTextStyles.button.copyWith(color: AppColors.textSecondary)),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    await AlertHistoryService().clear();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Alert history cleared'),
+                          backgroundColor: AppColors.success,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
+                },
+                child: Text('Clear', style: AppTextStyles.button.copyWith(color: AppColors.error)),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // =========================================================================
+  // APP INFO SECTION
+  // =========================================================================
+
+  Widget _buildAppInfoSection() {
+    return _buildSection('About', Icons.info_outline, [
+      const ListTile(
+        leading: Icon(Icons.tag, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+        title: Text('Version', style: AppTextStyles.body),
+        subtitle: Text('1.0.0+docker-experiment', style: AppTextStyles.subtitleSmall),
+      ),
+      const Divider(height: 1, color: Colors.white12),
+      const ListTile(
+        leading: Icon(Icons.code, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+        title: Text('Branch', style: AppTextStyles.body),
+        subtitle: Text('docker-experiment', style: AppTextStyles.subtitleSmall),
+      ),
+      const Divider(height: 1, color: Colors.white12),
+      ListTile(
+        leading: const Icon(Icons.gavel, color: AppColors.textSecondary, size: AppSizes.iconMedium),
+        title: const Text('Open Source Licenses', style: AppTextStyles.body),
+        subtitle: const Text('Third-party library acknowledgements', style: AppTextStyles.subtitleSmall),
+        trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+        onTap: () {
+          showLicensePage(
+            context: context,
+            applicationName: 'AncientVision',
+            applicationVersion: '1.0.0+docker-experiment',
+          );
+        },
+      ),
+    ]);
+  }
+
+  Widget _buildResetButton() {
+    return Center(
+      child: TextButton.icon(
+        onPressed: _showResetConfirmation,
+        icon: const Icon(Icons.restore, color: AppColors.error, size: AppSizes.iconSmall),
+        label: Text('Reset all settings to defaults', style: AppTextStyles.button.copyWith(color: AppColors.error)),
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.error,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        ),
       ),
     );
   }
@@ -940,14 +1612,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () async {
               Navigator.pop(context);
               await _settingsService.resetToDefaults();
+              // Reset new SharedPreferences-backed settings to defaults
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool(_kNotificationsEnabledKey, true);
+              await prefs.setBool(_kAlertSoundEnabledKey, true);
+              await prefs.setBool(_kNotifCriticalSoundKey, true);
+              await prefs.setBool(_kNotifVibrationKey, true);
+              await prefs.setInt(_kNotifCooldownMinutesKey, 5);
+              await prefs.setBool(_kAutoConnectKey, true);
+              await prefs.setInt(_kScanTimeoutSecondsKey, 10);
+              await prefs.setBool(_kAutoUploadKey, false);
+              await prefs.setString(_kCollectorUrlKey, 'http://192.168.1.100:8765');
+              await prefs.setInt(_kDataRetentionDaysKey, 30);
+              await prefs.setString(_kExportFormatKey, 'csv');
               if (mounted) {
-                setState(() {});
+                setState(() {
+                  _notificationsEnabled = true;
+                  _alertSoundEnabled = true;
+                  _notifCriticalSound = true;
+                  _notifVibration = true;
+                  _notifCooldownMinutes = 5;
+                  _autoConnect = true;
+                  _scanTimeoutSeconds = 10;
+                  _autoUpload = false;
+                  _collectorUrl = 'http://192.168.1.100:8765';
+                  _dataRetentionDays = 30;
+                  _exportFormat = 'csv';
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Settings reset to defaults', style: AppTextStyles.body)),
                 );
               }
             },
-            child: Text('Reset', style: AppTextStyles.button.copyWith(color: AppColors.warning)),
+            child: Text('Reset', style: AppTextStyles.button.copyWith(color: AppColors.error)),
           ),
         ],
       ),

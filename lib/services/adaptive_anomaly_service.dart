@@ -89,6 +89,12 @@ class AdaptiveAnomalyService {
   double? _lastPsdSlope;
   double? get lastPsdSlope => _lastPsdSlope;
 
+  // Last computed anomaly score — used for anomalyProbability
+  double? _lastScore;
+
+  // Last extracted feature vector — used for featureContributions
+  List<double>? _lastFeatureVector;
+
   int _sampleCount = 0;
   bool _isCalibrated = false;
 
@@ -100,9 +106,84 @@ class AdaptiveAnomalyService {
   double get dynamicThresholdLow => _dynamicThresholdLow;
   double get dynamicThresholdHigh => _dynamicThresholdHigh;
   int get sampleCount => _sampleCount;
+  /// Number of calibration samples accepted so far (alias for sampleCount).
+  int get calibrationSampleCount => _sampleCount;
   int get calibrationTarget => _calibrationSamples;
   double get calibrationProgress => (_sampleCount / _calibrationSamples).clamp(0.0, 1.0);
   String get modeLabel => _isCalibrated ? 'Adaptive' : 'Calibrating (${(_sampleCount * 100 / _calibrationSamples).round()}%)';
+
+  /// Returns a multiplier for detection thresholds based on time-of-day.
+  ///
+  /// During construction hours (07:00–18:00), thresholds are raised by 25%
+  /// to reduce false positives from legitimate vibration sources.
+  double get _timeOfDayMultiplier {
+    final hour = DateTime.now().hour;
+    return (hour >= 7 && hour < 18) ? 1.25 : 1.0;
+  }
+
+  /// Quality of the most recent calibration (0.0–1.0).
+  ///
+  /// Based on: number of samples (more = better), variance stability
+  /// (lower variance across calibration windows = better).
+  double get calibrationQuality {
+    if (!_isCalibrated) return 0.0;
+    // Score based on sample count vs ideal (300 samples = perfect)
+    final sampleScore = (calibrationSampleCount / 300.0).clamp(0.0, 1.0);
+    // Score based on low variance (variance < 0.1 is good)
+    double varianceScore = 1.0;
+    // Compute mean variance across features
+    double totalVariance = 0;
+    int count = 0;
+    for (final key in _featureKeys) {
+      if (_stats.containsKey(key)) {
+        totalVariance += _stats[key]!.variance;
+        count++;
+      }
+    }
+    if (count > 0) {
+      final meanVariance = totalVariance / count;
+      varianceScore = (1.0 - (meanVariance / 1.0).clamp(0.0, 1.0));
+    }
+    return (sampleScore * 0.6 + varianceScore * 0.4).clamp(0.0, 1.0);
+  }
+
+  /// Human-readable calibration quality label.
+  String get calibrationQualityLabel {
+    final q = calibrationQuality;
+    if (q >= 0.8) return 'Excellent';
+    if (q >= 0.6) return 'Good';
+    if (q >= 0.4) return 'Fair';
+    return 'Poor';
+  }
+
+  /// Estimated probability that the current sample represents a genuine anomaly.
+  ///
+  /// Derived from the Mahalanobis-like distance of the current feature vector
+  /// from the baseline distribution.
+  double get anomalyProbability {
+    if (!_isCalibrated || _lastScore == null) return 0.0;
+    // Sigmoid transform of (score - low_threshold) / (high_threshold - low_threshold)
+    final norm = (_lastScore! - _dynamicThresholdLow) /
+                  (_dynamicThresholdHigh - _dynamicThresholdLow + 1e-10);
+    return 1.0 / (1.0 + exp(-5.0 * norm));
+  }
+
+  /// Per-feature z-score magnitudes — shows which features contributed most to anomaly score.
+  ///
+  /// Higher values indicate the feature is more deviated from baseline.
+  /// Returns empty map if not calibrated.
+  Map<String, double> get featureContributions {
+    if (!_isCalibrated || _lastFeatureVector == null) return {};
+    final result = <String, double>{};
+    for (int i = 0; i < _featureKeys.length && i < _lastFeatureVector!.length; i++) {
+      final key = _featureKeys[i];
+      if (_stats.containsKey(key)) {
+        final std = sqrt(_stats[key]!.variance + 1e-10);
+        result[key] = ((_lastFeatureVector![i] - _stats[key]!.mean) / std).abs();
+      }
+    }
+    return result;
+  }
 
   AdaptiveAnomalyService() {
     _serviceStopwatch.start();
@@ -119,6 +200,32 @@ class AdaptiveAnomalyService {
   /// Feed a new sample to update the baseline model.
   /// Call this for EVERY BLE packet received, even during detection phase.
   void updateBaseline(Map<String, double> features) {
+    // Outlier rejection during calibration phase: reject any sample where one
+    // or more features deviate more than 3σ from the running mean.
+    // Uses Welford's online statistics already tracked in _stats.
+    // (Requires at least 10 samples to have a stable enough estimate.)
+    if (!_isCalibrated && _sampleCount >= 10) {
+      bool isOutlier = false;
+      for (final key in _featureKeys) {
+        final stats = _stats[key]!;
+        if (stats.count > 1) {
+          final stdDev = sqrt(stats.variance);
+          if (stdDev > 1e-12) {
+            final z = ((features[key] ?? 0.0) - stats.mean).abs() / stdDev;
+            if (z > 3.0) {
+              isOutlier = true;
+              if (kDebugMode) {
+                debugPrint('AdaptiveAnomalyService: calibration outlier rejected '
+                    '(feature=$key z=${z.toStringAsFixed(2)})');
+              }
+              break;
+            }
+          }
+        }
+      }
+      if (isOutlier) return; // Skip this sample — don't increment counter
+    }
+
     _sampleCount++;
 
     for (final key in _featureKeys) {
@@ -178,10 +285,10 @@ class AdaptiveAnomalyService {
       for (final key in _featureKeys) {
         sumVariance += _stats[key]!.variance;
       }
-      final _calibStd = sqrt(sumVariance / _featureKeys.length);
-      final _calibMean = 0.0; // z-score baseline is always 0
-      _dynamicThresholdLow = _calibMean + 2.0 * _calibStd;
-      _dynamicThresholdHigh = _calibMean + 4.0 * _calibStd;
+      final calibStd = sqrt(sumVariance / _featureKeys.length);
+      const calibMean = 0.0; // z-score baseline is always 0
+      _dynamicThresholdLow = calibMean + 2.0 * calibStd;
+      _dynamicThresholdHigh = calibMean + 4.0 * calibStd;
       // Guard: never let dynamic thresholds fall below sensible minimums
       if (_dynamicThresholdLow < 0.1) _dynamicThresholdLow = 1.195327;
       if (_dynamicThresholdHigh < 0.2) _dynamicThresholdHigh = 1.788009;
@@ -244,9 +351,17 @@ class AdaptiveAnomalyService {
 
     final rmsZ = sqrt(sumZSq / featureCount);
 
-    // Use adaptive (calibration-derived) thresholds if available, else static defaults
-    final effectiveLow = _isCalibrated ? _dynamicThresholdLow : _thresholdLow;
-    final effectiveHigh = _isCalibrated ? _dynamicThresholdHigh : _thresholdHigh;
+    // Record the current feature vector for featureContributions
+    _lastFeatureVector = [for (final key in _featureKeys) features[key] ?? 0.0];
+
+    // Use adaptive (calibration-derived) thresholds if available, else static defaults.
+    // Apply time-of-day multiplier: during construction hours (07:00–18:00) raise
+    // thresholds by 25% to reduce false positives from legitimate vibration sources.
+    final todMultiplier = _timeOfDayMultiplier;
+    final adjustedLow = _dynamicThresholdLow * todMultiplier;
+    final adjustedHigh = _dynamicThresholdHigh * todMultiplier;
+    final effectiveLow = _isCalibrated ? adjustedLow : _thresholdLow;
+    final effectiveHigh = _isCalibrated ? adjustedHigh : _thresholdHigh;
 
     // Instantaneous classification
     double instantScore;
@@ -400,6 +515,7 @@ class AdaptiveAnomalyService {
     // Final score = max of instantaneous, trend, precursor, and change point
     // This way EITHER a sudden event OR a slow buildup OR a physics pattern OR change points triggers
     final finalScore = max(instantScore, max(trendScore, max(precursorScore, changePointScore))).clamp(0.0, 1.0);
+    _lastScore = rmsZ; // store rmsZ (Mahalanobis-like distance) for anomalyProbability
     final isTrendDriven = trendScore > instantScore && trendScore >= precursorScore;
     final isPrecursorDriven = precursorScore > instantScore && precursorScore > trendScore;
 
@@ -581,6 +697,8 @@ class AdaptiveAnomalyService {
     _inverseVelocityHistory.clear();
     _inverseVelocityTimes.clear();
     _lastPsdSlope = null;
+    _lastScore = null;
+    _lastFeatureVector = null;
     if (kDebugMode) {
       debugPrint('AdaptiveAnomalyService: Baseline reset (forces recalibration)');
     }

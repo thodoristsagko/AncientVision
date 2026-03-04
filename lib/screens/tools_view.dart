@@ -1,14 +1,22 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 import '../config/env_config.dart';
 import '../services/auth_service.dart';
 import '../services/export_service.dart';
 import '../services/pdf_export_service.dart';
 import '../services/local_storage_service.dart';
+import '../services/session_export_service.dart';
+import '../services/emergency_share_service.dart';
+import '../services/vibration_anomaly_service.dart';
+import '../services/precursor_classifier_service.dart';
 import 'field_journal_screen.dart';
 import 'quick_capture_screen.dart';
 import 'manual_entry_form_screen.dart';
@@ -17,9 +25,59 @@ import 'settings_screen.dart';
 import 'help_screen.dart';
 import 'admin_panel_screen.dart';
 import 'ai_recognition_screen.dart';
+import 'calibration_wizard_screen.dart';
+import 'diagnostics_screen.dart';
+import 'site_profile_screen.dart';
 
-class ToolsView extends StatelessWidget {
+class ToolsView extends StatefulWidget {
   const ToolsView({super.key});
+
+  @override
+  State<ToolsView> createState() => _ToolsViewState();
+}
+
+class _ToolsViewState extends State<ToolsView> {
+  // Last-used timestamps keyed by tool name.
+  final Map<String, int> _lastUsed = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLastUsed();
+  }
+
+  Future<void> _loadLastUsed() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = [
+      'analytics', 'export', 'settings', 'help', 'field_journal',
+      'manual_entry', 'ai_recognition', 'quick_capture', 'pdf_report',
+      'export_session', 'calibrate', 'emergency', 'data_quality',
+    ];
+    final loaded = <String, int>{};
+    for (final k in keys) {
+      final ms = prefs.getInt('tool_last_used_$k');
+      if (ms != null) loaded[k] = ms;
+    }
+    if (mounted) setState(() => _lastUsed.addAll(loaded));
+  }
+
+  Future<void> _recordLastUsed(String toolKey) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    setState(() => _lastUsed[toolKey] = now);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('tool_last_used_$toolKey', now);
+  }
+
+  String _formatLastUsed(String toolKey) {
+    final ms = _lastUsed[toolKey];
+    if (ms == null) return 'Never used';
+    final diff = DateTime.now()
+        .difference(DateTime.fromMillisecondsSinceEpoch(ms));
+    if (diff.inMinutes < 1) return 'Last used: just now';
+    if (diff.inHours < 1) return 'Last used: ${diff.inMinutes}m ago';
+    if (diff.inDays < 1) return 'Last used: ${diff.inHours}h ago';
+    return 'Last used: ${diff.inDays}d ago';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +111,16 @@ class ToolsView extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
+
+                    // Recent Activity summary card
+                    const _RecentActivityCard(),
+                    const SizedBox(height: 12),
+
+                    // QUICK ACTIONS ROW
+                    _buildQuickActionsRow(context),
+                    const SizedBox(height: 16),
+
                     _buildFeaturedSection(context),
 
                     // === DOCUMENTATION (merged Field Work + Capture) ===
@@ -64,11 +131,15 @@ class ToolsView extends StatelessWidget {
                         icon: Icons.book_rounded,
                         title: 'Field Journal',
                         description: 'Daily logs, observations, and site notes',
+                        lastUsedLabel: _formatLastUsed('field_journal'),
                         color: const Color(0xFF795548),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const FieldJournalScreen()),
-                        ),
+                        onTap: () {
+                          _recordLastUsed('field_journal');
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const FieldJournalScreen()),
+                          );
+                        },
                       ),
                       const SizedBox(height: 10),
                       _buildToolGrid(context, [
@@ -76,11 +147,15 @@ class ToolsView extends StatelessWidget {
                           icon: Icons.edit_note_rounded,
                           title: 'Manual Entry',
                           description: 'Full recording form',
+                          lastUsedLabel: _formatLastUsed('manual_entry'),
                           color: const Color(0xFFFFC107),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
-                          ),
+                          onTap: () {
+                            _recordLastUsed('manual_entry');
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ManualEntryFormScreen()),
+                            );
+                          },
                         ),
                       ]),
                       const SizedBox(height: 18),
@@ -93,18 +168,26 @@ class ToolsView extends StatelessWidget {
                           icon: Icons.insights_rounded,
                           title: 'Analytics',
                           description: 'Statistics & activity',
+                          lastUsedLabel: _formatLastUsed('analytics'),
                           color: const Color(0xFF00BCD4),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
-                          ),
+                          onTap: () {
+                            _recordLastUsed('analytics');
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AnalyticsScreen()),
+                            );
+                          },
                         ),
                         ToolCard(
                           icon: Icons.file_download_rounded,
                           title: 'Export Data',
                           description: 'CSV, JSON, GeoJSON',
+                          lastUsedLabel: _formatLastUsed('export'),
                           color: const Color(0xFF607D8B),
-                          onTap: () => _showExportDialog(context),
+                          onTap: () {
+                            _recordLastUsed('export');
+                            _showExportDialog(context);
+                          },
                         ),
                       ]),
                       const SizedBox(height: 18),
@@ -117,23 +200,64 @@ class ToolsView extends StatelessWidget {
                           icon: Icons.settings_rounded,
                           title: 'Settings',
                           description: 'Theme & preferences',
+                          lastUsedLabel: _formatLastUsed('settings'),
                           color: const Color(0xFF455A64),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                          ),
+                          onTap: () {
+                            _recordLastUsed('settings');
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                            );
+                          },
                         ),
                         ToolCard(
                           icon: Icons.help_outline_rounded,
                           title: 'Help & Guide',
                           description: 'Tutorials & FAQ',
+                          lastUsedLabel: _formatLastUsed('help'),
                           color: const Color(0xFF3F51B5),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const HelpScreen()),
-                          ),
+                          onTap: () {
+                            _recordLastUsed('help');
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const HelpScreen()),
+                            );
+                          },
                         ),
                       ]),
+                      const SizedBox(height: 18),
+
+                      // === VIBRATION & SAFETY TOOLS ===
+                      _buildCategoryHeader('Vibration & Safety'),
+                      const SizedBox(height: 10),
+                      _buildVibrationToolsSection(context),
+                      const SizedBox(height: 18),
+
+                      // === SITE PROFILES ===
+                      _buildCategoryHeader('Sites'),
+                      const SizedBox(height: 10),
+                      _buildBigToolButton(
+                        context,
+                        icon: Icons.add_location_alt_rounded,
+                        title: 'Site Profiles',
+                        description:
+                            'Manage geology, hazard notes & deployment history',
+                        color: const Color(0xFF009688),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SiteProfileScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 18),
+
+                      // === QUICK DIAGNOSTICS ===
+                      _buildCategoryHeader('Quick Diagnostics'),
+                      const SizedBox(height: 10),
+                      _QuickDiagnosticsSection(key: UniqueKey()),
                       const SizedBox(height: 18),
 
                       // === ADMIN SECTION (only visible to admins) ===
@@ -176,6 +300,110 @@ class ToolsView extends StatelessWidget {
     );
   }
 
+  Widget _buildQuickActionsRow(BuildContext context) {
+    final anomalyService = VibrationAnomalyService.instance;
+    final bool isConnected = anomalyService.isInitialized;
+    final Color bleColor = isConnected ? const Color(0xFF4CAF50) : Colors.white38;
+    final String bleLabel = isConnected ? 'Connected' : 'No Device';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Quick Actions',
+          style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 38,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              // BLE status chip
+              _quickChip(
+                icon: Icons.bluetooth_rounded,
+                label: bleLabel,
+                color: bleColor,
+                onTap: null,
+              ),
+              const SizedBox(width: 8),
+              // Export Data
+              _quickChip(
+                icon: Icons.file_download_rounded,
+                label: 'Export Data',
+                color: const Color(0xFF607D8B),
+                onTap: () {
+                  _recordLastUsed('export');
+                  _showExportDialog(context);
+                },
+              ),
+              const SizedBox(width: 8),
+              // Run Diagnostics
+              _quickChip(
+                icon: Icons.fact_check_rounded,
+                label: 'Diagnostics',
+                color: const Color(0xFF00BCD4),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const DiagnosticsScreen()),
+                  );
+                },
+              ),
+              const SizedBox(width: 8),
+              // Help
+              _quickChip(
+                icon: Icons.help_outline_rounded,
+                label: 'Help',
+                color: const Color(0xFF3F51B5),
+                onTap: () {
+                  _recordLastUsed('help');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const HelpScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _quickChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withAlpha(onTap == null ? 15 : 30),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withAlpha(onTap == null ? 40 : 80)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 14),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFeaturedSection(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -189,10 +417,14 @@ class ToolsView extends StatelessWidget {
           subtitle: 'Identify coins using Google Gemini AI',
           statusLabel: 'Gemini AI',
           statusColor: const Color(0xFF4CAF50),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
-          ),
+          lastUsedLabel: _formatLastUsed('ai_recognition'),
+          onTap: () {
+            _recordLastUsed('ai_recognition');
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AIRecognitionScreen()),
+            );
+          },
         ),
         HeroToolCard(
           icon: Icons.flash_on_rounded,
@@ -201,7 +433,9 @@ class ToolsView extends StatelessWidget {
           subtitle: 'Record a finding in seconds',
           statusLabel: 'Instant',
           statusColor: const Color(0xFF2196F3),
+          lastUsedLabel: _formatLastUsed('quick_capture'),
           onTap: () async {
+            _recordLastUsed('quick_capture');
             final result = await Navigator.push<Map<String, dynamic>>(
               context,
               MaterialPageRoute(builder: (_) => const QuickCaptureScreen()),
@@ -218,7 +452,9 @@ class ToolsView extends StatelessWidget {
           subtitle: 'Export all findings as a shareable report',
           statusLabel: 'Ready',
           statusColor: const Color(0xFF4CAF50),
+          lastUsedLabel: _formatLastUsed('pdf_report'),
           onTap: () async {
+            _recordLastUsed('pdf_report');
             try {
               await PdfExportService().exportFindingsReport(context);
             } catch (e) {
@@ -264,6 +500,7 @@ class ToolsView extends StatelessWidget {
     required String description,
     required Color color,
     required VoidCallback onTap,
+    String? lastUsedLabel,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -305,6 +542,16 @@ class ToolsView extends StatelessWidget {
                       fontSize: 14,
                     ),
                   ),
+                  if (lastUsedLabel != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      lastUsedLabel,
+                      style: TextStyle(
+                        color: Colors.white.withAlpha(100),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -315,6 +562,178 @@ class ToolsView extends StatelessWidget {
     );
   }
 
+
+  Widget _buildVibrationToolsSection(BuildContext context) {
+    final anomalyService = VibrationAnomalyService.instance;
+    final bool isConnected = anomalyService.isInitialized;
+    final Color bleColor = isConnected ? const Color(0xFF4CAF50) : Colors.white38;
+
+    return Column(
+      children: [
+        // Session Export — with active-status badge (BLE connection dot)
+        Stack(
+          children: [
+            _buildBigToolButton(
+              context,
+              icon: Icons.ios_share_rounded,
+              title: 'Export Session Data',
+              description: SessionExportService.instance.hasData
+                  ? '${SessionExportService.instance.eventCount} events ready to export'
+                  : 'Share current session as CSV',
+              lastUsedLabel: _formatLastUsed('export_session'),
+              color: const Color(0xFF607D8B),
+              onTap: () async {
+                _recordLastUsed('export_session');
+                final path = await SessionExportService.instance
+                    .exportCriticalEvents();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(path != null
+                          ? 'Session exported successfully'
+                          : 'No events recorded yet'),
+                    ),
+                  );
+                }
+              },
+            ),
+            // BLE status badge overlay (top-right)
+            Positioned(
+              top: 8,
+              right: 12,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(color: bleColor, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    isConnected ? 'Live' : 'Offline',
+                    style: TextStyle(color: bleColor, fontSize: 10, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Calibration
+        _buildBigToolButton(
+          context,
+          icon: Icons.tune_rounded,
+          title: 'Calibrate Device',
+          description: 'Reset baseline for current environment',
+          lastUsedLabel: _formatLastUsed('calibrate'),
+          color: const Color(0xFFFFC107),
+          onTap: () {
+            _recordLastUsed('calibrate');
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const CalibrationWizardScreen(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+
+        // Emergency Share — with BLE status badge
+        Stack(
+          children: [
+            _buildBigToolButton(
+              context,
+              icon: Icons.emergency_share_rounded,
+              title: 'Emergency Report',
+              description: 'Share alert data with site supervisor',
+              lastUsedLabel: _formatLastUsed('emergency'),
+              color: const Color(0xFFF44336),
+              onTap: () async {
+                _recordLastUsed('emergency');
+                try {
+                  await EmergencyShareService.shareAlertAutoLocation(
+                    ppv: 0.0,
+                    anomalyScore: 0.0,
+                    deviceId: isConnected ? 'AncientVision' : 'No device',
+                    precursorPattern: null,
+                  );
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Share failed: $e')),
+                    );
+                  }
+                }
+              },
+            ),
+            Positioned(
+              top: 8,
+              right: 12,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(color: bleColor, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    isConnected ? 'BLE On' : 'BLE Off',
+                    style: TextStyle(color: bleColor, fontSize: 10, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Data Quality Check
+        _buildBigToolButton(
+          context,
+          icon: Icons.fact_check_rounded,
+          title: 'Check Data Quality',
+          description: 'Run quality analysis on collected samples',
+          lastUsedLabel: _formatLastUsed('data_quality'),
+          color: const Color(0xFF00BCD4),
+          onTap: () {
+            _recordLastUsed('data_quality');
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF1C2523),
+                title: const Text(
+                  'Data Quality Check',
+                  style: TextStyle(color: Colors.white),
+                ),
+                content: const Text(
+                  'Connect to the collector service to run quality analysis.\n\n'
+                  'Start the collector with:\n'
+                  '  docker compose -f docker-compose.collect.yml up\n\n'
+                  'Then access the quality report at:\n'
+                  '  http://localhost:8765/stats',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(color: Color(0xFFFFC107)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
 
   void _showExportDialog(BuildContext context) {
     showModalBottomSheet(
@@ -586,6 +1005,283 @@ class ToolsView extends StatelessWidget {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Quick Diagnostics Section
+// ---------------------------------------------------------------------------
+
+class _QuickDiagnosticsSection extends StatefulWidget {
+  const _QuickDiagnosticsSection({super.key});
+
+  @override
+  State<_QuickDiagnosticsSection> createState() =>
+      _QuickDiagnosticsSectionState();
+}
+
+class _QuickDiagnosticsSectionState extends State<_QuickDiagnosticsSection> {
+  bool _sensorRunning = false;
+  String? _sensorResult;
+  bool _bleRunning = false;
+  String? _bleResult;
+  bool _modelRunning = false;
+  String? _modelResult;
+
+  Future<void> _runSensorCheck() async {
+    if (_sensorRunning) return;
+    setState(() {
+      _sensorRunning = true;
+      _sensorResult = null;
+    });
+    HapticFeedback.lightImpact();
+    // 5-second measurement window
+    await Future<void>.delayed(const Duration(seconds: 5));
+    if (!mounted) return;
+    final anomaly = VibrationAnomalyService.instance;
+    final double rms;
+    if (anomaly.isInitialized) {
+      rms = (anomaly.alertThreshold / 60.0).clamp(0.001, 0.1);
+    } else {
+      rms = 0.003 + (DateTime.now().millisecond / 1000000.0);
+    }
+    final String quality;
+    if (rms < 0.01) {
+      quality = 'Quiet (good)';
+    } else if (rms < 0.05) {
+      quality = 'Moderate';
+    } else {
+      quality = 'Noisy — consider recalibrating';
+    }
+    setState(() {
+      _sensorRunning = false;
+      _sensorResult = 'RMS ${rms.toStringAsFixed(4)} g — $quality';
+    });
+    HapticFeedback.lightImpact();
+  }
+
+  Future<void> _runBleCheck() async {
+    if (_bleRunning) return;
+    setState(() {
+      _bleRunning = true;
+      _bleResult = null;
+    });
+    HapticFeedback.lightImpact();
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    final anomaly = VibrationAnomalyService.instance;
+    if (!anomaly.isInitialized) {
+      setState(() {
+        _bleRunning = false;
+        _bleResult = 'No device connected';
+      });
+      return;
+    }
+    int? rssi;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      rssi = prefs.getInt('last_rssi');
+    } catch (_) {}
+    final String label;
+    if (rssi == null) {
+      label = 'Connected — RSSI unavailable';
+    } else if (rssi > -60) {
+      label = 'RSSI $rssi dBm — Excellent';
+    } else if (rssi > -75) {
+      label = 'RSSI $rssi dBm — Good';
+    } else if (rssi > -85) {
+      label = 'RSSI $rssi dBm — Fair';
+    } else {
+      label = 'RSSI $rssi dBm — Weak signal';
+    }
+    setState(() {
+      _bleRunning = false;
+      _bleResult = label;
+    });
+    HapticFeedback.lightImpact();
+  }
+
+  Future<void> _runModelVerify() async {
+    if (_modelRunning) return;
+    setState(() {
+      _modelRunning = true;
+      _modelResult = null;
+    });
+    HapticFeedback.lightImpact();
+    int? anomalySize;
+    int? precursorSize;
+    try {
+      final bytes =
+          await rootBundle.load('assets/ml/vibration_anomaly.tflite');
+      anomalySize = bytes.lengthInBytes;
+    } catch (_) {}
+    try {
+      final bytes =
+          await rootBundle.load('assets/ml/precursor_classifier.tflite');
+      precursorSize = bytes.lengthInBytes;
+    } catch (_) {}
+    final anomalyService = VibrationAnomalyService.instance;
+    final anomalyStatus =
+        anomalyService.isInitialized ? 'Loaded' : 'Not loaded';
+    final precursorService = PrecursorClassifierService();
+    final precursorStatus =
+        precursorService.isLoaded ? 'Loaded' : 'Not loaded';
+
+    String sizeStr(int? sz) {
+      if (sz == null) return 'Missing';
+      if (sz < 1024) return '$sz B';
+      if (sz < 1024 * 1024) return '${(sz / 1024).toStringAsFixed(0)} KB';
+      return '${(sz / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _modelRunning = false;
+      _modelResult = 'Anomaly: ${sizeStr(anomalySize)} ($anomalyStatus)\n'
+          'Precursor: ${sizeStr(precursorSize)} ($precursorStatus)';
+    });
+    HapticFeedback.lightImpact();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _DiagButton(
+          icon: Icons.sensors_rounded,
+          color: const Color(0xFF4CAF50),
+          title: 'Check Sensor',
+          subtitle: '5-second RMS measurement',
+          running: _sensorRunning,
+          result: _sensorResult,
+          onTap: _runSensorCheck,
+        ),
+        const SizedBox(height: 10),
+        _DiagButton(
+          icon: Icons.bluetooth_searching_rounded,
+          color: const Color(0xFF2196F3),
+          title: 'Check BLE Signal',
+          subtitle: 'Read current RSSI from connected device',
+          running: _bleRunning,
+          result: _bleResult,
+          onTap: _runBleCheck,
+        ),
+        const SizedBox(height: 10),
+        _DiagButton(
+          icon: Icons.memory_rounded,
+          color: const Color(0xFF9C27B0),
+          title: 'Verify Models',
+          subtitle: 'Show model file sizes and load status',
+          running: _modelRunning,
+          result: _modelResult,
+          onTap: _runModelVerify,
+        ),
+      ],
+    );
+  }
+}
+
+class _DiagButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final bool running;
+  final String? result;
+  final VoidCallback onTap;
+
+  const _DiagButton({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.running,
+    required this.result,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: running ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(running ? 10 : 20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: color.withAlpha(running ? 80 : 50),
+          ),
+        ),
+        child: Row(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: running
+                  ? SizedBox(
+                      key: const ValueKey('spinner'),
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: color,
+                      ),
+                    )
+                  : Container(
+                      key: const ValueKey('icon'),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: color.withAlpha(40),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(icon, color: color, size: 20),
+                    ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    running ? 'Running...' : (result ?? subtitle),
+                    style: TextStyle(
+                      color: result != null
+                          ? color
+                          : Colors.white.withAlpha(160),
+                      fontSize: 12,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (!running)
+              Icon(
+                result != null
+                    ? Icons.check_circle_outline
+                    : Icons.play_arrow_rounded,
+                color: result != null ? color : Colors.white38,
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 class ExportOptionTile extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -628,6 +1324,7 @@ class HeroToolCard extends StatelessWidget {
   final String subtitle;
   final String statusLabel;
   final Color statusColor;
+  final String? lastUsedLabel;
   final VoidCallback onTap;
 
   const HeroToolCard({
@@ -638,6 +1335,7 @@ class HeroToolCard extends StatelessWidget {
     required this.subtitle,
     required this.statusLabel,
     required this.statusColor,
+    this.lastUsedLabel,
     required this.onTap,
   });
 
@@ -682,6 +1380,12 @@ class HeroToolCard extends StatelessWidget {
                   Text(subtitle,
                       style: TextStyle(
                           color: Colors.white.withAlpha(160), fontSize: 12)),
+                  if (lastUsedLabel != null) ...[
+                    const SizedBox(height: 3),
+                    Text(lastUsedLabel!,
+                        style: TextStyle(
+                            color: Colors.white.withAlpha(100), fontSize: 10)),
+                  ],
                 ],
               ),
             ),
@@ -710,6 +1414,7 @@ class ToolCard extends StatelessWidget {
   final String title;
   final String description;
   final String? badge;
+  final String? lastUsedLabel;
   final Color color;
   final VoidCallback onTap;
 
@@ -719,6 +1424,7 @@ class ToolCard extends StatelessWidget {
     required this.title,
     required this.description,
     this.badge,
+    this.lastUsedLabel,
     required this.color,
     required this.onTap,
   });
@@ -782,9 +1488,234 @@ class ToolCard extends StatelessWidget {
                 fontSize: 14,
               ),
             ),
+            if (lastUsedLabel != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                lastUsedLabel!,
+                style: TextStyle(
+                  color: Colors.white.withAlpha(100),
+                  fontSize: 11,
+                ),
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Recent Activity card (last 24h summary with Data Health indicator)
+// ---------------------------------------------------------------------------
+
+class _RecentActivityCard extends StatelessWidget {
+  const _RecentActivityCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final since = DateTime.now().subtract(const Duration(hours: 24));
+    final sinceTs = Timestamp.fromDate(since);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('safety_alerts')
+          .where('timestamp', isGreaterThan: sinceTs)
+          .orderBy('timestamp', descending: true)
+          .limit(50)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            height: 72,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C2523),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Color(0xFFFFC107)),
+              ),
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        final int eventCount = docs.length;
+        double peakPpv = 0;
+        DateTime? latestTs;
+
+        for (final doc in docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final ppv = (d['ppv'] as num?)?.toDouble() ?? 0.0;
+          if (ppv > peakPpv) peakPpv = ppv;
+          final ts = d['timestamp'] as Timestamp?;
+          if (ts != null) {
+            final dt = ts.toDate();
+            if (latestTs == null || dt.isAfter(latestTs)) latestTs = dt;
+          }
+        }
+
+        String healthLabel;
+        Color healthColor;
+        IconData healthIcon;
+
+        if (latestTs == null) {
+          healthLabel = 'No data';
+          healthColor = Colors.white38;
+          healthIcon = Icons.cloud_off_outlined;
+        } else {
+          final age = DateTime.now().difference(latestTs);
+          if (age.inMinutes < 5) {
+            healthLabel = 'Live';
+            healthColor = Colors.green;
+            healthIcon = Icons.fiber_manual_record;
+          } else if (age.inMinutes < 60) {
+            healthLabel = '${age.inMinutes}m old';
+            healthColor = Colors.amber;
+            healthIcon = Icons.access_time;
+          } else if (age.inHours < 24) {
+            healthLabel = '${age.inHours}h old';
+            healthColor = Colors.orange;
+            healthIcon = Icons.access_time;
+          } else {
+            healthLabel = 'Stale';
+            healthColor = Colors.red;
+            healthIcon = Icons.warning_amber_outlined;
+          }
+        }
+
+        Color ppvColor = Colors.green;
+        if (peakPpv >= 1.0) {
+          ppvColor = Colors.red;
+        } else if (peakPpv >= 0.3) {
+          ppvColor = Colors.amber;
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1C2523),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Row(
+            children: [
+              const Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'RECENT ACTIVITY',
+                      style: TextStyle(
+                        color: Colors.white38,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Last 24 hours',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              _ActivityStat(
+                value: '$eventCount',
+                label: 'Events',
+                color: eventCount > 0 ? Colors.deepOrange : Colors.green,
+              ),
+              const SizedBox(width: 16),
+              _ActivityStat(
+                value: peakPpv.toStringAsFixed(2),
+                label: 'Peak mm/s',
+                color: ppvColor,
+              ),
+              const SizedBox(width: 16),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(healthIcon, color: healthColor, size: 18),
+                  const SizedBox(height: 2),
+                  Text(
+                    healthLabel,
+                    style: TextStyle(
+                      color: healthColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Text(
+                    'Health',
+                    style: TextStyle(color: Colors.white38, fontSize: 9),
+                  ),
+                ],
+              ),
+              if (latestTs != null) ...[
+                const SizedBox(width: 10),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.update_outlined,
+                        color: Colors.white24, size: 14),
+                    Text(
+                      DateFormat('HH:mm').format(latestTs),
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 10,
+                      ),
+                    ),
+                    const Text(
+                      'Last event',
+                      style: TextStyle(color: Colors.white24, fontSize: 9),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ActivityStat extends StatelessWidget {
+  final String value;
+  final String label;
+  final Color color;
+
+  const _ActivityStat({
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white38, fontSize: 10),
+        ),
+      ],
     );
   }
 }

@@ -1,9 +1,16 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/progress_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/export_service.dart';
+import '../services/session_export_service.dart';
+import '../services/session_history_service.dart';
+import '../services/alert_history_service.dart';
+import '../services/inference_timing_service.dart';
 
 /// Analytics and Statistics Dashboard Screen
 /// Professional documentation statistics with beautiful visualizations
@@ -28,6 +35,28 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
 
   // Computed from real data
   Map<String, int> _materialCounts = {};
+
+  // P156: Data quality + model performance extras
+  String? _modelAccuracy;    // loaded from precursor_training_metrics.json
+  bool _metricsLoaded = false;
+
+  // Session timeline (last 10 sessions, newest first)
+  List<SessionRecord> _recentSessions = [];
+
+  // Alert level distribution from alert history
+  Map<String, int> _alertLevelCounts = {};
+
+  // ML inference stats snapshot
+  int _inferenceCount = 0;
+  double _inferenceAvgMs = 0.0;
+
+  // PPV statistics (P157: Enhanced vibration analytics)
+  double _meanPpv = 0.0;
+  double _stdDevPpv = 0.0;
+  double _peakPpv = 0.0;
+  int _totalReadings = 0;
+  double _alertRate = 0.0;
+  Duration? _lastSessionDuration;
 
   @override
   void initState() {
@@ -60,6 +89,37 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     // Analyze real finding data
     _analyzeFindingData();
 
+    // P156: Attempt to load model performance metrics
+    await _loadModelMetrics();
+
+    // Load session timeline (last 10 sessions)
+    final allSessions = await SessionHistoryService.instance.getSessions();
+    _recentSessions = allSessions.take(10).toList();
+
+    // Load alert level distribution
+    final alertHistory = await AlertHistoryService().load();
+    _alertLevelCounts = {};
+    for (final entry in alertHistory) {
+      final level = entry.level.isNotEmpty ? entry.level : 'unknown';
+      _alertLevelCounts[level] = (_alertLevelCounts[level] ?? 0) + 1;
+    }
+
+    // Snapshot ML inference stats
+    final timing = InferenceTimingService.instance;
+    _inferenceCount = timing.count;
+    _inferenceAvgMs = timing.avgMs;
+
+    // P157: Calculate PPV statistics from findings
+    _calculatePpvStatistics();
+
+    // P157: Calculate alert rate (ANOMALY or CRITICAL as % of total readings)
+    _calculateAlertRate(alertHistory);
+
+    // P157: Get last session duration
+    if (_recentSessions.isNotEmpty) {
+      _lastSessionDuration = _recentSessions.first.duration;
+    }
+
     if (mounted) {
       setState(() => _isLoading = false);
       _animationController.forward();
@@ -81,6 +141,63 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       final material = finding['material'] as String? ?? 'Unknown';
       _materialCounts[material] = (_materialCounts[material] ?? 0) + 1;
     }
+  }
+
+  /// P157: Calculate PPV statistics from findings
+  /// Computes mean, std dev, peak PPV, and total reading count.
+  void _calculatePpvStatistics() {
+    if (_allFindings.isEmpty) {
+      _meanPpv = 0.0;
+      _stdDevPpv = 0.0;
+      _peakPpv = 0.0;
+      _totalReadings = 0;
+      return;
+    }
+
+    // Extract PPV values from findings
+    final ppvValues = <double>[];
+    for (final finding in _allFindings) {
+      if (finding['ppv'] != null) {
+        final ppv = (finding['ppv'] as num?)?.toDouble() ?? 0.0;
+        if (ppv > 0) {
+          ppvValues.add(ppv);
+        }
+      }
+    }
+
+    if (ppvValues.isEmpty) {
+      _meanPpv = 0.0;
+      _stdDevPpv = 0.0;
+      _peakPpv = 0.0;
+      _totalReadings = 0;
+      return;
+    }
+
+    _totalReadings = ppvValues.length;
+
+    // Calculate mean
+    _meanPpv = ppvValues.fold(0.0, (a, b) => a + b) / ppvValues.length;
+
+    // Calculate peak
+    _peakPpv = ppvValues.fold(0.0, (a, b) => a > b ? a : b);
+
+    // Calculate standard deviation
+    final variance = ppvValues.fold(0.0, (sum, val) => sum + ((val - _meanPpv) * (val - _meanPpv))) / ppvValues.length;
+    _stdDevPpv = math.sqrt(variance);
+  }
+
+  /// P157: Calculate alert rate as percentage of readings that triggered ANOMALY/CRITICAL.
+  void _calculateAlertRate(List<AlertData> alertHistory) {
+    if (_totalReadings == 0) {
+      _alertRate = 0.0;
+      return;
+    }
+
+    final anomalyCount = alertHistory
+        .where((e) => e.level == 'ANOMALY' || e.level == 'CRITICAL')
+        .length;
+
+    _alertRate = _totalReadings > 0 ? (anomalyCount / _totalReadings) * 100 : 0.0;
   }
 
   /// Get filtered stats based on selected period
@@ -108,6 +225,74 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         return 'All Time';
       default:
         return 'This Week';
+    }
+  }
+
+  /// P156: Load model performance metrics from bundled JSON asset.
+  Future<void> _loadModelMetrics() async {
+    try {
+      final raw = await rootBundle.loadString(
+          'assets/ml/precursor_training_metrics.json');
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      final acc = json['accuracy'] ?? json['val_accuracy'] ?? json['test_accuracy'];
+      if (acc != null) {
+        setState(() {
+          _modelAccuracy = '${(acc * 100).toStringAsFixed(1)}%';
+          _metricsLoaded = true;
+        });
+        return;
+      }
+    } catch (_) {
+      // Asset may not exist — fall through to show "Model not loaded"
+    }
+    setState(() {
+      _modelAccuracy = null;
+      _metricsLoaded = true;
+    });
+  }
+
+  /// P156: Export all available session data via SessionExportService.
+  Future<void> _exportAllSessions(BuildContext context) async {
+    // Build records from cached findings (best effort — full session data
+    // is only available when the safety view is active and passes records in).
+    final records = _allFindings.map((f) {
+      return {
+        'timestamp': f['timestamp'] ?? '',
+        'ppv': f['ppv'] ?? '',
+        'rms': f['rms'] ?? '',
+        'freq': f['dominantFreq'] ?? '',
+        'kurtosis': f['kurtosis'] ?? '',
+        'stalta': f['stalta'] ?? '',
+        'anomaly_score': f['anomalyScore'] ?? '',
+        'anomaly_level': f['anomalyLevel'] ?? '',
+        'precursor_pattern': f['precursorPattern'] ?? '',
+        'confidence': f['confidence'] ?? '',
+      };
+    }).toList();
+
+    if (records.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No data to export'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      await SessionExportService.instance.exportSession(records);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -365,8 +550,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                           _buildPeriodFilter(),
                           const SizedBox(height: 20),
 
+                          // P156: Data Quality summary card
+                          _buildDataQualityCard(),
+                          const SizedBox(height: 16),
+
+                          // P156: Model Performance card
+                          _buildModelPerformanceCard(),
+                          const SizedBox(height: 20),
+
                           // Quick Stats Cards
                           _buildQuickStatsRow(),
+                          const SizedBox(height: 24),
+
+                          // P157: Vibration Statistics Card (PPV, Alert Rate, Session Duration)
+                          _buildVibrationStatsCard(),
                           const SizedBox(height: 24),
 
                           // Weekly Activity Chart
@@ -385,6 +582,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                           _buildSectionHeader('Material Analysis', Icons.category),
                           const SizedBox(height: 12),
                           _buildMaterialAnalysis(),
+                          const SizedBox(height: 24),
+
+                          // Session PPV Timeline
+                          _buildSectionHeader('Session PPV Timeline', Icons.timeline),
+                          const SizedBox(height: 12),
+                          _buildSessionTimeline(),
+                          const SizedBox(height: 24),
+
+                          // ML Performance
+                          _buildSectionHeader('ML Inference Performance', Icons.speed),
+                          const SizedBox(height: 12),
+                          _buildMlPerformanceSection(),
+                          const SizedBox(height: 24),
+
+                          // Anomaly Level Distribution
+                          _buildSectionHeader('Anomaly Distribution', Icons.donut_large),
+                          const SizedBox(height: 12),
+                          _buildAnomalyPieChart(),
                           const SizedBox(height: 32),
                         ],
                       ),
@@ -396,6 +611,273 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       ),
     );
   }
+
+  // ─── P156 new cards ──────────────────────────────────────────────────────────
+
+  /// Data Quality card: session count, sample count, date range.
+  Widget _buildDataQualityCard() {
+    final sessionCount = _weeklyStats.length;
+    final totalSamples = _allFindings.length;
+
+    // Date range from weekly stats
+    String dateRange = 'N/A';
+    if (_weeklyStats.isNotEmpty) {
+      final first = _weeklyStats.first.date;
+      final last = _weeklyStats.last.date;
+      dateRange = '${_fmtDate(first)} – ${_fmtDate(last)}';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.verified_outlined, color: Color(0xFF4CAF50), size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Data Quality',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildKV('Sessions (this week)', '$sessionCount'),
+          const SizedBox(height: 6),
+          _buildKV('Total cached items', '$totalSamples'),
+          const SizedBox(height: 6),
+          _buildKV('Date range', dateRange),
+        ],
+      ),
+    );
+  }
+
+  /// Model Performance card: reads precursor_training_metrics.json.
+  Widget _buildModelPerformanceCard() {
+    final label = !_metricsLoaded
+        ? 'Loading…'
+        : (_modelAccuracy != null ? _modelAccuracy! : 'Model not loaded');
+
+    final color = _modelAccuracy != null
+        ? const Color(0xFF4CAF50)
+        : Colors.white54;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.model_training, color: Color(0xFF9C27B0), size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'Model Performance',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildKV('Precursor classifier accuracy', label),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: color.withAlpha(30),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withAlpha(80)),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// P157: Vibration Statistics Card
+  /// Displays PPV mean, std dev, peak, total readings, alert rate, and last session duration.
+  Widget _buildVibrationStatsCard() {
+    final meanLabel = _totalReadings > 0
+        ? '${_meanPpv.toStringAsFixed(3)} mm/s'
+        : 'N/A';
+    final stdDevLabel = _totalReadings > 0
+        ? '${_stdDevPpv.toStringAsFixed(3)} mm/s'
+        : 'N/A';
+    final peakLabel = _peakPpv > 0
+        ? '${_peakPpv.toStringAsFixed(3)} mm/s'
+        : 'N/A';
+    final readingLabel = '$_totalReadings';
+    final alertRateLabel = '${_alertRate.toStringAsFixed(1)}%';
+    final durationLabel = _lastSessionDuration != null
+        ? _formatDuration(_lastSessionDuration!)
+        : 'N/A';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.show_chart, color: Color(0xFF00BCD4), size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Vibration Statistics',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 2x3 grid of stats
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildStatItem('Mean PPV', meanLabel),
+                    const SizedBox(height: 8),
+                    _buildStatItem('Peak PPV', peakLabel),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildStatItem('Std Dev', stdDevLabel),
+                    const SizedBox(height: 8),
+                    _buildStatItem('Total readings', readingLabel),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Alert rate and session duration (full width)
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatItem('Alert rate (ANOMALY/CRITICAL)', alertRateLabel),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildStatItem('Last session duration', durationLabel),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Helper widget for a single statistic item (label + value).
+  Widget _buildStatItem(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withAlpha(140),
+            fontSize: 11,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Format duration as "Xm Ys" or "Xh Ym".
+  String _formatDuration(Duration d) {
+    final hours = d.inHours;
+    final minutes = d.inMinutes % 60;
+    final seconds = d.inSeconds % 60;
+
+    if (hours > 0) {
+      return '${hours}h ${minutes}m';
+    } else if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    } else {
+      return '${seconds}s';
+    }
+  }
+
+  Widget _buildKV(String key, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          key,
+          style: TextStyle(color: Colors.white.withAlpha(160), fontSize: 13),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _fmtDate(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/'
+      '${dt.month.toString().padLeft(2, '0')}/'
+      '${dt.year}';
+
+  // ─── Original section builders ────────────────────────────────────────────
 
   Widget _buildSliverAppBar() {
     final progress = _progressService.progress;
@@ -411,6 +893,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       backgroundColor: const Color(0xFF0D3A39),
       foregroundColor: Colors.white,
       actions: [
+        IconButton(
+          icon: const Icon(Icons.upload_rounded),
+          tooltip: 'Export All Sessions',
+          onPressed: () => _exportAllSessions(context),
+        ),
         IconButton(
           icon: const Icon(Icons.file_download_rounded),
           tooltip: 'Export Analytics',
@@ -1087,6 +1574,315 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       ),
     );
   }
+
+  // ─── New: Session PPV Timeline ───────────────────────────────────────────────
+
+  /// Bar chart using CustomPainter — no chart packages.
+  Widget _buildSessionTimeline() {
+    if (_recentSessions.isEmpty) {
+      return _buildEmptyCard('No session data yet.\nStart a monitoring session to record PPV history.');
+    }
+
+    // Sessions come newest-first; reverse so oldest is on the left.
+    final sessions = _recentSessions.reversed.toList();
+    final maxPpv = sessions.fold<double>(0.01, (m, s) => s.peakPpv > m ? s.peakPpv : m);
+
+    return Container(
+      height: 200,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Peak PPV per session (last ${sessions.length})',
+            style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _SessionTimelinePainter(sessions: sessions, maxPpv: maxPpv),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── New: ML Performance Section ─────────────────────────────────────────────
+
+  Widget _buildMlPerformanceSection() {
+    final countLabel = _inferenceCount > 0 ? '$_inferenceCount' : 'N/A';
+    final avgLabel = _inferenceCount > 0
+        ? '${_inferenceAvgMs.toStringAsFixed(1)} ms'
+        : 'N/A';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildKV('Total inferences (this session)', countLabel),
+          const SizedBox(height: 8),
+          _buildKV('Avg inference time', avgLabel),
+          const SizedBox(height: 8),
+          _buildKV('Model accuracy (from training)', _modelAccuracy ?? 'N/A'),
+          const SizedBox(height: 8),
+          _buildKV('Inference engine', 'TFLite on-device'),
+        ],
+      ),
+    );
+  }
+
+  // ─── New: Anomaly Distribution Pie Chart ─────────────────────────────────────
+
+  Widget _buildAnomalyPieChart() {
+    if (_alertLevelCounts.isEmpty) {
+      return _buildEmptyCard('No alert history yet.\nAlert levels will be recorded here during monitoring sessions.');
+    }
+
+    const levelColors = {
+      'critical': Color(0xFFE53935),
+      'warning': Color(0xFFFFB300),
+      'elevated': Color(0xFFFF7043),
+      'normal': Color(0xFF4CAF50),
+      'unknown': Color(0xFF90A4AE),
+    };
+
+    final entries = _alertLevelCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final total = entries.fold<int>(0, (s, e) => s + e.value);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Pie chart using CustomPainter
+          SizedBox(
+            width: 130,
+            height: 130,
+            child: CustomPaint(
+              painter: _PieChartPainter(
+                entries: entries.map((e) => _PieSlice(
+                  label: e.key,
+                  count: e.value,
+                  color: levelColors[e.key] ?? const Color(0xFF90A4AE),
+                )).toList(),
+                total: total,
+              ),
+            ),
+          ),
+          const SizedBox(width: 20),
+          // Legend
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: entries.map((e) {
+                final color = levelColors[e.key] ?? const Color(0xFF90A4AE);
+                final pct = total > 0 ? ((e.value / total) * 100).round() : 0;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10, height: 10,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          e.key.toUpperCase(),
+                          style: TextStyle(
+                            color: Colors.white.withAlpha(200),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${e.value}',
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '($pct%)',
+                        style: TextStyle(color: Colors.white.withAlpha(120), fontSize: 10),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyCard(String text) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withAlpha(30)),
+      ),
+      child: Center(
+        child: Text(
+          text,
+          style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 13, height: 1.5),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── CustomPainter: Session PPV bar chart ─────────────────────────────────────
+
+class _SessionTimelinePainter extends CustomPainter {
+  final List<SessionRecord> sessions;
+  final double maxPpv;
+
+  _SessionTimelinePainter({required this.sessions, required this.maxPpv});
+
+  static const _safeThreshold = 3.0;   // DIN 4150-3 low-end
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (sessions.isEmpty) return;
+
+    final n = sessions.length;
+    final barWidth = (size.width / n) * 0.6;
+    final slotWidth = size.width / n;
+    const labelH = 20.0;
+    final chartH = size.height - labelH;
+
+    final safePaint = Paint()..color = const Color(0xFF4CAF50);
+    final warnPaint = Paint()..color = const Color(0xFFFFB300);
+    final critPaint = Paint()..color = const Color(0xFFE53935);
+    final gridPaint = Paint()
+      ..color = Colors.white.withAlpha(20)
+      ..strokeWidth = 1;
+    final textStyle = TextStyle(
+      color: Colors.white.withAlpha(140),
+      fontSize: 9,
+    );
+
+    // Horizontal grid line at threshold
+    final thresholdY = chartH * (1 - (_safeThreshold / maxPpv).clamp(0, 1));
+    canvas.drawLine(Offset(0, thresholdY), Offset(size.width, thresholdY), gridPaint);
+
+    for (int i = 0; i < n; i++) {
+      final s = sessions[i];
+      final ppv = s.peakPpv;
+      final frac = (ppv / maxPpv).clamp(0.0, 1.0);
+      final barH = (chartH * frac).clamp(2.0, chartH);
+
+      final left = slotWidth * i + (slotWidth - barWidth) / 2;
+      final top = chartH - barH;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, top, barWidth, barH),
+        const Radius.circular(3),
+      );
+
+      final paint = ppv >= _safeThreshold * 1.5
+          ? critPaint
+          : ppv >= _safeThreshold
+              ? warnPaint
+              : safePaint;
+      canvas.drawRRect(rect, paint);
+
+      // X-axis label: month/day
+      final label = '${s.start.month}/${s.start.day}';
+      final tp = TextPainter(
+        text: TextSpan(text: label, style: textStyle),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: slotWidth);
+      tp.paint(canvas, Offset(left + (barWidth - tp.width) / 2, chartH + 3));
+    }
+
+    // Y-axis label at top: max value
+    final maxLabel = TextPainter(
+      text: TextSpan(
+        text: '${maxPpv.toStringAsFixed(1)} mm/s',
+        style: textStyle,
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 60);
+    maxLabel.paint(canvas, const Offset(0, 0));
+  }
+
+  @override
+  bool shouldRepaint(_SessionTimelinePainter old) =>
+      old.sessions != sessions || old.maxPpv != maxPpv;
+}
+
+// ─── CustomPainter: Pie chart ─────────────────────────────────────────────────
+
+class _PieSlice {
+  final String label;
+  final int count;
+  final Color color;
+  _PieSlice({required this.label, required this.count, required this.color});
+}
+
+class _PieChartPainter extends CustomPainter {
+  final List<_PieSlice> entries;
+  final int total;
+
+  _PieChartPainter({required this.entries, required this.total});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (total == 0) return;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - 4;
+    const gapAngle = 0.04; // radians between slices
+
+    double startAngle = -math.pi / 2;
+    for (final slice in entries) {
+      final sweep = (slice.count / total) * 2 * math.pi - gapAngle;
+      if (sweep <= 0) continue;
+      final paint = Paint()
+        ..color = slice.color
+        ..style = PaintingStyle.fill;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle + gapAngle / 2,
+        sweep,
+        true,
+        paint,
+      );
+      startAngle += sweep + gapAngle;
+    }
+
+    // Centre hole
+    canvas.drawCircle(center, radius * 0.48,
+        Paint()..color = const Color(0xFF1C2523));
+  }
+
+  @override
+  bool shouldRepaint(_PieChartPainter old) =>
+      old.entries != entries || old.total != total;
 }
 
 class _CategoryData {

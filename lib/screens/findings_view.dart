@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:share_plus/share_plus.dart';
 import '../models/finding_model.dart';
 import '../services/local_storage_service.dart';
+import '../services/critical_event_log_service.dart';
 import 'finding_details_page.dart';
 import 'findings_map_screen.dart';
 import 'quick_capture_screen.dart';
@@ -36,6 +37,19 @@ class FindingsViewState extends State<FindingsView> {
   bool _showFilters = false;
   bool _showSignificantOnly = false;
 
+  // Sort options: 'date_desc', 'date_asc', 'type_az', 'risk'
+  String _sortMode = 'date_desc';
+
+  // Type category filter: null = All
+  String? _typeCategory; // 'artifact', 'structure', 'anomaly', 'note'
+
+  // Bulk selection mode
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
+
+  // Risk events: timestamps of critical events loaded from CriticalEventLogService
+  List<DateTime> _criticalEventTimestamps = [];
+
   final _siteService = SiteService();
   String _activeSite = '';
 
@@ -46,6 +60,33 @@ class FindingsViewState extends State<FindingsView> {
     _siteService.getActiveSite().then((s) {
       if (mounted) setState(() => _activeSite = s);
     });
+    _loadCriticalEvents();
+  }
+
+  Future<void> _loadCriticalEvents() async {
+    try {
+      final events = await CriticalEventLogService.instance.loadEvents();
+      if (mounted) {
+        setState(() {
+          _criticalEventTimestamps = events.map((e) => e.timestamp).toList();
+        });
+      }
+    } catch (_) {
+      // Non-critical; silently ignore
+    }
+  }
+
+  /// Returns true if this finding was recorded within 5 minutes of any critical event.
+  bool _recordedDuringAnomaly(Finding f) {
+    if (f.isSignificant) return true;
+    if (_criticalEventTimestamps.isEmpty) return false;
+    try {
+      final findingDate = DateTime.parse(f.date);
+      return _criticalEventTimestamps.any((ts) =>
+          ts.difference(findingDate).abs() < const Duration(minutes: 5));
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
@@ -68,15 +109,37 @@ class FindingsViewState extends State<FindingsView> {
         filtered = filtered.where((f) => f.isSignificant).toList();
       }
 
-      // Filter by search query
+      // Type category filter
+      if (_typeCategory != null) {
+        filtered = filtered.where((f) => _matchesTypeCategory(f.type, _typeCategory!)).toList();
+      }
+
+      // Filter by search query — includes description/notes now
       if (query.isNotEmpty) {
         final searchLower = query.toLowerCase();
         filtered = filtered.where((f) {
           return f.name.toLowerCase().contains(searchLower) ||
               f.type.toLowerCase().contains(searchLower) ||
               f.site.toLowerCase().contains(searchLower) ||
-              f.id.toLowerCase().contains(searchLower);
+              f.id.toLowerCase().contains(searchLower) ||
+              f.description.toLowerCase().contains(searchLower);
         }).toList();
+      }
+
+      // Sort
+      switch (_sortMode) {
+        case 'date_asc':
+          filtered.sort((a, b) => a.date.compareTo(b.date));
+        case 'type_az':
+          filtered.sort((a, b) => a.type.compareTo(b.type));
+        case 'risk':
+          // significant findings first
+          filtered.sort((a, b) {
+            if (a.isSignificant == b.isSignificant) return 0;
+            return a.isSignificant ? -1 : 1;
+          });
+        default: // 'date_desc'
+          filtered.sort((a, b) => b.date.compareTo(a.date));
       }
 
       _filteredFindings = filtered;
@@ -84,6 +147,30 @@ class FindingsViewState extends State<FindingsView> {
         _selectedIndex = 0;
       }
     });
+  }
+
+  /// Map finding type string to a broad category chip.
+  bool _matchesTypeCategory(String type, String category) {
+    final t = type.toLowerCase();
+    switch (category) {
+      case 'artifact':
+        return t.contains('coin') || t.contains('pottery') || t.contains('ceramic') ||
+            t.contains('metal') || t.contains('tool') || t.contains('bone') ||
+            t.contains('jewelry') || t.contains('glass') || t.contains('fragment') ||
+            t.contains('sherd') || t.contains('sculpture') || t.contains('statue');
+      case 'structure':
+        return t.contains('wall') || t.contains('floor') || t.contains('building') ||
+            t.contains('arch') || t.contains('column') || t.contains('feature') ||
+            t.contains('pit') || t.contains('trench') || t.contains('grave');
+      case 'anomaly':
+        return t.contains('anomaly') || t.contains('vibration') || t.contains('seismic') ||
+            t.contains('hazard') || t.contains('crack') || t.contains('soil');
+      case 'note':
+        return t.contains('note') || t.contains('observation') || t.contains('photo') ||
+            t.contains('sample') || t.contains('unknown') || t.contains('other');
+      default:
+        return true;
+    }
   }
 
   void _setSourceFilter(FindingSource? source) {
@@ -130,6 +217,272 @@ class FindingsViewState extends State<FindingsView> {
         ),
       ),
     );
+  }
+
+  Widget _buildTypeCategoryChip(String? category, String label) {
+    final isSelected = _typeCategory == category;
+    const color = Color(0xFF00BCD4);
+    return GestureDetector(
+      onTap: () {
+        setState(() => _typeCategory = category);
+        _filterFindings(_searchController.text);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? color : Colors.white.withAlpha(26),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? color : Colors.white.withAlpha(51),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white.withAlpha(179),
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSortMenu(BuildContext context) {
+    final options = <String, String>{
+      'date_desc': 'Date (Newest first)',
+      'date_asc': 'Date (Oldest first)',
+      'type_az': 'Type (A–Z)',
+      'risk': 'Risk level (Significant first)',
+    };
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C2523),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Sort findings',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ...options.entries.map((e) => ListTile(
+              title: Text(e.value, style: const TextStyle(color: Colors.white)),
+              trailing: _sortMode == e.key
+                  ? const Icon(Icons.check, color: Color(0xFFFFC107))
+                  : null,
+              onTap: () {
+                setState(() => _sortMode = e.key);
+                Navigator.pop(context);
+                _filterFindings(_searchController.text);
+              },
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportCsv(BuildContext context) async {
+    if (_filteredFindings.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No findings to export')),
+      );
+      return;
+    }
+
+    final buffer = StringBuffer();
+    // Header
+    buffer.writeln('ID,Name,Type,Site,Date,Description,Latitude,Longitude,Significant,Source');
+    // Rows
+    String csvEsc(String s) => '"${s.replaceAll('"', '""')}"';
+    for (final f in _filteredFindings) {
+      buffer.writeln([
+        csvEsc(f.id),
+        csvEsc(f.name),
+        csvEsc(f.type),
+        csvEsc(f.site),
+        csvEsc(f.date),
+        csvEsc(f.description),
+        f.latitude.toStringAsFixed(7),
+        f.longitude.toStringAsFixed(7),
+        f.isSignificant ? 'Yes' : 'No',
+        csvEsc(f.source.label),
+      ].join(','));
+    }
+
+    final csv = buffer.toString();
+    await Share.share(
+      csv,
+      subject: 'AncientVision Findings Export — ${DateTime.now().toIso8601String().split('T')[0]}',
+    );
+  }
+
+  Future<void> _exportJson(BuildContext context) async {
+    if (_filteredFindings.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No findings to export')),
+      );
+      return;
+    }
+
+    final jsonList = _filteredFindings.map((f) => {
+      'id': f.id,
+      'name': f.name,
+      'type': f.type,
+      'site': f.site,
+      'date': f.date,
+      'description': f.description,
+      'latitude': f.latitude,
+      'longitude': f.longitude,
+      'isSignificant': f.isSignificant,
+      'recordedDuringAnomaly': _recordedDuringAnomaly(f),
+      'source': f.source.label,
+      'imageUrl': f.imageUrl,
+      'model3dUrl': f.model3dUrl,
+    }).toList();
+
+    final jsonString = const JsonEncoder.withIndent('  ').convert({
+      'exported': DateTime.now().toIso8601String(),
+      'count': jsonList.length,
+      'findings': jsonList,
+    });
+
+    await Share.share(
+      jsonString,
+      subject: 'AncientVision Findings JSON — ${DateTime.now().toIso8601String().split('T')[0]}',
+    );
+  }
+
+  void _showExportMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C2523),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Export findings',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.table_chart_rounded, color: Color(0xFF4CAF50)),
+              title: const Text('Export as CSV', style: TextStyle(color: Colors.white)),
+              subtitle: Text(
+                '${_filteredFindings.length} rows',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _exportCsv(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.data_object_rounded, color: Color(0xFF2196F3)),
+              title: const Text('Export as JSON', style: TextStyle(color: Colors.white)),
+              subtitle: Text(
+                '${_filteredFindings.length} findings + risk flags',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _exportJson(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _toggleSelectionMode() {
+    setState(() {
+      _selectionMode = !_selectionMode;
+      if (!_selectionMode) _selectedIds.clear();
+    });
+  }
+
+  void _toggleFindingSelection(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(_filteredFindings.map((f) => f.id));
+    });
+  }
+
+  Future<void> _deleteSelected(BuildContext context) async {
+    if (_selectedIds.isEmpty) return;
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C2523),
+        title: const Text('Delete findings', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Delete $count finding${count == 1 ? '' : 's'}? This cannot be undone.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final ids = Set<String>.from(_selectedIds);
+    for (final id in ids) {
+      try {
+        await FirebaseFirestore.instance.collection('findings').doc(id).delete();
+      } catch (e) {
+        debugPrint('Delete $id failed: $e');
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _findings.removeWhere((f) => ids.contains(f.id));
+        _selectedIds.clear();
+        _selectionMode = false;
+      });
+      _filterFindings(_searchController.text);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deleted $count finding${count == 1 ? '' : 's'}'),
+          backgroundColor: const Color(0xFF4CAF50),
+        ),
+      );
+    }
   }
 
   void showAddOptions(BuildContext context) {
@@ -552,14 +905,92 @@ class FindingsViewState extends State<FindingsView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Findings',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _filteredFindings.isEmpty && !_isLoading
+                            ? 'Findings'
+                            : 'Findings (${_filteredFindings.length})',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    // Selection-mode toggle
+                    GestureDetector(
+                      onTap: _toggleSelectionMode,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _selectionMode
+                              ? const Color(0xFFF44336).withAlpha(51)
+                              : Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _selectionMode
+                                ? const Color(0xFFF44336).withAlpha(128)
+                                : Colors.white.withAlpha(51),
+                          ),
+                        ),
+                        child: Text(
+                          _selectionMode ? 'Cancel' : 'Select',
+                          style: TextStyle(
+                            color: _selectionMode
+                                ? const Color(0xFFF44336)
+                                : Colors.white.withAlpha(179),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                // Bulk-action bar (visible when in selection mode)
+                if (_selectionMode) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF44336).withAlpha(30),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFF44336).withAlpha(80)),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          '${_selectedIds.length} selected',
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: _selectAll,
+                          child: const Text('Select all',
+                              style: TextStyle(color: Color(0xFFFFC107), fontSize: 12)),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: _selectedIds.isEmpty
+                              ? null
+                              : () => _deleteSelected(context),
+                          child: Text(
+                            'Delete',
+                            style: TextStyle(
+                              color: _selectedIds.isEmpty
+                                  ? Colors.white38
+                                  : const Color(0xFFF44336),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
 
                 // SEARCH BAR
@@ -607,7 +1038,7 @@ class FindingsViewState extends State<FindingsView> {
                 ),
                 const SizedBox(height: 12),
 
-                // Toolbar row: filter toggle + selection mode controls + add button
+                // Toolbar row: filter toggle + sort + export
                 Row(
                   children: [
                     // Filter toggle button
@@ -698,12 +1129,61 @@ class FindingsViewState extends State<FindingsView> {
                         ),
                       ),
                     ),
+                    const Spacer(),
+                    // Sort button
+                    GestureDetector(
+                      onTap: () => _showSortMenu(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _sortMode != 'date_desc'
+                              ? const Color(0xFFFFC107).withAlpha(51)
+                              : Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _sortMode != 'date_desc'
+                                ? const Color(0xFFFFC107).withAlpha(128)
+                                : Colors.white.withAlpha(51),
+                            width: 1,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.sort_rounded,
+                          color: _sortMode != 'date_desc'
+                              ? const Color(0xFFFFC107)
+                              : Colors.white.withAlpha(179),
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Export button (CSV or JSON)
+                    GestureDetector(
+                      onTap: () => _showExportMenu(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(26),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Colors.white.withAlpha(51),
+                            width: 1,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.download_rounded,
+                          color: Colors.white.withAlpha(179),
+                          size: 18,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
 
-                // Collapsible source filter chips
+                // Collapsible filter chips (source + type category)
                 if (_showFilters) ...[
                   const SizedBox(height: 10),
+                  // Source filter row
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -714,6 +1194,24 @@ class FindingsViewState extends State<FindingsView> {
                           padding: const EdgeInsets.only(right: 8),
                           child: _buildSourceChip(source, source.label, source.icon),
                         )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Type category filter row
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildTypeCategoryChip(null, 'All'),
+                        const SizedBox(width: 8),
+                        _buildTypeCategoryChip('artifact', 'Artifact'),
+                        const SizedBox(width: 8),
+                        _buildTypeCategoryChip('structure', 'Structure'),
+                        const SizedBox(width: 8),
+                        _buildTypeCategoryChip('anomaly', 'Anomaly'),
+                        const SizedBox(width: 8),
+                        _buildTypeCategoryChip('note', 'Note'),
                       ],
                     ),
                   ),
@@ -811,6 +1309,47 @@ class FindingsViewState extends State<FindingsView> {
                       ],
                     ),
                   ),
+                // No-results empty state (when search/filter matches nothing)
+                if (_filteredFindings.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(32),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(18),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.search_off_rounded, color: Colors.white.withAlpha(100), size: 48),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No findings match',
+                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Try a different search term or clear the filters',
+                          style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 13),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {
+                              _typeCategory = null;
+                              _selectedSource = null;
+                              _showSignificantOnly = false;
+                            });
+                            _filterFindings('');
+                          },
+                          child: const Text(
+                            'Clear all filters',
+                            style: TextStyle(color: Color(0xFFFFC107)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 // RECENT FINDINGS TABLE WITH SWIPE TO DELETE
                 Container(
                   padding: const EdgeInsets.all(8),
@@ -823,31 +1362,54 @@ class FindingsViewState extends State<FindingsView> {
                       ..._filteredFindings.asMap().entries.map((entry) {
                             final index = entry.key;
                             final f = entry.value;
-                            final isSelected = index == _selectedIndex;
+                            final isRowSelected = index == _selectedIndex;
+                            final isBulkSelected = _selectedIds.contains(f.id);
                             final typeColor = Finding.getTypeColor(f.type);
+                            final hasRisk = _recordedDuringAnomaly(f);
 
                             return GestureDetector(
                               key: Key(f.id),
                               onTap: () {
-                                setState(() => _selectedIndex = index);
+                                if (_selectionMode) {
+                                  _toggleFindingSelection(f.id);
+                                } else {
+                                  setState(() => _selectedIndex = index);
+                                }
                               },
                               child: Container(
                                   margin: const EdgeInsets.symmetric(vertical: 4),
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? const Color(0xFFFFC107).withAlpha(51)
-                                        : Colors.white.withAlpha(13),
+                                    color: isBulkSelected
+                                        ? const Color(0xFFF44336).withAlpha(40)
+                                        : isRowSelected
+                                            ? const Color(0xFFFFC107).withAlpha(51)
+                                            : Colors.white.withAlpha(13),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: isSelected
-                                          ? const Color(0xFFFFC107).withAlpha(128)
-                                          : Colors.transparent,
+                                      color: isBulkSelected
+                                          ? const Color(0xFFF44336).withAlpha(150)
+                                          : isRowSelected
+                                              ? const Color(0xFFFFC107).withAlpha(128)
+                                              : Colors.transparent,
                                       width: 1,
                                     ),
                                   ),
                                   child: Row(
                                     children: [
+                                      // Bulk selection checkbox
+                                      if (_selectionMode) ...[
+                                        Icon(
+                                          isBulkSelected
+                                              ? Icons.check_circle_rounded
+                                              : Icons.radio_button_unchecked_rounded,
+                                          color: isBulkSelected
+                                              ? const Color(0xFFF44336)
+                                              : Colors.white38,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
                                       // Type color indicator
                                       Container(
                                         width: 4,
@@ -899,6 +1461,49 @@ class FindingsViewState extends State<FindingsView> {
                                           ],
                                         ),
                                       ),
+                                      // Risk badge (red/amber) — shown when recorded during anomaly
+                                      if (hasRisk)
+                                        Container(
+                                          margin: const EdgeInsets.only(right: 6),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: f.isSignificant
+                                                ? const Color(0xFFF44336).withAlpha(50)
+                                                : const Color(0xFFFF9800).withAlpha(50),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: f.isSignificant
+                                                  ? const Color(0xFFF44336).withAlpha(150)
+                                                  : const Color(0xFFFF9800).withAlpha(150),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                f.isSignificant
+                                                    ? Icons.warning_rounded
+                                                    : Icons.notification_important_rounded,
+                                                color: f.isSignificant
+                                                    ? const Color(0xFFF44336)
+                                                    : const Color(0xFFFF9800),
+                                                size: 9,
+                                              ),
+                                              const SizedBox(width: 3),
+                                              Text(
+                                                f.isSignificant ? 'RISK' : 'ALERT',
+                                                style: TextStyle(
+                                                  color: f.isSignificant
+                                                      ? const Color(0xFFF44336)
+                                                      : const Color(0xFFFF9800),
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       _sourceBadge(f.source),
                                       // 3D model indicator
                                       if (f.model3dUrl != null)
@@ -917,29 +1522,31 @@ class FindingsViewState extends State<FindingsView> {
                                             ),
                                           ),
                                         ),
-                                      const SizedBox(width: 8),
-                                      GestureDetector(
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) => FindingDetailsPage(finding: f),
+                                      if (!_selectionMode) ...[
+                                        const SizedBox(width: 8),
+                                        GestureDetector(
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) => FindingDetailsPage(finding: f),
+                                              ),
+                                            );
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFFC107).withAlpha(51),
+                                              borderRadius: BorderRadius.circular(8),
                                             ),
-                                          );
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFFFC107).withAlpha(51),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: const Icon(
-                                            Icons.arrow_forward_ios_rounded,
-                                            color: Color(0xFFFFC107),
-                                            size: 16,
+                                            child: const Icon(
+                                              Icons.arrow_forward_ios_rounded,
+                                              color: Color(0xFFFFC107),
+                                              size: 16,
+                                            ),
                                           ),
                                         ),
-                                      ),
+                                      ],
                                     ],
                                   ),
                                 ),
