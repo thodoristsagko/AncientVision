@@ -2397,7 +2397,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
     final bool isEscalatedCritical = _anomalySince != null &&
         DateTime.now().difference(_anomalySince!).inSeconds > 15;
 
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2482,29 +2482,6 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             },
           ),
           const SizedBox(height: 12),
-
-          // P188: PPV rolling trend (compact sparkline below main analysis card)
-          if (_ppvChartValues.isNotEmpty) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withAlpha(10),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('PPV Trend', style: TextStyle(color: Colors.white.withAlpha(160), fontSize: 12, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 6),
-                  RepaintBoundary(
-                    child: PpvTrendChart(values: _ppvChartValues, threshold: 0.3),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
 
           // Precursor pattern warning card (if active)
           if (_isPrecursorDriven && _lastPrecursorPattern != null) ...[
@@ -2718,38 +2695,8 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
           SafetyAlertsCard(alerts: _alerts),
           const SizedBox(height: 12),
 
-          // Current Alert Banner (if any)
-          if (_alertLevel != 'safe' && _alertMessage.isNotEmpty)
-            CurrentAlertBanner(level: _alertLevel, message: _alertMessage),
-
-          // Test Alert button (only when connected)
-          if (isConnected && _alertCharacteristic != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: GestureDetector(
-                onTap: () => _writeAlertCommand('test'),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withAlpha(40)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.notifications_active, color: Colors.white.withAlpha(150), size: 16),
-                      const SizedBox(width: 6),
-                      Text('Test Alert', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
           const SizedBox(height: 12),
           const SafetyInsightCard(),
-          const SizedBox(height: 100),
         ],
       ),
     );
@@ -2757,7 +2704,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   /// Build ANALYSIS tab - visualizations and trends
   Widget _buildAnalysisTab(bool isConnected) {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2822,7 +2769,6 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               ppvHistory: _ppvHistory.toList(),
             ),
           ),
-          const SizedBox(height: 100),
         ],
       ),
     );
@@ -2830,7 +2776,7 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
   /// Build STANDARDS tab - multi-standard classification and detailed metrics
   Widget _buildStandardsTab(bool isConnected) {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2883,7 +2829,6 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
               ],
             ),
           ),
-          const SizedBox(height: 100),
         ],
       ),
     );
