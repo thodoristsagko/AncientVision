@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../main.dart' show AlertMetrics;
 import 'ppv_sparkline.dart';
 
@@ -44,7 +43,7 @@ class _FullScreenAlertOverlayState extends State<FullScreenAlertOverlay>
   bool _autoDismissActive = false;
 
   // Dismiss button visibility (delayed 3s to prevent accidental tap)
-  bool _dismissButtonVisible = false;
+  bool _dismissButtonVisible = true;
   Timer? _dismissDelayTimer;
 
   @override
@@ -183,93 +182,6 @@ class _FullScreenAlertOverlayState extends State<FullScreenAlertOverlay>
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return '${m}m ${s.toString().padLeft(2, '0')}s';
-  }
-
-  void _showCallHelpDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1C2523),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.emergency, color: Color(0xFFE53935), size: 24),
-            SizedBox(width: 10),
-            Text(
-              'Emergency Steps',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _emergencyStep('1', 'Evacuate all personnel from the trench immediately.'),
-            _emergencyStep('2', 'Move to a safe distance (>15 m from the edge).'),
-            _emergencyStep('3', 'Call the site supervisor.'),
-            _emergencyStep('4', 'Do not re-enter until cleared by a structural engineer.'),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE53935),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                icon: const Icon(Icons.phone, color: Colors.white),
-                label: const Text(
-                  'Call Emergency (112)',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-                onPressed: () async {
-                  final uri = Uri(scheme: 'tel', path: '112');
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri);
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close', style: TextStyle(color: Colors.white70)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _emergencyStep(String num, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 22,
-            height: 22,
-            decoration: const BoxDecoration(
-              color: Color(0xFFE53935),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                num,
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -607,52 +519,10 @@ class _FullScreenAlertOverlayState extends State<FullScreenAlertOverlay>
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      // CALL HELP button
-                      GestureDetector(
-                        onTap: _showCallHelpDialog,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE53935).withAlpha(220),
-                            borderRadius: BorderRadius.circular(30),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withAlpha(60),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.phone, color: Colors.white, size: 22),
-                              SizedBox(width: 8),
-                              Text(
-                                'CALL HELP',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 8),
-
-                // Hint: dismiss button is delayed
-                if (!_dismissButtonVisible)
-                  Text(
-                    'Acknowledge button appears in ${3 - _elapsedSeconds.clamp(0, 3)}s',
-                    style: TextStyle(color: Colors.white.withAlpha(120), fontSize: 12),
-                  ),
 
                 const SizedBox(height: 16),
               ],

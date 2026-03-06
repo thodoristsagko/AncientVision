@@ -208,8 +208,6 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
   bool _connectingSlowly = false;
   Timer? _connectingSlowTimer;
 
-  // Simple/Detailed view mode toggle (simple by default for archaeologist UX)
-  bool _simpleMode = true;
   bool _hasReceivedVibData = false; // Latches true once PPV/RMS data arrives
 
   // P46: Session peak tracking
@@ -2298,99 +2296,93 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
                   ),
                 ),
 
-                // ===== SIMPLE MODE: archaeologist-friendly status =====
-                if (_simpleMode)
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                      child: Column(
-                        children: [
-                          _buildSimpleStatusDisplay(isConnected),
+                // ===== UNIFIED VIEW =====
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                    child: Column(
+                      children: [
+                        // Big status card (colour-coded SAFE/CAUTION/DANGER)
+                        _buildSimpleStatusDisplay(isConnected),
 
-                          // Current Alert Banner (always visible in both modes)
-                          if (_alertLevel != 'safe' && _alertMessage.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            CurrentAlertBanner(level: _alertLevel, message: _alertMessage),
-                          ],
+                        // Current alert banner
+                        if (_alertLevel != 'safe' && _alertMessage.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          CurrentAlertBanner(level: _alertLevel, message: _alertMessage),
+                        ],
 
-                          // Test Alert button (always available in both modes)
-                          if (isConnected && _alertCharacteristic != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: GestureDetector(
-                                onTap: () => _writeAlertCommand('test'),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withAlpha(15),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.white.withAlpha(40)),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.notifications_active, color: Colors.white.withAlpha(150), size: 16),
-                                      const SizedBox(width: 6),
-                                      Text('Test Alert', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
-                                    ],
-                                  ),
+                        // PPV sparkline trend
+                        if (_ppvChartValues.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withAlpha(10),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('PPV Trend', style: TextStyle(color: Colors.white.withAlpha(160), fontSize: 12, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 6),
+                                RepaintBoundary(
+                                  child: PpvTrendChart(values: _ppvChartValues, threshold: 0.3),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        // Test Alert button
+                        if (isConnected && _alertCharacteristic != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: GestureDetector(
+                              onTap: () => _writeAlertCommand('test'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(15),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white.withAlpha(40)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.notifications_active, color: Colors.white.withAlpha(150), size: 16),
+                                    const SizedBox(width: 6),
+                                    Text('Test Alert', style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 12)),
+                                  ],
                                 ),
                               ),
                             ),
+                          ),
 
-                          const SizedBox(height: 100),
-                        ],
-                      ),
+                        // Advanced — collapsed by default
+                        const SizedBox(height: 12),
+                        Theme(
+                          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            title: const Text('Advanced', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
+                            trailing: const Icon(Icons.expand_more, color: Colors.white54),
+                            collapsedBackgroundColor: Colors.white.withAlpha(8),
+                            backgroundColor: Colors.white.withAlpha(8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            children: [
+                              _buildStatusTab(isConnected),
+                              _buildAnalysisTab(isConnected),
+                              _buildStandardsTab(isConnected),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 100),
+                      ],
                     ),
                   ),
-
-                // ===== DETAILED MODE: tabbed technical view =====
-                if (!_simpleMode)
-                  Expanded(
-                    child: DefaultTabController(
-                      length: 3,
-                      child: Column(
-                        children: [
-                          // Tab Bar
-                          Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 24),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withAlpha(10),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: TabBar(
-                              indicatorSize: TabBarIndicatorSize.tab,
-                              indicator: BoxDecoration(
-                                color: const Color(0xFFFFC107),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              labelColor: const Color(0xFF0D3A39),
-                              unselectedLabelColor: Colors.white.withAlpha(180),
-                              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                              unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              tabs: const [
-                                Tab(text: 'STATUS'),
-                                Tab(text: 'ANALYSIS'),
-                                Tab(text: 'STANDARDS'),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          // Tab Bar View
-                          Expanded(
-                            child: TabBarView(
-                              children: [
-                                _buildStatusTab(isConnected),
-                                _buildAnalysisTab(isConnected),
-                                _buildStandardsTab(isConnected),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                ),
               ],
             ),
           ),
@@ -2913,29 +2905,6 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
             style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ],
-      ),
-    );
-  }
-
-  /// Build the Simple/Detailed mode toggle chip for the header
-  Widget _buildSimpleModeToggle() {
-    final color = _simpleMode ? const Color(0xFF4CAF50) : const Color(0xFF2196F3);
-    return GestureDetector(
-      onTap: () => setState(() => _simpleMode = !_simpleMode),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: color.withAlpha(40),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(_simpleMode ? Icons.shield_rounded : Icons.analytics_rounded, color: Colors.white, size: 14),
-            const SizedBox(width: 4),
-            Text(_simpleMode ? 'Simple' : 'Detail', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-          ],
-        ),
       ),
     );
   }
