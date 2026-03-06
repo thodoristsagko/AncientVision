@@ -2182,80 +2182,98 @@ class _SafetyViewState extends State<SafetyView> with AutomaticKeepAliveClientMi
 
                       const SizedBox(height: 4),
 
-                      // Action row
+                      // Action row — ⋮ menu + scan/disconnect only
                       Row(
                         children: [
-                          _buildSimpleModeToggle(),
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            onTap: () => setState(() => _t.toggleLanguage()),
-                            child: Text(_t.isGreek ? 'EN' : 'EL', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
-                          ),
-                          if (isConnected && _mlModelLoaded) ...[
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              onTap: _isCalibrating ? _stopCalibration : _showCalibrationDialog,
-                              child: Icon(
-                                _isCalibrating ? Icons.stop_circle_rounded : Icons.tune_rounded,
-                                color: _isCalibrating ? Colors.orangeAccent : Colors.white70, size: 18,
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert, color: Colors.white70, size: 22),
+                            color: const Color(0xFF1C2523),
+                            onSelected: (value) {
+                              switch (value) {
+                                case 'history':
+                                  _showAlertHistory(context);
+                                case 'calibrate_ppv':
+                                  if (!_isPpvCalibrating) _startPpvCalibration();
+                                case 'calibrate_ml':
+                                  _isCalibrating ? _stopCalibration() : _showCalibrationDialog();
+                                case 'settings':
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                                case 'language':
+                                  setState(() => _t.toggleLanguage());
+                                case 'info':
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()));
+                                case 'diagnostics':
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const DiagnosticsScreen()));
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              PopupMenuItem(
+                                value: 'history',
+                                child: Row(children: [
+                                  const Icon(Icons.history_rounded, color: Colors.white70, size: 18),
+                                  const SizedBox(width: 10),
+                                  const Text('Alert History', style: TextStyle(color: Colors.white)),
+                                ]),
                               ),
-                            ),
-                          ],
-                          const SizedBox(width: 6),
-                          IconButton(
-                            icon: const Icon(Icons.history_rounded, color: Colors.white70, size: 22),
-                            tooltip: 'Alert History',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () => _showAlertHistory(context),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.info_outline, color: Colors.white70, size: 22),
-                            tooltip: 'About',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const AboutScreen()),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.developer_mode, color: Colors.white70, size: 22),
-                            tooltip: 'Diagnostics',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const DiagnosticsScreen()),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.settings_rounded, color: Colors.white70, size: 22),
-                            tooltip: 'Settings',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: _isPpvCalibrating ? null : _startPpvCalibration,
-                            icon: Icon(
-                              _isPpvCalibrating ? Icons.hourglass_top : Icons.tune_rounded,
-                              size: 16,
-                              color: _isPpvCalibrating ? Colors.white38 : Colors.white70,
-                            ),
-                            label: Text(
-                              _isPpvCalibrating ? 'Calibrating…' : 'Calibrate',
-                              style: TextStyle(
-                                color: _isPpvCalibrating ? Colors.white38 : Colors.white70,
-                                fontSize: 12,
+                              if (isConnected)
+                                PopupMenuItem(
+                                  value: 'calibrate_ppv',
+                                  enabled: !_isPpvCalibrating,
+                                  child: Row(children: [
+                                    Icon(Icons.tune_rounded, color: _isPpvCalibrating ? Colors.white38 : Colors.white70, size: 18),
+                                    const SizedBox(width: 10),
+                                    Text(_isPpvCalibrating ? 'Calibrating…' : 'Calibrate PPV',
+                                        style: TextStyle(color: _isPpvCalibrating ? Colors.white38 : Colors.white)),
+                                  ]),
+                                ),
+                              if (isConnected && _mlModelLoaded)
+                                PopupMenuItem(
+                                  value: 'calibrate_ml',
+                                  child: Row(children: [
+                                    Icon(_isCalibrating ? Icons.stop_circle_rounded : Icons.model_training_rounded,
+                                        color: _isCalibrating ? Colors.orangeAccent : Colors.white70, size: 18),
+                                    const SizedBox(width: 10),
+                                    Text(_isCalibrating ? 'Stop ML Calibration' : 'Calibrate ML',
+                                        style: const TextStyle(color: Colors.white)),
+                                  ]),
+                                ),
+                              PopupMenuItem(
+                                value: 'settings',
+                                child: Row(children: [
+                                  const Icon(Icons.settings_rounded, color: Colors.white70, size: 18),
+                                  const SizedBox(width: 10),
+                                  const Text('Settings', style: TextStyle(color: Colors.white)),
+                                ]),
                               ),
-                            ),
+                              PopupMenuItem(
+                                value: 'language',
+                                child: Row(children: [
+                                  const Icon(Icons.language, color: Colors.white70, size: 18),
+                                  const SizedBox(width: 10),
+                                  Text(_t.isGreek ? 'Switch to English' : 'Αλλαγή σε Ελληνικά',
+                                      style: const TextStyle(color: Colors.white)),
+                                ]),
+                              ),
+                              PopupMenuItem(
+                                value: 'info',
+                                child: Row(children: [
+                                  const Icon(Icons.info_outline, color: Colors.white70, size: 18),
+                                  const SizedBox(width: 10),
+                                  const Text('About', style: TextStyle(color: Colors.white)),
+                                ]),
+                              ),
+                              PopupMenuItem(
+                                value: 'diagnostics',
+                                child: Row(children: [
+                                  const Icon(Icons.developer_mode, color: Colors.white70, size: 18),
+                                  const SizedBox(width: 10),
+                                  const Text('Diagnostics', style: TextStyle(color: Colors.white)),
+                                ]),
+                              ),
+                            ],
                           ),
                           const Spacer(),
-                          // Scan/Reconnect
+                          // Scan/Disconnect
                           if (!isConnected)
                             GestureDetector(
                               onTap: () { _reconnectTimer?.cancel(); _reconnectAttempts = 0; _checkBluetoothAndScan(); },
