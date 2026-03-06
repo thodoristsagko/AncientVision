@@ -1,6 +1,6 @@
 # AncientVision — Quick Start Guide
 
-**For the archaeologist on Paros. Follow these steps to get up and running.**
+**v4.3 · March 2026. Follow these steps to get up and running.**
 
 ---
 
@@ -14,7 +14,7 @@ Press the power button on the **M5StickC Plus 2** device. Wait until the screen 
 
 ## Step 3: Connect via Bluetooth
 
-Go to the **Safety** tab (shield icon at the bottom). Tap **"Scan for Devices"** and select **"AncientVision-Sensor"**. Wait a few seconds for the connection — you will see live data appear.
+Go to the **Safety** tab (shield icon at the bottom). Tap the yellow **SCAN** pill button in the top-right corner and select **"AncientVision-Sensor"**. Wait a few seconds for the connection — you will see live data appear and the SCAN button changes to a red **DISCONNECT** button.
 
 ## Step 4: Place the Sensor at the Excavation Site
 
@@ -30,10 +30,14 @@ Switch to any tab — the Bluetooth connection stays alive in the background. If
 
 ## Step 6: Understand the Safety Readings
 
+The Safety tab shows a colour-coded status card (green = SAFE, orange = CAUTION, red = DANGER) and a PPV trend chart. The ⋮ menu in the top-left gives access to History, Calibrate, Settings, Language, and Diagnostics.
+
 | Sensor | Safe | Warning | Critical |
 |--------|------|---------|----------|
 | **Vibration (PPV)** | < 3 mm/s | 3–8 mm/s | > 8 mm/s |
 | **Soil Moisture** | 30–60% | 60–80% | > 80% (collapse risk) |
+
+Tap **Advanced** at the bottom of the Safety tab to expand the full technical view (spectrogram, sensor history, DIN 4150-3 standards).
 
 The app also runs **ML anomaly detection** — it will warn you about unusual vibration patterns even if they haven't crossed a threshold yet.
 
@@ -54,6 +58,15 @@ Go to the **Tools** tab → **3D Reconstruction**. Place the artifact on a plain
 ## Step 9: Browse Your Findings
 
 Go to the **Findings** tab to see all recorded artifacts in a gallery or on a map. Tap any card to see its full details.
+
+## Step 9b: Use the GIS Map
+
+Go to the **Map** tab to see a **satellite view** of the excavation site. You can:
+- Import GeoJSON or Shapefile layers (ZIP) using the layers panel
+- Tap a polygon or point to see its label and attributes
+- Tap the location button to centre the map on your GPS position
+- Toggle layer visibility with the eye icon
+- Pre-load tiles on Wi-Fi so the map works offline at the venue
 
 ## Step 10: Export a Report
 
@@ -83,9 +96,11 @@ Power off the M5StickC (hold the power button). Your findings are saved locally 
 |---------|----------|
 | Sensor won't connect | Make sure Bluetooth is on. Restart the M5StickC. Move closer. |
 | No vibration readings | Wait 10 seconds after connecting — the sensor calibrates on startup. |
+| Too many false alerts | The sensor must be placed on the ground. If the probe is in the air the moisture sensor will read incorrectly. |
 | 3D reconstruction fails | Take more photos (min 8), improve lighting, avoid shiny objects. |
 | App crashes | Clear cache (Settings → Apps → AncientVision → Clear Cache) and reopen. |
+| Map tiles missing | Open the Map tab on Wi-Fi before going to the site to pre-cache tiles. |
 
 ---
 
-*AncientVision — Protecting heritage with technology. FLL Submerged 2025.*
+*AncientVision v4.3 — Protecting heritage with technology. FLL Submerged 2025-2026 · Thessaloniki Finals, March 21-22, 2026.*

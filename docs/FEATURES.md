@@ -349,7 +349,7 @@ Comprehensive archaeological documentation form with 25+ fields.
 
 ---
 
-## 6. Trench Safety Monitoring v4.0
+## 6. Trench Safety Monitoring v4.3
 
 ### Hardware Integration
 Connects to M5StickC Plus 2 microcontroller via Bluetooth Low Energy (BLE).
@@ -438,13 +438,57 @@ Activated by holding the M5 button for 3 seconds on the device:
 - **Safety-critical auto-escalation**: When PPV > 0.3 mm/s, automatically runs full DSP (FFT+DWT+kurtosis) so all frequency-dependent hazard rules still fire
 - Audio feedback: low tone entering, high tone exiting
 
+### Safety UI Simplification (v4.3)
+
+#### Header Action Row → ⋮ Overflow Menu
+The previous 8-button header row is replaced with a single **⋮ PopupMenuButton** containing:
+- Alert History
+- Calibrate PPV (shown only when connected)
+- Calibrate ML model (shown only when connected and model loaded)
+- Settings
+- Language toggle (EN/EL)
+- About
+- Diagnostics
+
+The only always-visible controls are the ⋮ button and the **SCAN / DISCONNECT** pill.
+
+#### Unified Scrollable View
+The previous Simple/Detail two-mode toggle is removed. The Safety tab now shows a single unified scrollable view:
+1. Colour-coded status card (SAFE / CAUTION / DANGER + PPV value + bar)
+2. Current alert banner (if active)
+3. PPV trend chart (60-second rolling sparkline)
+4. Test Alert button (when connected)
+5. **Advanced** — `ExpansionTile` collapsed by default, containing the full technical view (Status tab, Analysis tab with spectrogram, Standards/metrics tab)
+
+#### Full-Screen Alert Improvements (v4.3)
+- Glassmorphism overlay with blurred background
+- "Why This Triggered" metrics box (PPV, frequency, STA/LTA, kurtosis, crest factor)
+- PPV sparkline showing the trend that led to the alert
+- Type-specific action guidance per hazard (seismic, machinery, impact, structural)
+- **Acknowledge button always visible** (no 3-second countdown delay)
+- CALL HELP button removed (FLL demo scenario)
+
+### Firmware v4.1 False-Positive Prevention
+
+#### Leaky Integrator HPF for Velocity
+Previous firmware integrated raw acceleration using the trapezoidal rule, causing the velocity estimate to random-walk (noise accumulates as √N across 256 samples, giving σ_vel ≈ 2.35 mm/s — nearly triggering the 3 mm/s DIN threshold on a perfectly still sensor). v4.1 replaces this with a leaky integrator:
+
+```
+v[i] = α × v[i-1] + a[i] × dt   where α = 0.9101 (fc ≈ 3 Hz)
+```
+
+Peak noise bound drops from ~2.35 mm/s to ~0.35 mm/s, eliminating false positives on motionless sensors.
+
+#### Moisture Probe-in-Medium Guard
+Moisture alerts now only fire when `rawMoisture < MOISTURE_AIR - 200`, i.e. the probe is actually inserted in soil. Floating probe ADC values near MOISTURE_AIR no longer trigger alerts.
+
 ### Connection Management
 - **Auto-scan** - Automatically finds nearby AncientVision-Sensor devices
 - **Persistent connection** - BLE stays connected when switching tabs (IndexedStack)
 - **Auto-reconnect** - Exponential backoff reconnection on signal loss (up to 10 attempts)
 - **Keep-alive monitor** - 3-second polling for faster disconnect detection
 - **RSSI indicator** - Signal strength shown when connected
-- **Manual reconnect** - Reconnect button visible when disconnected
+- **Scan/Disconnect pill** - Always visible, most-used control
 - **MTU negotiation** - Requests 512-byte MTU to prevent JSON truncation
 - **Backward Compatibility** - App supports v2.0, v3.0, and v4.0 firmware automatically
 
@@ -452,6 +496,39 @@ Activated by holding the M5 button for 3 seconds on the device:
 - Real-time data displayed on Safety tab
 - Alert history stored in Firebase (safety_alerts collection)
 - Sensor data logged to Firebase (sensor_data collection)
+
+---
+
+## 6b. GIS & Satellite Mapping
+
+### Basemap
+- **Esri World Imagery** satellite tiles (default) — high-resolution aerial photography
+- Street map toggle button in the layer panel
+- Tile caching via `flutter_cache_manager` — browse on Wi-Fi to pre-load venue tiles for offline use
+
+### Layer Import
+- **GeoJSON** files via system file picker
+- **Shapefile** (SHP + DBF inside ZIP) via file picker — pure-Dart parser, no native code
+- Supports Polygon, Polyline, Point, MultiPoint geometries
+- Layers persist across sessions (SharedPreferences)
+- Sample data bundled: `assets/geo/sample_trenches.geojson`, `assets/geo/sample_excavation.shp.zip`
+
+### Layer Controls
+- Per-layer visibility toggle (eye icon)
+- Per-layer delete button
+- Bundled (built-in) layers cannot be deleted
+- Layer panel slide-out from the map screen
+
+### Feature Info Popup
+- Tap any polygon (ray-cast hit detection) or point → bottom-centre card appears with label and key attributes
+- Tap the map anywhere else or the × button to dismiss
+
+### Live GPS
+- Real-time position stream via `geolocator` package
+- Updates when device moves more than 2 metres
+- Blue dot with accuracy circle on the map
+- Centre-on-me button (4th toolbar button)
+- Silently ignored if location permission is denied
 
 ---
 
@@ -729,8 +806,11 @@ When saving incomplete records:
 | Cloud Processing | ✅ Complete | OpenScan API |
 | Photo Capture | ✅ Complete | Camera + Gallery |
 | PDF Export | ✅ Complete | Professional |
-| Trench Safety Monitoring v4.0 | ✅ Complete | DWT + Arias + CAV + Temp + Rule-based fallback |
-| Offline Support | ✅ Complete | Auto-save + Queue |
+| Trench Safety Monitoring v4.3 | ✅ Complete | DWT + Arias + CAV + Temp + Rule-based fallback + Leaky integrator HPF |
+| Simplified Safety UI v4.3 | ✅ Complete | ⋮ overflow menu, unified view, Advanced expansion |
+| Full-Screen Alerts v4.3 | ✅ Complete | Glassmorphism, why-triggered metrics, always-visible acknowledge |
+| GIS & Satellite Mapping | ✅ Complete | Esri satellite, GeoJSON/Shapefile import, GPS, offline tiles |
+| Offline Support | ✅ Complete | Auto-save + Queue + offline tile cache |
 | Cloud Database | ✅ Complete | Firebase Firestore |
 | Field Journal | ✅ Complete | Daily logging |
 | Analytics | ✅ Complete | Professional stats |
@@ -743,4 +823,4 @@ When saving incomplete records:
 | Low Power Mode v4.0 | ✅ Complete | 3s hold toggle, auto-escalation on elevated vibration |
 | Coin AI | ✅ Complete | AI-powered coin identification |
 | Reliability Suite v4.0 | ✅ Complete | Circular buffers, memory leak fixes, setState batching |
-| Modular Architecture v4.0 | ✅ Complete | 25+ services, 181 tests |
+| Modular Architecture v4.3 | ✅ Complete | 25+ services, 255 tests |

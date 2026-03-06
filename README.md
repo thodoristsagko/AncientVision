@@ -14,7 +14,7 @@ Developed in the context of FIRST LEGO League (FLL), the project focuses on solv
 2. Read [INSTALLATION.md](INSTALLATION.md) for detailed setup guide
 3. Run `run_app.bat` to launch the app (after installation)
 
-**Version:** v4.1 (February 2026) - Safety-critical reliability, rule-based anomaly fallback, low power mode
+**Version:** v4.3 (March 2026) - UI simplification, GIS satellite mapping, firmware false-positive prevention
 
 ## 📋 What You Need
 
@@ -37,10 +37,12 @@ Developed in the context of FIRST LEGO League (FLL), the project focuses on solv
 - **Data Validation**: Automatic quality checks
 
 ### Safety & Integration
-- **Safety Monitoring v4.1**: Advanced seismic analysis with Haar wavelets, Arias Intensity, CAV, thermal compensation
+- **Safety Monitoring v4.3**: Simplified UI (⋮ overflow menu, unified scrollable view with Advanced expansion), firmware leaky-integrator HPF prevents velocity random-walk false positives
+- **GIS & Satellite Mapping**: Esri satellite basemap, GeoJSON/Shapefile import, per-layer visibility toggles, feature info popup, live GPS blue dot, offline tile caching
+- **Full-Screen Alerts v4.3**: Glassmorphism overlay, "Why This Triggered" metrics box, PPV sparkline, type-specific action guidance, always-visible acknowledge button
 - **Rule-Based Anomaly Fallback**: Engineering-based anomaly scoring when ML model unavailable (DIN 4150-3, EPRI CAV, STA/LTA)
 - **Low Power Mode**: 3-second button hold on M5StickC — auto-escalates to full DSP when vibration exceeds safe threshold
-- **Offline Support**: Full functionality without internet
+- **Offline Support**: Full functionality without internet, pre-loadable satellite tile cache for venue
 - **Export**: PDF, JSON, CSV, GeoJSON, KML, PLY, OBJ, GLB
 - **AI Recognition**: VAE-based anomaly detection with 10-feature model + rule-based fallback
 

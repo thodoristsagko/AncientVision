@@ -2,7 +2,7 @@
 
 ## Professional Archaeological Field Management & 3D Reconstruction
 
-**Version:** 4.0.0 | **Platform:** Android | **Framework:** Flutter
+**Version:** 4.3.0 | **Platform:** Android | **Framework:** Flutter
 
 ---
 
@@ -46,13 +46,24 @@ AncientVision is a professional-grade mobile application designed for archaeolog
 - GPS location capture
 - Professional PDF reports
 
-### Safety Monitoring v4.0
+### Safety Monitoring v4.3
 - M5StickC Plus 2 integration via BLE
 - Advanced seismic analysis: Arias Intensity, CAV, 3-level Haar DWT
 - Recursive STA/LTA with EMA for memory efficiency
 - IMU temperature compensation (0.0005g/°C)
-- Soil moisture monitoring
+- Soil moisture monitoring with probe-in-medium guard (no air-sensor false alerts)
+- Firmware leaky-integrator HPF (fc ≈ 3 Hz) eliminates velocity random-walk false positives
+- **Simplified Safety UI**: ⋮ overflow menu (History, Calibrate, Settings, Language, Diagnostics), unified scrollable view with collapsible Advanced section
+- **Full-screen alert redesign**: glassmorphism overlay, "Why This Triggered" metrics, PPV sparkline, type-specific guidance, always-visible acknowledge button
 - Alert history with Firebase logging
+
+### GIS & Satellite Mapping
+- Esri World Imagery satellite basemap (default), street map toggle
+- GeoJSON & Shapefile (ZIP) import via file picker
+- Per-layer visibility toggles with individual delete
+- Tap polygon/point to see feature info popup
+- Live GPS blue dot with center-on-me button
+- Offline tile caching via flutter_cache_manager (pre-loadable at venue)
 
 ### Offline-First Design
 - Auto-save drafts every 2 seconds
@@ -128,8 +139,10 @@ This application was developed for the FIRST LEGO League Innovation Project. Key
 2. **Triple Validation Pipeline** - Epipolar geometry, reprojection error, sample consensus
 3. **85-95% Reconstruction Success Rate** - With proper capture technique
 4. **Offline-First Architecture** - Designed for remote archaeological sites
-5. **Advanced Seismic Monitoring v4.0** - Wavelet analysis, Arias Intensity, CAV, recursive STA/LTA
-6. **ML Anomaly Detection** - VAE with 10 features, 181 unit tests, modular architecture
+5. **Advanced Seismic Monitoring v4.3** - Wavelet analysis, Arias Intensity, CAV, recursive STA/LTA, leaky-integrator HPF, moisture probe guard
+6. **ML Anomaly Detection** - VAE with 10 features, 255 unit tests, modular architecture
+7. **GIS & Satellite Mapping** - Esri satellite basemap, GeoJSON/Shapefile import, GPS blue dot, offline tiles
+8. **Simplified Safety UI** - ⋮ overflow menu, unified view with Advanced expansion
 
 ---
 
